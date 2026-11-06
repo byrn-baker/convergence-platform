@@ -106,7 +106,9 @@ def load_spec(path):
 
 class Proxmox:
     def __init__(self, creds, ca_file=None, opener=None):
-        self.base = f"https://{creds['host']}:{creds['port']}/api2/json"
+        # Leave out :443 so the Host header is the bare name a reverse proxy matches on.
+        port = '' if str(creds['port']) == '443' else f":{creds['port']}"
+        self.base = f"https://{creds['host']}{port}/api2/json"
         self._auth = f"PVEAPIToken={creds['user']}!{creds['token_name']}={creds['token_value']}"
         context = ssl.create_default_context(cafile=ca_file)
         self._open = opener or (lambda request, timeout: urllib.request.urlopen(request, timeout=timeout, context=context))
@@ -155,6 +157,12 @@ def plan(api, spec):
     storage = {s['storage']: s for s in api.call('GET', f'/nodes/{spec["node"]}/storage') or []}
     if spec['storage'] not in storage or 'images' not in storage[spec['storage']].get('content', ''):
         raise SpecError(f'Storage {spec["storage"]} on {spec["node"]} does not hold VM images')
+    try:
+        bridges = sorted(b['iface'] for b in api.call('GET', f'/nodes/{spec["node"]}/network?type=any_bridge') or [])
+    except RuntimeError:
+        bridges = None  # listing needs Sys.Audit; the clone still validates the bridge
+    if bridges is not None and spec['bridge'] not in bridges:
+        raise SpecError(f'Bridge {spec["bridge"]} does not exist on {spec["node"]}: {", ".join(bridges)}')
     actions = []
     for n in spec['nodes']:
         vm = vms.get(n['vmid'])
@@ -165,6 +173,12 @@ def plan(api, spec):
         else:
             raise SpecError(f'VMID {n["vmid"]} is already used by a VM this tool does not manage')
     return actions
+
+
+def describe(api, node, vmid):
+    config = api.call('GET', f'/nodes/{node}/qemu/{vmid}/config') or {}
+    keep = re.compile(r'^(name|template|cores|memory|agent|tags|net\d+|scsi\d+|virtio\d+|sata\d+|ide\d+|ipconfig\d+|ciuser)$')
+    return {'vmid': vmid, 'config': {k: v for k, v in config.items() if keep.match(k)}}
 
 
 def net0(spec):
@@ -321,6 +335,8 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('check', help='validate the spec only (no API calls)')
     sub.add_parser('plan', help='read-only checks against Proxmox')
+    look = sub.add_parser('describe', help="read-only: a VM's network and disks, e.g. to reuse its bridge")
+    look.add_argument('--vmid', type=int, required=True)
     up = sub.add_parser('apply', help='create/start the VMs and write the Ansible inventory')
     up.add_argument('--state-dir', required=True)
     down = sub.add_parser('destroy', help='stop and delete the managed VMs in this spec')
@@ -334,6 +350,8 @@ def main(argv=None):
         api = Proxmox(credentials(args.env_file), args.ca_file)
         if args.command == 'plan':
             print(json.dumps({'ok': True, 'actions': plan(api, spec)}, indent=2))
+        elif args.command == 'describe':
+            print(json.dumps({'ok': True, **describe(api, spec['node'], args.vmid)}, indent=2))
         elif args.command == 'apply':
             result = apply(api, spec)
             state = Path(args.state_dir).expanduser()

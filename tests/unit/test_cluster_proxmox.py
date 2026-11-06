@@ -40,6 +40,8 @@ class FakeProxmox:
         self.calls.append((method, path, data))
         if path == '/cluster/resources?type=vm':
             return list(self.vms.values())
+        if path == '/nodes/pve1/network?type=any_bridge':
+            return [{'iface': 'vmbr0'}]
         if path == '/nodes/pve1/storage':
             return [{'storage': 'local-lvm', 'content': 'images,rootdir'}]
         if method == 'POST' and path.endswith('/clone'):
