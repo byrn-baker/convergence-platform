@@ -78,9 +78,12 @@ def collector_ready(repo, bundle, options):
         raise ValueError('Start this bundle before sending demonstration flows')
     flow_support().assert_owned('container',identity,expected,environment)
     for _ in range(45):
-        result = subprocess.run(['docker','inspect','--format','{{if .State.Health}}{{.State.Health.Status}}{{end}}',identity],
+        result = subprocess.run(['docker','inspect',identity],
             env=environment,capture_output=True,text=True,timeout=5,stdin=subprocess.DEVNULL)
-        state = result.stdout.strip()
+        try:
+            state = (json.loads(result.stdout)[0].get('State',{}).get('Health') or {}).get('Status','')
+        except (ValueError, IndexError, AttributeError):
+            state = ''
         if result.returncode == 0 and state == 'healthy': return
         if state != 'starting': break
         time.sleep(1)

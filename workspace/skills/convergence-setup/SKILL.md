@@ -2,6 +2,7 @@
 name: convergence-setup
 description: Set up Convergence on a user's network, or complete an existing installation. Asks only for what it cannot discover, then builds a local Docker trial, installs into an existing K3s cluster (Helm or Argo CD), or builds a new K3s cluster on Proxmox VE first. Connects telemetry and the NetClaw HUD and verifies each layer. Use for Convergence installation or onboarding; use alert-triage for individual incidents.
 license: Apache-2.0
+compatibility: "Linux hosts. Uses the network: local Docker and Kubernetes APIs, the Proxmox VE API, SSH to new nodes, and Git/Helm/container registries for pinned downloads."
 metadata:
   version: "1.3.0"
   openclaw:
