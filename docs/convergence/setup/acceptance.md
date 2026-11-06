@@ -35,4 +35,4 @@ rollback steps, telemetry/capture coverage, remaining gaps and next tuning work.
 Keep automatic investigations and enforcement separately identified. No claim of
 "all VLAN traffic inspected" without evidence at the relevant capture points.
 
-For fresh installations, follow `docs/convergence/verification.md` for the platform evidence matrix. `verify.py --canary` explicitly writes synthetic cases and, on K3s, a synthetic OTLP log. Its saved private case reference lets later checks prove persistence. Record restart, upgrade and restore evidence separately.
+For fresh installations, follow [verification](../verification.md) for the platform evidence matrix. `verify.py --canary` explicitly writes synthetic cases and, on K3s, a synthetic OTLP log. Its saved private case reference lets later checks prove persistence. Record restart, upgrade and restore evidence separately.

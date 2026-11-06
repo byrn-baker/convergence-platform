@@ -8,7 +8,7 @@ import sys
 import pytest
 
 ROOT=Path(__file__).resolve().parents[2]
-SCRIPTS=ROOT/'workspace/skills/convergence-setup/scripts'
+SCRIPTS=ROOT/'setup'
 sys.path.insert(0,str(SCRIPTS))
 import setup
 import flows

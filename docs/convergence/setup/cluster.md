@@ -53,7 +53,7 @@ plan and get the user's go-ahead before `apply`, `site.yml` or `destroy`.
    storage class is `local-path`.
 6. **Argo CD (optional):** `KUBECONFIG=STATE/kubeconfig deploy/argocd/install.sh CONTEXT`,
    then replace step 5's `install` with
-   `scripts/k3s.py --repo "$repo" argocd --bundle B --repo-url URL --revision REV
+   `python3 setup/k3s.py --repo "$repo" argocd --bundle B --repo-url URL --revision REV
    [--repo-key-file KEY]`. Values go into the Application from the private bundle;
    the database and API credentials stay in a cluster Secret, never in Git. Wait for
    the Application to be `Synced` and `Healthy`, then run the normal verification.

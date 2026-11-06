@@ -114,7 +114,7 @@ def test_offline_grafana_merge_preserves_existing_projects_and_is_idempotent():
 
 def test_portable_fresh_bundle_renders_optional_grafana_and_local_path(tmp_path):
     import sys
-    scripts=ROOT/'workspace/skills/convergence-setup/scripts'
+    scripts=ROOT/'setup'
     sys.path.insert(0,str(scripts))
     spec=importlib.util.spec_from_file_location('fresh_k3s',scripts/'k3s.py')
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)

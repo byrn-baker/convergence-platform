@@ -9,7 +9,7 @@ Start at [Convergence](../CONVERGENCE.md), then choose:
 - **[Troubleshooting](../convergence/troubleshooting.md)** for prerequisite and runtime failures.
 - **[Verification record](../convergence/verification.md)** for tested environments and remaining gaps.
 
-The [convergence-setup skill](../../workspace/skills/convergence-setup/SKILL.md)
+NetClaw's `convergence-setup` skill, following [these procedures](../convergence/setup/),
 uses these same guides and helpers. It discovers existing deployments first,
 prepares private credentials, installs only the chosen layers and verifies the
 result. Core health, network telemetry, IDS coverage and model investigations are

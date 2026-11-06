@@ -14,10 +14,10 @@ fork and now lives here; its design history is in [specs/](specs).
 |---|---|---|
 | Docker trial | One Linux machine, no special hardware | [docs/convergence/home-lab.md](docs/convergence/home-lab.md) |
 | Existing K3s cluster | Persistent install with Helm, or via Argo CD | [docs/convergence/k3s.md](docs/convergence/k3s.md) |
-| New K3s cluster on Proxmox VE | Build the cluster first, then install | [deploy/cluster](deploy/cluster), [workspace/skills/convergence-setup/references/cluster.md](workspace/skills/convergence-setup/references/cluster.md) |
+| New K3s cluster on Proxmox VE | Build the cluster first, then install | [docs/convergence/setup/cluster.md](docs/convergence/setup/cluster.md) |
 
-The [`convergence-setup`](workspace/skills/convergence-setup/SKILL.md) skill lets
-NetClaw do any of these for you: it discovers what it can, asks for the rest, shows
+NetClaw's `convergence-setup` skill can do any of these for you, following the
+[setup procedures](docs/convergence/setup/): it discovers what it can, asks for the rest, shows
 the plan before changing anything, and verifies each layer.
 
 ## Layout
@@ -29,7 +29,7 @@ deploy/convergence/        Docker trial (Compose), adapters, Grafana, flow demo,
 deploy/helm/               Helm charts (convergence, victoria-stack), tooling and tests
 deploy/cluster/            Proxmox VM provisioning (proxmox.py) and K3s Ansible playbooks
 deploy/argocd/             Argo CD install
-workspace/skills/          NetClaw convergence-setup skill
+setup/                     Setup helpers (Docker bundle, K3s/Argo CD, verification, flows)
 docs/  specs/  tests/
 ```
 

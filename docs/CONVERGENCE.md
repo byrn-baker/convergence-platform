@@ -27,42 +27,38 @@ flow path adds retained traffic evidence without requiring Cisco equipment,
 Proxmox or Kubernetes. Demonstration data and local-interface observations are
 explicitly labeled; neither establishes whole-network coverage.
 
-**Start here:** obtain a checkout containing `workspace/skills/convergence-setup/`,
-then follow one guide. Convergence is currently a fork add-on; its upstream
-inclusion is proposed, not released by `automateyournetwork/netclaw`.
-Install from the maintained fork:
+**Start here:** clone a release of this repository, then follow one guide:
 
 ```bash
-git clone https://github.com/byrn-baker/netclaw-convergence.git netclaw
-cd netclaw
+git clone --branch v0.1.0 https://github.com/byrn-baker/convergence-platform.git convergence
+cd convergence
 ```
 
-The fork contains the guides and helpers below; it is not an upstream release.
 The [verification record](convergence/verification.md) distinguishes executed
 platform tests from documentation-only guidance.
 
 ## Ask NetClaw to install it
 
-The bundled [convergence-setup skill](../workspace/skills/convergence-setup/SKILL.md)
-can inspect the target, prepare configuration, install the selected stack and
-verify it. Example requests:
+NetClaw's `convergence-setup` skill follows the [setup procedures](convergence/setup/)
+in this repository. It asks for what it cannot discover, shows the plan before
+changing anything, installs the selected stack and verifies it. Example requests:
 
 > Set up Convergence on my K3s cluster. Use context `lab`, namespace
 > `convergence`, site `office`, and storage class `local-path`. Use a separate
 > Grafana for now. Inspect existing resources before installing.
 
+> Build a three-node K3s cluster on my Proxmox server for Convergence and manage it
+> with Argo CD.
+
 > Help me try Convergence with the Linux Docker flow demonstration. I have no
 > managed switch or hypervisor. Keep example traffic separate from my actual network.
 
-> Help me try Convergence locally with Docker and a health dashboard. Choose
-> unused ports and keep the services accessible only from this computer.
+Without NetClaw, any coding agent can follow the same procedures:
 
-For a coding agent working from a fresh checkout, start with:
+> Read `docs/convergence/setup/` and install Convergence for this environment.
+> Verify the installation and leave a short handover.
 
-> Read `workspace/skills/convergence-setup/SKILL.md` and install Convergence for
-> this environment. Verify the installation and leave a short handover.
-
-The skill needs the same Docker or Kubernetes access you would use manually.
+Setup needs the same Docker, Kubernetes or Proxmox access you would use manually.
 Installing the monitoring stack does not grant permission to reconfigure devices,
 expose services publicly or enable automatic model investigations.
 

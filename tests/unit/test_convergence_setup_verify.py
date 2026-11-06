@@ -7,7 +7,7 @@ import sys
 from urllib.error import HTTPError
 
 ROOT=Path(__file__).resolve().parents[2]
-SCRIPTS=ROOT/'workspace/skills/convergence-setup/scripts'
+SCRIPTS=ROOT/'setup'
 sys.path.insert(0,str(SCRIPTS))
 spec=importlib.util.spec_from_file_location('setup_verify',SCRIPTS/'verify.py')
 verify=importlib.util.module_from_spec(spec);spec.loader.exec_module(verify)

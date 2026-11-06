@@ -23,7 +23,7 @@ def repo_path(value):
     repo = Path(value).expanduser().resolve()
     for name in ('deploy/convergence/docker-compose.yml', 'scripts/write-env.py'):
         if not (repo/name).is_file():
-            raise ValueError('Select the NetClaw checkout with --repo')
+            raise ValueError('Select the Convergence checkout with --repo')
     return repo
 
 
@@ -216,7 +216,7 @@ def prepare(repo, bundle, options):
     flow_identity = secrets.token_hex(16) if options.get('flows') else None
     if options.get('flows'):
         flow_files = flow_support().configure(repo, bundle, options, env, overlay, flow_identity)
-    commands = ['python3', str(repo/'workspace/skills/convergence-setup/scripts/setup.py'), '--repo', str(repo),
+    commands = ['python3', str(repo/'setup/setup.py'), '--repo', str(repo),
                 'run', '--bundle', str(bundle), '--action']
     manifest = {'schema_version': 1, 'options': identity,
                 'commands': {'validate': commands+['validate'], 'start_core': commands+['start']},

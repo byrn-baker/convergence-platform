@@ -32,7 +32,7 @@ Use a checkout containing this add-on. From its root:
 python3 --version
 docker version
 docker compose version
-python3 workspace/skills/convergence-setup/scripts/setup.py preflight
+python3 setup/setup.py preflight
 ```
 
 Docker must report a reachable server. Use a current Compose plugin;
@@ -48,7 +48,7 @@ The site is an identifier, such as `office`, `home` or `lab`.
 
 ```bash
 bundle="$HOME/.local/share/convergence/trial"
-helper="workspace/skills/convergence-setup/scripts/setup.py"
+helper="setup/setup.py"
 python3 "$helper" prepare --output "$bundle" \
   --site lab --project convergence-trial \
   --api-port 3080 --prometheus-port 9090 --alertmanager-port 9093 \
@@ -72,7 +72,7 @@ Wait about 30 seconds for initial scrapes, then:
 
 ```bash
 python3 "$helper" run --bundle "$bundle" --action status
-python3 workspace/skills/convergence-setup/scripts/verify.py --bundle "$bundle"
+python3 setup/verify.py --bundle "$bundle"
 ```
 
 Every reported core check should pass, including the Grafana datasource query and
@@ -91,7 +91,7 @@ The example above uses synthetic installation checks, not real device telemetry.
 To exercise case persistence explicitly:
 
 ```bash
-python3 workspace/skills/convergence-setup/scripts/verify.py --bundle "$bundle" --canary
+python3 setup/verify.py --bundle "$bundle" --canary
 ```
 
 This writes and archives a labeled synthetic case. It does not invoke a model or
@@ -102,7 +102,7 @@ send an alert. Later verification checks that the previous canary still exists.
 ```bash
 python3 "$helper" run --bundle "$bundle" --action stop
 python3 "$helper" run --bundle "$bundle" --action start
-python3 workspace/skills/convergence-setup/scripts/verify.py --bundle "$bundle"
+python3 setup/verify.py --bundle "$bundle"
 ```
 
 Stopping keeps the project volumes and configuration. Do not delete volumes to

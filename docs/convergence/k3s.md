@@ -47,7 +47,7 @@ context="lab"                 # replace with the exact context from the list
 namespace="convergence"
 release="convergence"
 bundle="$HOME/.local/share/convergence/k3s-lab"
-python3 workspace/skills/convergence-setup/scripts/k3s.py preflight --context "$context"
+python3 setup/k3s.py preflight --context "$context"
 ```
 
 The output must show Ready nodes, your storage class and Helm. Inspect available
@@ -103,7 +103,7 @@ Run from the checkout root, retaining the variables from above:
 helm repo add victoria-metrics https://victoriametrics.github.io/helm-charts/
 helm dependency build deploy/helm/victoria-stack
 helm dependency build deploy/helm/convergence
-python3 workspace/skills/convergence-setup/scripts/k3s.py prepare \
+python3 setup/k3s.py prepare \
   --output "$bundle" --context "$context" --namespace "$namespace" \
   --release "$release" --site lab --storage-class local-path --image "$image"
 ```
@@ -130,9 +130,9 @@ chart itself does not install another Grafana; the fresh bundle explicitly enabl
 ## 4. Install and verify
 
 ```bash
-python3 workspace/skills/convergence-setup/scripts/k3s.py install --bundle "$bundle"
+python3 setup/k3s.py install --bundle "$bundle"
 kubectl --context "$context" -n "$namespace" get pods,pvc
-python3 workspace/skills/convergence-setup/scripts/verify.py --bundle "$bundle"
+python3 setup/verify.py --bundle "$bundle"
 ```
 
 Installation waits up to ten minutes for readiness. The helper checks the target
@@ -149,7 +149,7 @@ For a labeled case write/read/archive and an OTLP log round-trip through the
 collector into VictoriaLogs:
 
 ```bash
-python3 workspace/skills/convergence-setup/scripts/verify.py --bundle "$bundle" --canary
+python3 setup/verify.py --bundle "$bundle" --canary
 ```
 
 The canaries remain identifiable test evidence. They do not send external

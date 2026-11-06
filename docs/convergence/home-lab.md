@@ -32,13 +32,13 @@ health/metrics, and must differ from the core service ports.
 
 ```bash
 bundle="$HOME/.local/share/convergence/flow-demo"
-helper="workspace/skills/convergence-setup/scripts/setup.py"
-flows="workspace/skills/convergence-setup/scripts/flows.py"
+helper="setup/setup.py"
+flows="setup/flows.py"
 python3 "$helper" prepare --output "$bundle" \
   --site demo --project convergence-demo --grafana --flows demo --flow-port 2055
 python3 "$helper" run --bundle "$bundle" --action validate
 python3 "$helper" run --bundle "$bundle" --action start
-python3 workspace/skills/convergence-setup/scripts/verify.py --bundle "$bundle"
+python3 setup/verify.py --bundle "$bundle"
 python3 "$flows" demo --bundle "$bundle"
 python3 "$flows" check --bundle "$bundle"
 ```
@@ -88,8 +88,8 @@ unused ports. For example, stop the demo first and then reuse its service ports:
 
 ```bash
 host_bundle="$HOME/.local/share/convergence/host-flows"
-helper="workspace/skills/convergence-setup/scripts/setup.py"
-flows="workspace/skills/convergence-setup/scripts/flows.py"
+helper="setup/setup.py"
+flows="setup/flows.py"
 python3 "$helper" prepare --output "$host_bundle" \
   --site workstation --project convergence-workstation --grafana --flows host --flow-port 2055
 python3 "$helper" run --bundle "$host_bundle" --action validate

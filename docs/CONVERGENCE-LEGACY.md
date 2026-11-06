@@ -8,7 +8,7 @@ This is an archived engineering reference, not an installation guide. Commands, 
 tab, metrics stack, device adapters, investigation diary, and the
 Alertmanager → alert-receiver → guardian-claw loop.
 
-**New installation:** use the bundled [`convergence-setup` skill](../workspace/skills/convergence-setup/SKILL.md)
+**New installation:** use NetClaw's `convergence-setup` skill or the [setup procedures](convergence/setup/)
 and [fresh-install guide](runbooks/convergence-setup.md). They start from your
 machine and network, with private generated credentials and separate checks for
 core services, actual telemetry, the HUD and investigations.

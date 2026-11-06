@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 spec_ = importlib.util.spec_from_file_location('cluster_proxmox', ROOT/'deploy/cluster/proxmox.py')
 px = importlib.util.module_from_spec(spec_)
 spec_.loader.exec_module(px)
-sys.path.insert(0, str(ROOT/'workspace/skills/convergence-setup/scripts'))
+sys.path.insert(0, str(ROOT/'setup'))
 import k3s  # noqa: E402
 
 

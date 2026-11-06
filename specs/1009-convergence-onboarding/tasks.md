@@ -5,7 +5,7 @@
 - [x] T002 Add regression tests for private, explicit-context, repeatable K3s bundles in tests/unit/test_convergence_setup_k3s.py.
 
 ## US1 — K3s installation
-- [x] T003 [US1] Implement K3s preparation/check commands in workspace/skills/convergence-setup/scripts/.
+- [x] T003 [US1] Implement K3s preparation/check commands in setup/.
 - [x] T004 [US1] Add optional standalone Grafana and portable storage in deploy/helm/convergence/.
 - [x] T005 [US1] Exercise fresh isolated K3s install, repeat/upgrade, canaries and persistence; record verification.md.
 

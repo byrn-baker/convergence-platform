@@ -76,8 +76,8 @@ starting points; the receiver itself is not started by the core helper. Linux
 systemd templates require the actual account, checkout, virtualenv and writable
 paths. macOS and WSL2 need appropriate process supervision; Linux service files
 are not portable installers. See the setup skill's
-[integration reference](../../workspace/skills/convergence-setup/references/integrations.md)
-and [acceptance checklist](../../workspace/skills/convergence-setup/references/acceptance.md).
+[integration reference](setup/integrations.md)
+and [acceptance checklist](setup/acceptance.md).
 
 ## Reuse existing Grafana
 

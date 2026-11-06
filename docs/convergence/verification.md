@@ -81,7 +81,7 @@ mixed-architecture scheduling.
 | Device telemetry, IDS, Guardian | Outside core onboarding tests; require source/capture/model-specific acceptance |
 | Public ingress, arbitrary migrations, air-gap, full disaster recovery | Not qualified by this test run |
 
-Use the [setup acceptance checklist](../../workspace/skills/convergence-setup/references/acceptance.md)
+Use the [setup acceptance checklist](setup/acceptance.md)
 for a real installation. Only mark selected layers ready when their evidence exists.
 
 ## Repeat the core checks

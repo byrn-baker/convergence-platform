@@ -18,7 +18,7 @@ import uuid
 from urllib.request import build_opener, ProxyHandler
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT/'workspace/skills/convergence-setup/scripts'))
+sys.path.insert(0, str(ROOT/'setup'))
 import setup
 import flows
 

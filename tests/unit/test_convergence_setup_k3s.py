@@ -6,7 +6,7 @@ import sys
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = ROOT/'workspace/skills/convergence-setup/scripts'
+SCRIPTS = ROOT/'setup'
 sys.path.insert(0, str(SCRIPTS))
 spec = importlib.util.spec_from_file_location('convergence_k3s', SCRIPTS/'k3s.py')
 k3s = importlib.util.module_from_spec(spec)

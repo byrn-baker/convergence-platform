@@ -28,7 +28,7 @@ readiness gate; a design draft is appropriate. Local Git/spec evidence replaces
 unavailable GAIT tools for this development session; no GAIT record is claimed.
 
 ## Structure and dependencies
-- `workspace/skills/convergence-setup/scripts/`: existing Docker helper plus
+- `setup/`: existing Docker helper plus
   isolated K3s bundle generation, target verification and execution commands.
 - `deploy/helm/convergence/`: optional standalone Grafana, safe default-storage
   handling and preserved explicit live profile choices.

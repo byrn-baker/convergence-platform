@@ -1,7 +1,7 @@
 # K3s/Helm setup and existing-stack reuse
 
 Use `docs/convergence/k3s.md` from the verified checkout as the canonical procedure.
-Resolve the helper paths relative to this skill; pass the checkout with `--repo`.
+Run the helpers in `setup/` from the Convergence checkout and pass it with `--repo`.
 The guide includes image delivery alternatives, storage explanations and access.
 
 ## Fresh release
@@ -10,7 +10,7 @@ The guide includes image delivery alternatives, storage explanations and access.
    class, capacity and image delivery. Read existing resources before assuming a
    new deployment. Do not change the global current context. Creating a K3s cluster
    changes a host and is separate from installing into an existing cluster.
-2. Run `scripts/k3s.py --repo "$repo" preflight --context "$context"`. Resolve
+2. Run `python3 setup/k3s.py --repo "$repo" preflight --context "$context"`. Resolve
    unavailable access, unready nodes or missing storage before installation.
 3. Build the API with a revision-specific tag. Import on every eligible native K3s
    node, use k3d image import for k3d, or push to an authorized registry. Verify CPU
@@ -18,13 +18,13 @@ The guide includes image delivery alternatives, storage explanations and access.
    the cluster's containerd store.
 4. Register the Victoria chart repository as shown in the guide, then build both
    Helm dependency layers. Prepare the private bundle using
-   `scripts/k3s.py --repo "$repo" prepare` with every required target option.
+   `python3 setup/k3s.py --repo "$repo" prepare` with every required target option.
    Standalone Grafana is enabled for a fresh release; use `--no-grafana` when
    reusing shared Grafana. Review non-secret values and resource requests.
-5. Run `scripts/k3s.py --repo "$repo" install --bundle "$bundle"`. It uses the
+5. Run `python3 setup/k3s.py --repo "$repo" install --bundle "$bundle"`. It uses the
    explicit target and preserves a matching Secret. Do not bypass a mismatch by
    overwriting database passwords. Diagnose failed Helm readiness in place.
-6. Run `scripts/verify.py --repo "$repo" --bundle "$bundle"`, then the authorized
+6. Run `python3 setup/verify.py --repo "$repo" --bundle "$bundle"`, then the authorized
    `--canary` acceptance check. Confirm case persistence after restart and the
    collector-to-VictoriaLogs round-trip. Open Grafana through loopback forwarding.
 7. Follow `docs/convergence/operations.md` for HUD connectivity, telemetry, backup,

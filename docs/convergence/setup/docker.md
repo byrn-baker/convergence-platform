@@ -11,14 +11,14 @@ canonical sequence; do not install a model/runtime just to try the core stack.
 1. Inspect host preflight, Docker server/context, existing projects and selected
    ports. Require a local Linux-container daemon. On macOS use Docker Desktop;
    on Windows run inside WSL2 with Docker integration and Linux-home paths.
-2. Use the bundled `scripts/setup.py --repo "$repo" prepare` with an explicit
+2. Use `python3 setup/setup.py --repo "$repo" prepare` with an explicit
    private output directory, unique project/site and unused ports. Include
    `--grafana --grafana-port PORT` for the trial health dashboard.
-3. Use `scripts/setup.py --repo "$repo" run --bundle "$bundle" --action validate`,
+3. Use `python3 setup/setup.py --repo "$repo" run --bundle "$bundle" --action validate`,
    then `--action start`. This isolates Compose interpolation from conflicting
    host environment variables. Do not execute older raw manifest commands when
    host variables may override the bundle. Never print resolved Compose secrets.
-4. Run `scripts/verify.py --repo "$repo" --bundle "$bundle"` after initial scrapes.
+4. Run `python3 setup/verify.py --repo "$repo" --bundle "$bundle"` after initial scrapes.
    Inspect the provisioned dashboard and its datasource query. For the authorized
    installation acceptance test, `--canary` writes/archives a synthetic case.
 5. Stop/start the same project and verify again. Record the generated private
@@ -38,7 +38,7 @@ receiver writes. Keep those files private. `receiver-token` is readable by the
 unprivileged Alertmanager container beneath an owner-only bundle directory.
 
 - Install `services/alert-receiver/requirements.txt` in the chosen virtualenv.
-  Render `scripts/systemd/netclaw-alert-receiver.service` for the actual user,
+  Render `services/alert-receiver/netclaw-alert-receiver.service` for the actual user,
   checkout, Python executable and bundle `EnvironmentFile`. Preserve its existing
   write restrictions and add only required data paths. The shipped unit's
   `/home/ubuntu` paths are examples. Use an explicit
@@ -59,8 +59,8 @@ unprivileged Alertmanager container beneath an owner-only bundle directory.
 - Select model/authentication through `docs/MODELS.md` and the active runtime.
   OpenClaw and Hermes have different investigator support; verify what is installed
   rather than provisioning an OpenClaw member silently on a Hermes setup.
-- For an OpenClaw Guardian, inspect `scripts/ensure-guardian-claw.py` in dry-run
-  mode and `docs/N2N-RISK.md`. Provision/reuse the chosen member and apply
+- For an OpenClaw Guardian, inspect the NetClaw checkout's Guardian provisioning in
+  dry-run mode and its `docs/N2N-RISK.md`. Provision/reuse the chosen member and apply
   `deploy/convergence/config/guardian-instructions.md` plus the scoped read tools.
   Verify the member's own credentials and `convergence-case-mcp` tools; a member
   being enrolled does not prove those tools work. Keep the setup skill outside
@@ -82,7 +82,7 @@ the active mounted config. Review Docker mounts to confirm the file being edited
 is the file the service reads. Use per-site labels and rules; remove disabled
 exporter jobs rather than interpreting missing exporters as failing devices.
 
-Read `references/integrations.md` before adding full observability or IDS overlays.
+Read `integrations.md` before adding full observability or IDS overlays.
 After adding the selected telemetry, verify a real sample and the expected labels
 before enabling alerts. Document the resulting complete Compose command.
 

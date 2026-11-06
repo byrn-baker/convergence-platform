@@ -9,8 +9,8 @@ import sys
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-SKILL = ROOT/'workspace/skills/convergence-setup'
-spec = importlib.util.spec_from_file_location('convergence_setup', SKILL/'scripts/setup.py')
+SETUP = ROOT/'setup'
+spec = importlib.util.spec_from_file_location('convergence_setup', SETUP/'setup.py')
 setup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(setup)
 
