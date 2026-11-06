@@ -69,21 +69,63 @@ async function readJSON(response) {
   for await(const chunk of response.body){size+=chunk.length;need(size<=4*1024*1024);chunks.push(Buffer.from(chunk));}
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
+function assess(raw, site, synthetic) {
+  const data=project(raw,{status:v=>['configured','not_configured'].includes(v),generated_at:number,window_seconds:v=>v===300});
+  need(data.generated_at<=Date.now()/1000+30 && data.generated_at>=Date.now()/1000-120);
+  need(array(raw.sources,256));
+  data.sources=raw.sources.map(s=>({...sourceProjection(s,site,data.generated_at),kind:synthetic?'synthetic':'proxmox'}));
+  need(data.status!=='not_configured'||!data.sources.length);
+  need(new Set(data.sources.map(s=>s.id)).size===data.sources.length && new Set(data.sources.map(s=>s.node)).size===data.sources.length);
+  return {...data,site,synthetic};
+}
+// VM_SECURITY_DEMO=1: a labelled synthetic assessment, so the view can be tried without a
+// hypervisor. It covers every pattern, a quiet and a stopped VM, and a stale source, and
+// passes the same validation as live data.
+function demoResponse(site) {
+  const now=Math.floor(Date.now()/1000), first=now-240, last=now-30;
+  const uuid=id=>`00000000-0000-4000-8000-${String(id).padStart(12,'0')}`;
+  const nic=(id,state='observing')=>({name:'net0',tap:`tap${id}i0`,ifindex:state==='observing'?id:null,capture_state:state});
+  const example=(id,dst,port,i)=>({src_ip:`192.0.2.${id-90}`,dst_ip:dst,src_port:40000+i,dst_port:port,protocol:'tcp',tap:`tap${id}i0`,ifindex:id,observed_at:first+30*(i+1)});
+  const caveat='Synthetic demonstration finding; no real traffic was observed.';
+  const finding=(hash,kind,id,evidence,examples)=>({id:hash,kind,severity:'review',vm_id:id,vm_uuid:uuid(id),first_seen:first,last_seen:last,caveat,evidence:{...evidence,examples}});
+  const findings=[
+    finding('d0000000000000000001','port_scan',101,{unique_tcp_five_tuples:48,unique_destination_ports:48,unique_destination_ips:1,destination_ip:'198.51.100.20',destination_port:null},
+      [22,23,80,443,3389].map((port,i)=>example(101,'198.51.100.20',port,i))),
+    finding('d0000000000000000002','network_sweep',102,{unique_tcp_five_tuples:64,unique_destination_ports:1,unique_destination_ips:64,destination_ip:null,destination_port:445},
+      [1,2,3,4,5].map((host,i)=>example(102,`198.51.100.${host}`,445,i))),
+    finding('d0000000000000000003','protected_network_contact',103,{unique_tcp_five_tuples:3,unique_destination_ports:1,unique_destination_ips:1,destination_ip:'203.0.113.10',destination_port:5432},
+      [0,1,2].map(i=>example(103,'203.0.113.10',5432,i))),
+  ];
+  const vm=(id,count,power='running',capture='observing',nicState='observing')=>({vm_id:id,vm_uuid:uuid(id),power_state:power,capture_state:capture,finding_count:count,nics:[nic(id,nicState)]});
+  const limitation='Synthetic demonstration data: no virtual machine traffic was observed.';
+  const coverage=(fresh,extra)=>({fresh,sampled:true,inventory_ok:fresh,packet_capture_ok:fresh,capture_drops_total:fresh?0:null,capture_drops_recent_delta:fresh?0:null,
+    events_discarded_total:fresh?0:null,events_discarded_recent_delta:fresh?0:null,counter_delta_seconds:fresh?240:null,snapshot_count:fresh?9:0,snapshot_span_seconds:fresh?240:0,
+    max_snapshot_gap_seconds:fresh?30:null,history_count:fresh?420:0,history_limited:false,missing_uuid_vm_count:0,excluded_identity_events:0,metadata_count:fresh?180:0,
+    metadata_cap_reached:false,policy_configured:fresh,allowlisted_tuple_count:0,limitations:[limitation,...extra]});
+  return {status:'configured',generated_at:now,window_seconds:300,sources:[
+    {id:'demo-hypervisor',site,node:'demo-node-1',status:'reporting',last_contact:now-5,observed_at:now-5,
+     coverage:coverage(true,['Packet metadata is sampled; counts describe the retained sample only.']),
+     summary:{finding_count:3,affected_vm_count:3,findings_truncated:false,assessment:'review'},findings,
+     vms:[vm(101,1),vm(102,1),vm(103,1),vm(104,0),vm(105,0,'stopped','stopped','absent')]},
+    {id:'demo-stale-hypervisor',site,node:'demo-node-2',status:'stale',last_contact:now-900,observed_at:now-900,
+     coverage:coverage(false,['No snapshot in the last five minutes; current activity is unknown.']),
+     summary:{finding_count:0,affected_vm_count:0,findings_truncated:false,assessment:'insufficient_evidence'},findings:[],
+     vms:[vm(201,0,'unknown','unavailable','error')]},
+  ]};
+}
 async function vmSecurity(site) {
   if(!text(site))return unavailable();
+  if(process.env.VM_SECURITY_DEMO==='1'){
+    try{return assess(demoResponse(site),site,true);}catch{return unavailable();}
+  }
   const base=process.env.IDS_STATUS_URL,token=process.env.IDS_STATUS_TOKEN;
   if(!base||!token)return {status:'not_configured',sources:[]};
   try{
     const url=new URL('/v1/vm-security',base);need(['https:','http:'].includes(url.protocol)&&!url.username&&!url.password);
     url.searchParams.set('site',site);
     const response=await fetch(url,{headers:{Authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(5000)});
-    need(response.ok);const raw=await readJSON(response);
-    const data=project(raw,{status:v=>['configured','not_configured'].includes(v),generated_at:number,window_seconds:v=>v===300});
-    need(data.generated_at<=Date.now()/1000+30 && data.generated_at>=Date.now()/1000-120);
-    need(array(raw.sources,256));data.sources=raw.sources.map(s=>sourceProjection(s,site,data.generated_at));
-    need(data.status!=='not_configured'||!data.sources.length);
-    need(new Set(data.sources.map(s=>s.id)).size===data.sources.length && new Set(data.sources.map(s=>s.node)).size===data.sources.length);
-    return {...data,site};
+    need(response.ok);
+    return assess(await readJSON(response),site,false);
   }catch{return unavailable();}
 }
 module.exports={vmSecurity};

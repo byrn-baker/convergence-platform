@@ -189,3 +189,12 @@ def test_compose_environment_drops_conflicting_interpolation_and_profiles(repo,m
     env=setup.compose_environment(repo)
     assert 'PGPASSWORD' not in env and 'API_KEYS' not in env and 'COMPOSE_PROFILES' not in env
     assert env['DOCKER_CONTEXT']=='desktop-linux' and 'HOME' in env
+
+
+def test_vm_security_demo_is_opt_in_and_reaches_only_the_api(repo):
+    plain=repo/'plain'; setup.prepare(repo,plain,options())
+    assert 'VM_SECURITY_DEMO' not in (plain/'compose.override.json').read_text()
+    demo=repo/'demo'; setup.prepare(repo,demo,{**options(),'vm_security_demo':True})
+    overlay=json.loads((demo/'compose.override.json').read_text())
+    assert overlay['services']['convergence-api']['environment']['VM_SECURITY_DEMO']=='1'
+    assert json.loads((demo/'deployment.json').read_text())['options']['vm_security_demo'] is True

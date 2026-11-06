@@ -123,6 +123,8 @@ def prepare(repo, bundle, options):
         options.pop('grafana', None); options.pop('grafana_port', None)
     if not options.get('flows'):
         options.pop('flows', None); options.pop('flow_port', None)
+    if not options.get('vm_security_demo'):
+        options.pop('vm_security_demo', None)
     identity = {'repo': str(repo), **options}
     if bundle.exists():
         marker = bundle/'deployment.json'
@@ -188,7 +190,8 @@ def prepare(repo, bundle, options):
     overlay = {'networks': {'convergence': {'name': options['project']+'-convergence'}}, 'services': {
         'convergence-api': {'image': options['project']+'-api:local', 'environment': {
             'PFSENSE_MGMT_URL': options['edge_url'], 'EDGE_MGMT_URL': options['edge_url'],
-            'UNIFI_HOST': '', 'UNIFI_MGMT_URL': ''}},
+            'UNIFI_HOST': '', 'UNIFI_MGMT_URL': '',
+            **({'VM_SECURITY_DEMO': '1'} if options.get('vm_security_demo') else {})}},
         'prometheus': {'volumes': [mount('prometheus.yml', '/etc/prometheus/prometheus.yml')]},
         'alertmanager': {'volumes': [mount('alertmanager.yml', '/etc/alertmanager/alertmanager.yml'),
                                     mount('receiver-token', '/run/secrets/receiver-token')]}}}
@@ -350,7 +353,7 @@ def check(repo, bundle, include_receiver=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--repo', default='.', help='NetClaw checkout (defaults to current directory)')
+    parser.add_argument('--repo', default='.', help='Convergence checkout (defaults to current directory)')
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('preflight')
     prep = commands.add_parser('prepare', help='Create a new private Docker core bundle; never starts services')
@@ -363,6 +366,8 @@ def main():
     prep.add_argument('--flows', choices=('demo','host'), help='Opt-in Linux flow demo or explicit host-interface collection')
     prep.add_argument('--flow-port', type=int, default=2055, help='Loopback UDP receiver port for optional flows')
     prep.add_argument('--grafana', action='store_true', help='Add a private installation health dashboard')
+    prep.add_argument('--vm-security-demo', action='store_true',
+                      help='Serve a labelled synthetic VM Security assessment (no hypervisor needed)')
     prep.add_argument('--grafana-port', type=int, default=3300)
     execute = commands.add_parser('run', help='Operate the selected bundle with isolated Compose settings')
     execute.add_argument('--bundle', required=True)

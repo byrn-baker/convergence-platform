@@ -16,6 +16,8 @@ fork and now lives here; its design history is in [specs/](specs).
 | Existing K3s cluster | Persistent install with Helm, or via Argo CD | [docs/convergence/k3s.md](docs/convergence/k3s.md) |
 | New K3s cluster on Proxmox VE | Build the cluster first, then install | [docs/convergence/setup/cluster.md](docs/convergence/setup/cluster.md) |
 
+VM Security findings can be tried without a hypervisor; see [docs/convergence/vm-security.md](docs/convergence/vm-security.md).
+
 NetClaw's `convergence-setup` skill can do any of these for you, following the
 [setup procedures](docs/convergence/setup/): it discovers what it can, asks for the rest, shows
 the plan before changing anything, and verifies each layer.

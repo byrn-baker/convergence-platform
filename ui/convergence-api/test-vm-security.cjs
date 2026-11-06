@@ -41,3 +41,17 @@ test('bounded analyzer-added coverage explanations and gap fields remain availab
  const data=fixture();data.sources[0].coverage.limitations=Array(71).fill('Coverage limitation');
  const result=await reader(async()=>response(data))('home');assert.equal(result.status,'configured');assert.equal(result.sources[0].coverage.snapshot_count,3);assert.equal(result.sources[0].coverage.max_snapshot_gap_seconds,15);assert.equal(result.sources[0].coverage.limitations.length,71);
 });
+test('demo mode returns a labelled synthetic assessment with every state and never fetches',async()=>{
+ let fetched=false;const data=plain(await reader(async()=>{fetched=true;},{VM_SECURITY_DEMO:'1'})('lab'));
+ assert.equal(fetched,false);assert.equal(data.status,'configured');assert.equal(data.synthetic,true);assert.equal(data.site,'lab');
+ assert.ok(data.sources.every(s=>s.kind==='synthetic'&&s.coverage.limitations[0].startsWith('Synthetic demonstration')));
+ const [live,stale]=data.sources;
+ assert.deepEqual(live.findings.map(f=>f.kind),['port_scan','network_sweep','protected_network_contact']);
+ assert.equal(live.status,'reporting');assert.equal(live.summary.assessment,'review');
+ assert.deepEqual(live.vms.map(v=>v.capture_state),['observing','observing','observing','observing','stopped']);
+ assert.equal(stale.status,'stale');assert.equal(stale.summary.assessment,'insufficient_evidence');assert.equal(stale.coverage.fresh,false);
+});
+test('live sources are labelled proxmox and not synthetic',async()=>{
+ const data=plain(await reader(async()=>response(fixture()))('home'));
+ assert.equal(data.synthetic,false);assert.ok(data.sources.every(s=>s.kind==='proxmox'));
+});
