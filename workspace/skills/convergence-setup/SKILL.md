@@ -27,7 +27,7 @@ before installation: read this file directly from `workspace/skills/convergence-
 Run the bundled helper from its actual location, passing the checkout explicitly:
 
 ```bash
-python3 /path/to/convergence-setup/scripts/setup.py --repo /path/to/netclaw preflight
+python3 /path/to/convergence-setup/scripts/setup.py --repo /path/to/convergence preflight
 ```
 
 The helper uses only the Python standard library. It reports host resources,
