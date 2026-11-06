@@ -1,0 +1,59 @@
+{{- $root := . -}}
+{{- range $component := list "blackbox" "unifi" "pushgateway" }}
+{{- $cfg := index $root.Values $component }}
+{{- if $cfg.enabled }}
+{{- $port := 9115 }}{{- if eq $component "unifi" }}{{- $port = 9899 }}{{- end }}{{- if eq $component "pushgateway" }}{{- $port = 9091 }}{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $root.Release.Name }}-{{ $component }}
+  labels: {{ include "convergence.labels" $root | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/instance: {{ $root.Release.Name }}, app.kubernetes.io/component: {{ $component }}}
+  ports: [{name: http, port: {{ $port }}, targetPort: {{ $port }}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $root.Release.Name }}-{{ $component }}
+  labels: {{ include "convergence.labels" $root | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ $root.Release.Name }}, app.kubernetes.io/component: {{ $component }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ $root.Release.Name }}, app.kubernetes.io/component: {{ $component }}}
+      {{- if eq $component "blackbox" }}
+      annotations:
+        checksum/config: {{ toJson $cfg.config | sha256sum }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with $root.Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {runAsUser: 10001, runAsGroup: 10001}
+      containers:
+        - name: {{ $component }}
+          image: {{ $cfg.image }}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          {{- if eq $component "blackbox" }}
+          args: [--config.file=/config/blackbox.yml]
+          {{- else if eq $component "unifi" }}
+          command: [python, /config/exporter.py]
+          envFrom: [{secretRef: {name: {{ include "convergence.secret" $root }}}}]
+          env:
+            - {name: UNIFI_HOST, value: {{ $cfg.controllerUrl | quote }}}
+          {{- end }}
+          ports: [{name: http, containerPort: {{ $port }}}]
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          readinessProbe: {httpGet: {path: /, port: http}}
+          volumeMounts: [{name: config, mountPath: /config, readOnly: true}]
+      volumes:
+        - {name: config, configMap: {name: '{{ $root.Release.Name }}-application-config'}}
+{{- end }}
+{{- end }}

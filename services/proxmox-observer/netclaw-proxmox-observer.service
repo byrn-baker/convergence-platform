@@ -1,0 +1,35 @@
+[Unit]
+Description=NetClaw passive Proxmox QEMU TAP metadata observer
+After=pve-cluster.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /opt/netclaw-proxmox-observer/collector.py --node %H
+Restart=always
+RestartSec=5
+UMask=0077
+StateDirectory=netclaw-proxmox-observer
+StateDirectoryMode=0700
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_NET_RAW
+AmbientCapabilities=CAP_NET_RAW
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_PACKET AF_INET AF_UNIX AF_NETLINK
+ReadWritePaths=/var/lib/netclaw-proxmox-observer
+CPUQuota=5%
+MemoryMax=96M
+TasksMax=8
+LimitNOFILE=32
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

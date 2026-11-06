@@ -1,0 +1,81 @@
+# Each release owns its stores, queues, rules and data-source UIDs.
+# No Grafana server, cluster discovery or external notifications are installed.
+metrics:
+  rbac: {create: false}
+  serviceAccount: {create: false, automountToken: false}
+  printNotes: false
+  server:
+    fullnameOverride: '{{ .helm.Release.Name }}-metrics'
+    retentionPeriod: 30d
+    persistentVolume: {enabled: true, storageClassName: longhorn, size: 20Gi}
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: '2', memory: 2Gi}
+logs:
+  printNotes: false
+  serviceAccount: {create: false, automountToken: false}
+  vector: {enabled: false}
+  server:
+    fullnameOverride: '{{ .helm.Release.Name }}-logs'
+    retentionPeriod: 14d
+    persistentVolume: {enabled: true, storageClassName: longhorn, size: 30Gi}
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: '2', memory: 2Gi}
+nodeSelector: {}
+imagePullSecrets: []
+storage: {className: longhorn, queueSize: 2Gi}
+agent:
+  image: victoriametrics/vmagent:v1.154.0
+  scrapeInterval: 30s
+  extraScrapeConfigs: []
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: '1', memory: 768Mi}
+alerting:
+  enabled: true
+  image: victoriametrics/vmalert:v1.154.0
+  alertmanagerImage: prom/alertmanager:v0.28.1
+  extraVolumes: []
+  extraVolumeMounts: []
+  # Empty receiver: parallel releases never notify the live agent plane.
+  alertmanagerConfig:
+    route: {receiver: quiet, group_by: [alertname, site], group_wait: 30s, group_interval: 5m, repeat_interval: 4h}
+    receivers: [{name: quiet}]
+  ruleFiles:
+    stack.yml:
+      groups:
+        - name: stack-health
+          rules:
+            - alert: ProjectScrapeTargetDown
+              expr: up == 0
+              for: 5m
+              labels: {severity: warning, investigate: 'false'}
+              annotations: {summary: 'A project scrape target is unavailable'}
+collector:
+  enabled: true
+  # Matches the current Convergence processors/legacy Loki exporter. Upgrade
+  # this compatibility pin with the collector configuration, not independently.
+  image: otel/opentelemetry-collector-contrib:0.104.0
+  config: {}
+  envFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraServicePorts: []
+  service: {type: ClusterIP, nodePort: null, grpcNodePort: null}
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: '1', memory: 512Mi}
+sharedGrafana:
+  enabled: false
+  # external emits the bundle only; shared provisioning has its own GitOps owner.
+  registrationMode: helm
+  namespace: observability
+  deployment: grafana
+  datasourceConfigMap: grafana-datasources
+  datasourceKey: datasources.yml
+  dashboardConfigMap: grafana-dashboards
+  # Registrar merges only this release's UIDs, retains defaults/other projects.
+  registrarImage: kiwigrid/k8s-sidecar:1.30.10
+  extraDatasources: []
+  dashboards: {}

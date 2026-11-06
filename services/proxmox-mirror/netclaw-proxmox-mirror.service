@@ -1,0 +1,29 @@
+[Unit]
+Description=Scoped Proxmox 6xxx native TC mirror to IDS VM113
+After=network-online.target pve-guests.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/etc/netclaw/proxmox-mirror.env
+ExecStart=/usr/bin/python3 /opt/netclaw/proxmox-mirror/controller.py --apply --target-mac ${TARGET_MAC} $MIRROR_SCOPE
+ExecStopPost=/usr/bin/python3 /opt/netclaw/proxmox-mirror/controller.py --apply --cleanup --target-mac ${TARGET_MAC}
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+StateDirectory=netclaw-proxmox-mirror
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+MemoryMax=128M
+TasksMax=16
+CPUQuota=25%
+
+[Install]
+WantedBy=multi-user.target

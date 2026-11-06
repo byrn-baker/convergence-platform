@@ -1,0 +1,20 @@
+# Local device inventory: fallback when Nautobot is unavailable, and alias map
+# for short Prometheus/Alertmanager labels. Copy to inventory.yaml and edit.
+#
+# Lookup order in the alert receiver:
+#   1. Nautobot (exact → case-insensitive exact → name contains → q=)
+#   2. This file (key, aliases, IP)
+
+devices:
+  edge-fw01:
+    ip: "192.0.2.1"
+    platform: pfsense
+    role: firewall
+    site: lab
+    aliases: [firewall, fw01]
+  access-sw01:
+    ip: "192.0.2.2"
+    platform: ios
+    role: switch
+    site: lab
+    aliases: [sw01]

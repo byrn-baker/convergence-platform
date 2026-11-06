@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "checked_at": "2026-10-25",
+  "scope": "Selected major US residential providers; not a market-share ranking. Choose the provider for the affected circuit. Business agreements require their own contact and terms.",
+  "providers": [
+    {"id":"xfinity","name":"Xfinity","channel":"Support portal / outage credit workflow","support_url":"https://www.xfinity.com/support/articles/check-service-outage","credit_url":"https://www.xfinity.com/support/articles/check-service-outage","guidance":"Use the account support outage and credit workflow; eligibility is evaluated by Xfinity."},
+    {"id":"spectrum","name":"Spectrum","channel":"Support chat / phone","support_url":"https://www.spectrum.com/contact-spectrum","credit_url":"https://www.spectrum.net/page/customer-commitment","guidance":"Contact support with the incident details and ask for assessment under the current Customer Commitment."},
+    {"id":"att","name":"AT&T Internet","channel":"Internet support chat / phone","support_url":"https://www.att.com/support/contact-us/","credit_url":"https://www.att.com/why-att/guarantee/","guidance":"Select Internet support. The AT&T Guarantee covers qualifying services and interruptions with exclusions; verify your plan and any proactive credit first."},
+    {"id":"verizon","name":"Verizon Fios / Home Internet","channel":"Service-specific support chat / phone","support_url":"https://www.verizon.com/support/contact-us","guidance":"Select the affected home service. Ask support to confirm the outage and applicable adjustment terms."},
+    {"id":"tmobile","name":"T-Mobile Home Internet","channel":"Home Internet technical support / messaging","support_url":"https://www.t-mobile.com/support/home-internet/contact-us","guidance":"Use Home Internet technical support, not the sales team. Request a ticket and review of any applicable service adjustment."},
+    {"id":"cox","name":"Cox / Spectrum transition","channel":"Cox account support chat / phone","support_url":"https://www.cox.com/residential/contactus.html","guidance":"The official Cox contact page now identifies the Spectrum transition. Use the support route for your existing account and verify its applicable terms."},
+    {"id":"frontier","name":"Frontier","channel":"Technical support / customer service chat","support_url":"https://frontier.com/contact-us","guidance":"Open a technical support case and ask customer service to review an adjustment for the recorded interruption."},
+    {"id":"optimum","name":"Optimum","channel":"Account support / chat / phone","support_url":"https://www.optimum.net/support/contact-us/","guidance":"Use the support channel for your account and region. Ask for an incident reference and billing review."},
+    {"id":"quantum","name":"Quantum Fiber","channel":"Customer Success chat / phone","support_url":"https://www.quantumfiber.com/support/contact.html","guidance":"Use the Customer Success team for connection and account questions. Request a review under your service terms."},
+    {"id":"centurylink","name":"CenturyLink","channel":"Account and technical support chat / phone","support_url":"https://www.centurylink.com/home/help/contact.html","guidance":"Choose account and technical support for your region. Ask for a trouble ticket and applicable credit review."},
+    {"id":"gfiber","name":"GFiber / Google Fiber","channel":"Official support email option / chat / phone","support_url":"https://gfiber.com/support/en/","guidance":"Use Email Us or the live support options on the official help page. Obtain the destination there; no public mailbox is assumed."},
+    {"id":"starlink","name":"Starlink","channel":"Signed-in support ticket","support_url":"https://starlink.com/support","guidance":"Use the account or app support ticket workflow. Follow up on an existing ticket for the same unresolved incident."}
+  ]
+}

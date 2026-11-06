@@ -1,0 +1,11 @@
+# Optional IDS metrics integration. Include the base, full and API overlays too.
+# Paths are relative to deploy/convergence/docker-compose.yml.
+services:
+  otel-collector:
+    command: ["--config=/etc/otel/config.yaml", "--config=/etc/otel/ids.yaml"]
+    environment:
+      IDS_STATUS_TOKEN: ${IDS_STATUS_TOKEN:?Set the read-only IDS status token}
+      IDS_METRICS_TARGET: ${IDS_METRICS_TARGET:?Set the ingest host:port matching its TLS certificate}
+    volumes:
+      - ./ids/otel-ids.yaml:/etc/otel/ids.yaml:ro
+      - ./secrets/ids/ca.crt:/run/secrets/ids-ca.crt:ro

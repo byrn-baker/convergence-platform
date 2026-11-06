@@ -1,0 +1,126 @@
+{{- if not (has (.Values.sharedGrafana.registrationMode | default "helm") (list "helm" "external")) }}
+{{- fail "sharedGrafana.registrationMode must be helm or external" }}
+{{- end }}
+{{- if .Values.sharedGrafana.enabled }}
+{{- $uid := include "victoria-stack.uid" . }}
+{{- $project := printf "%s/%s" .Release.Namespace .Release.Name }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-grafana-bundle
+  labels:
+    {{- include "victoria-stack.labels" . | nindent 4 }}
+    netclaw.io/grafana-bundle: {{ .Release.Name }}
+data:
+  datasources.json: |
+    [
+      {"name":{{ printf "%s / Metrics" $project | toJson }},"uid":"{{ $uid }}-metrics","type":"prometheus","access":"proxy","url":"http://{{ .Release.Name }}-metrics.{{ .Release.Namespace }}.svc.cluster.local:8428","isDefault":false,"editable":false,"jsonData":{"netclawAlias":"prometheus","httpMethod":"POST"}},
+      {"name":{{ printf "%s / Logs" $project | toJson }},"uid":"{{ $uid }}-logs","type":"victoriametrics-logs-datasource","access":"proxy","url":"http://{{ .Release.Name }}-logs.{{ .Release.Namespace }}.svc.cluster.local:9428","isDefault":false,"editable":false,"jsonData":{"netclawAlias":"victorialogs"}}
+      {{- range .Values.sharedGrafana.extraDatasources }},{{ (tpl (toYaml .) $ | fromYaml | toJson) }}{{- end }}
+    ]
+  overview.json: |
+    {"uid":"overview","title":"Victoria Stack","schemaVersion":39,"version":1,"time":{"from":"now-1h","to":"now"},"refresh":"30s","panels":[
+      {"id":1,"title":"Healthy scrape targets","type":"stat","gridPos":{"x":0,"y":0,"w":6,"h":5},"datasource":{"type":"prometheus","uid":"victoria-stack-metrics"},"targets":[{"refId":"A","expr":"sum(up)"}]},
+      {"id":2,"title":"Scrape health by job","type":"timeseries","gridPos":{"x":0,"y":5,"w":24,"h":8},"datasource":{"type":"prometheus","uid":"victoria-stack-metrics"},"targets":[{"refId":"A","expr":"up","legendFormat":"{{`{{job}} {{instance}}`}}"}]},
+      {"id":3,"title":"Incoming samples / second","type":"timeseries","gridPos":{"x":6,"y":0,"w":18,"h":5},"datasource":{"type":"prometheus","uid":"victoria-stack-metrics"},"targets":[{"refId":"A","expr":"sum(rate(vm_rows_inserted_total[5m]))"}]}]}
+  {{- range $filename,$dashboard := .Values.sharedGrafana.dashboards }}
+  {{- if or (not (hasSuffix ".json" $filename)) (has $filename (list "datasources.json" "overview.json")) }}{{ fail "Custom dashboard keys must be non-reserved .json filenames" }}{{ end }}
+  {{ $filename }}: |
+    {{- $dashboard | toJson | nindent 4 }}
+  {{- end }}
+{{- if eq (.Values.sharedGrafana.registrationMode | default "helm") "helm" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-grafana-registrar
+  labels: {{ include "victoria-stack.labels" . | nindent 4 }}
+data:
+  register.py: |
+    {{- .Files.Get "files/register-grafana.py" | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-grafana-registrar
+  labels: {{ include "victoria-stack.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-grafana-bundles
+  labels: {{ include "victoria-stack.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ['']
+    resources: [configmaps]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-grafana-bundles
+  labels: {{ include "victoria-stack.labels" . | nindent 4 }}
+subjects: [{kind: ServiceAccount, name: '{{ .Release.Name }}-grafana-registrar', namespace: {{ .Release.Namespace }}}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: '{{ .Release.Name }}-grafana-bundles'}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: victoria-{{ $uid }}-registrar
+  namespace: {{ .Values.sharedGrafana.namespace }}
+  labels: {{ include "victoria-stack.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ['']
+    resources: [configmaps]
+    resourceNames: [{{ .Values.sharedGrafana.datasourceConfigMap }}, {{ .Values.sharedGrafana.dashboardConfigMap }}]
+    verbs: [get, patch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [{{ .Values.sharedGrafana.deployment }}]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: victoria-{{ $uid }}-registrar
+  namespace: {{ .Values.sharedGrafana.namespace }}
+  labels: {{ include "victoria-stack.labels" . | nindent 4 }}
+subjects: [{kind: ServiceAccount, name: '{{ .Release.Name }}-grafana-registrar', namespace: {{ .Release.Namespace }}}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: 'victoria-{{ $uid }}-registrar'}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-grafana-register
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: '10'
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 180
+  template:
+    metadata:
+      labels: {{ include "victoria-stack.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ .Release.Name }}-grafana-registrar
+      containers:
+        - name: register
+          image: {{ .Values.sharedGrafana.registrarImage }}
+          command: [python, /scripts/register.py]
+          securityContext: {runAsUser: 10001, runAsGroup: 10001, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          env:
+            - {name: RELEASE_NAMESPACE, value: {{ .Release.Namespace | quote }}}
+            - {name: RELEASE_NAME, value: {{ .Release.Name | quote }}}
+            - {name: STACK_UID, value: {{ $uid | quote }}}
+            - {name: GRAFANA_NAMESPACE, value: {{ .Values.sharedGrafana.namespace | quote }}}
+            - {name: GRAFANA_DEPLOYMENT, value: {{ .Values.sharedGrafana.deployment | quote }}}
+            - {name: DATASOURCE_CONFIGMAP, value: {{ .Values.sharedGrafana.datasourceConfigMap | quote }}}
+            - {name: DATASOURCE_KEY, value: {{ .Values.sharedGrafana.datasourceKey | quote }}}
+            - {name: DASHBOARD_CONFIGMAP, value: {{ .Values.sharedGrafana.dashboardConfigMap | quote }}}
+          resources: {requests: {cpu: 20m, memory: 64Mi}, limits: {cpu: 200m, memory: 256Mi}}
+          volumeMounts: [{name: scripts, mountPath: /scripts, readOnly: true}]
+      volumes: [{name: scripts, configMap: {name: '{{ .Release.Name }}-grafana-registrar'}}]
+{{- end }}
+{{- end }}

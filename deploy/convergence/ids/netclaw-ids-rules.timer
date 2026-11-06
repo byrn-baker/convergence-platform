@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Suricata signature update
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 UTC
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target

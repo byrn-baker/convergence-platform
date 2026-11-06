@@ -1,0 +1,96 @@
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-api
+  labels: {{ include "convergence.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.api.service.type }}
+  selector: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: api}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      {{- if .Values.api.service.nodePort }}
+      nodePort: {{ .Values.api.service.nodePort }}
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-api
+  labels: {{ include "convergence.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: api}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: api}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/config.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with (.Values.api.nodeSelector | default .Values.nodeSelector) }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.postgres.image }}
+          command: [sh, -c, 'until pg_isready -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE"; do sleep 2; done']
+          securityContext: {runAsUser: 10001, runAsGroup: 10001, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          env:
+            - {name: PGHOST, value: '{{ .Release.Name }}-postgres'}
+            - {name: PGUSER, valueFrom: {secretKeyRef: {name: {{ include "convergence.secret" . }}, key: PGUSER}}}
+            - {name: PGDATABASE, valueFrom: {secretKeyRef: {name: {{ include "convergence.secret" . }}, key: PGDATABASE}}}
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 100m, memory: 64Mi}}
+      containers:
+        - name: api
+          image: {{ printf "%s:%s" .Values.api.image.repository (required "Set api.image.tag to an immutable build tag" .Values.api.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          envFrom:
+            - secretRef: {name: {{ include "convergence.secret" . }}}
+          env:
+            - {name: NODE_ENV, value: production}
+            - {name: PORT, value: '3000'}
+            - {name: PGHOST, value: '{{ .Release.Name }}-postgres'}
+            - {name: PROMETHEUS_URL, value: 'http://{{ .Release.Name }}-metrics:8428'}
+            - {name: VICTORIAMETRICS_URL, value: 'http://{{ .Release.Name }}-metrics:8428'}
+            - {name: LOKI_URL, value: 'http://{{ .Release.Name }}-loki:3100'}
+            - {name: FLOW_VICTORIALOGS_URL, value: 'http://{{ .Release.Name }}-logs:9428'}
+            - {name: ALERTMANAGER_URL, value: 'http://{{ .Release.Name }}-alertmanager:9093'}
+            - {name: ALERT_RECEIVER_URL, value: {{ .Values.api.alertReceiverUrl | quote }}}
+            {{- if .Values.api.idsEnabled }}
+            - {name: NODE_EXTRA_CA_CERTS, value: /run/secrets/ids/ca.crt}
+            {{- end }}
+            - {name: API_RATE_LIMIT_PER_MINUTE, value: {{ .Values.api.rateLimitPerMinute | quote }}}
+            - name: SITES_CONFIG
+              valueFrom:
+                configMapKeyRef: {name: '{{ .Release.Name }}-application-config', key: SITES_CONFIG}
+            {{- range $key,$value := .Values.api.env }}
+            - {name: {{ $key }}, value: {{ $value | quote }}}
+            {{- end }}
+          ports: [{name: http, containerPort: 3000}]
+          resources: {{ toYaml .Values.api.resources | nindent 12 }}
+          startupProbe: {httpGet: {path: /healthz, port: http}, failureThreshold: 30, periodSeconds: 5}
+          readinessProbe:
+            exec:
+              command: [node, -e, 'const c=new (require("pg").Client)({connectionTimeoutMillis:2000});c.connect().then(()=>c.query("SELECT 1 FROM events LIMIT 0")).then(()=>c.end()).catch(()=>process.exit(1))']
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}
+          {{- if .Values.api.idsEnabled }}
+          volumeMounts: [{name: ids-ca, mountPath: /run/secrets/ids, readOnly: true}]
+          {{- end }}
+      {{- if .Values.api.idsEnabled }}
+      volumes:
+        - name: ids-ca
+          secret:
+            secretName: {{ include "convergence.secret" . }}
+            items: [{key: ids-ca.crt, path: ca.crt}]
+      {{- end }}
+{{- end }}

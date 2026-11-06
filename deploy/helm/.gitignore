@@ -1,0 +1,7 @@
+**/charts/
+*.tgz
+private/
+artifacts/
+# Pin upstream dependencies in Git so Argo can build the local umbrella chart.
+!victoria-stack/charts/
+!victoria-stack/charts/*.tgz

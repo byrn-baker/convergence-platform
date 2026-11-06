@@ -1,0 +1,17 @@
+[Unit]
+Description=Update the local IPinfo Lite database for IDS context
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/home/ubuntu/netclaw
+EnvironmentFile=/home/ubuntu/netclaw/deploy/convergence/secrets/ids/ipinfo.env
+ExecStart=/home/ubuntu/netclaw/.venv/bin/python deploy/convergence/ids/update-ip-context.py --output /var/lib/netclaw-ids-ingest/geoip/ipinfo_lite.mmdb
+TimeoutStartSec=300
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/netclaw-ids-ingest/geoip
+PrivateTmp=true

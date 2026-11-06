@@ -1,0 +1,36 @@
+rule_files:
+  - ../prometheus/alerts/ids.rules.yml
+evaluation_interval: 30s
+tests:
+  - name: Backfill must not hide Loki failures
+    interval: 30s
+    input_series:
+      - series: 'netclaw_ids_delivery_oldest_age_seconds{destination="loki",sensor="test",site="home"}'
+        values: '600+0x20'
+      - series: 'netclaw_ids_delivery_oldest_age_seconds{destination="victorialogs",sensor="test",site="home"}'
+        values: '600+0x20'
+      - series: 'netclaw_ids_archive_backfill_active'
+        values: '1+0x20'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: IDSDeliveryBacklog
+        exp_alerts:
+          - exp_labels: {destination: loki, sensor: test, site: home, severity: warning, investigate: "false"}
+            exp_annotations:
+              summary: "IDS delivery is behind (loki, test)"
+  - name: Backfill must not hide a stopped archive destination
+    interval: 30s
+    input_series:
+      - series: 'netclaw_ids_delivery_pending_events{destination="victorialogs",sensor="test",site="home"}'
+        values: '10+0x20'
+      - series: 'netclaw_ids_delivery_last_success_timestamp_seconds{destination="victorialogs"}'
+        values: '0+0x20'
+      - series: 'netclaw_ids_archive_backfill_active'
+        values: '1+0x20'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: IDSDeliveryStalled
+        exp_alerts:
+          - exp_labels: {destination: victorialogs, severity: warning, investigate: "false"}
+            exp_annotations:
+              summary: "IDS destination has stopped acknowledging data (victorialogs)"

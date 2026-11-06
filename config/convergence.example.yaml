@@ -1,0 +1,144 @@
+# NetClaw Convergence — example adapter / deploy config (080 Phase 5)
+# Copy to ~/.openclaw/convergence.yaml or config/convergence.yaml and edit.
+# Secrets stay in ~/.openclaw/.env (and deploy/convergence/.env for Docker) — never commit them.
+
+site: home
+deploy: docker   # docker | k3s | none
+
+firewall:
+  type: pfsense   # none | pfsense | generic-snmp
+  # env (optional MCP): PFSENSE_*
+  mgmt_url: https://192.168.13.1:440   # → PFSENSE_MGMT_URL / EDGE_MGMT_URL
+
+wireless:
+  type: unifi     # none | unifi | generic-snmp
+  unifi:
+    host: https://192.168.100.10:11443
+    site: default
+    # env: UNIFI_API_KEY (required when type=unifi)
+    mgmt_url: https://192.168.100.10:11443   # → UNIFI_MGMT_URL
+  # Second wireless vendor path (T071) — SNMP-only APs/controllers
+  # (Omada, Aruba Instant On, MikroTik, ...). See:
+  #   deploy/convergence/adapters/generic-snmp-wireless/README.md
+  # generic_snmp:
+  #   target: 192.168.1.20
+  #   community: public   # → SNMP_WIRELESS_COMMUNITY (compose profile: generic-snmp-wireless)
+
+sot:
+  type: none      # none | nautobot | netbox
+  # env: NAUTOBOT_URL / NAUTOBOT_TOKEN  or  NETBOX_URL / NETBOX_TOKEN
+
+metrics:
+  # After Docker: http://127.0.0.1:9090
+  # After K3s (port-forward / NodePort): http://127.0.0.1:9090 or :30080 API
+  prometheus_url: http://127.0.0.1:9090
+  # optional (compose --profile full):
+  # loki_url: http://127.0.0.1:3100
+  # victoriametrics_url: http://127.0.0.1:8428
+
+# Phase 8 plumbing + Phase 10 setup — campus switches (NOT wireless generic-snmp)
+# Apply: ./scripts/convergence-telemetry-apply.sh
+# Community: SNMP_COMMUNITY in deploy/convergence/.env (never commit secrets)
+# Templates: cisco | pfsense | generic  (modules under adapters/device-snmp/modules/)
+device_telemetry:
+  snmp:
+    enabled: true
+    engine: snmp_exporter
+    version: v2c
+    poll_interval: 60s
+    targets:
+      - name: HomeSwitch01
+        ip: 192.168.3.2
+        role: switch
+        vendor: cisco
+        template: cisco
+      - name: HomeSwitch02
+        ip: 192.168.3.3
+        role: switch
+        vendor: cisco
+        template: cisco
+      - name: HomeSwitch04
+        ip: 192.168.3.5
+        role: switch
+        vendor: cisco
+        template: cisco
+      # Optional firewall SNMP (IF-MIB); edge HTTPS stays blackbox_edge
+      # - name: pfSense-FW01
+      #   ip: 192.168.3.1
+      #   role: firewall
+      #   vendor: pfsense
+      #   template: pfsense
+  syslog:
+    enabled: false
+    listen: "0.0.0.0:1514"
+    # Devices that send SYSLOG but are not SNMP targets — a firewall without SNMP
+    # enabled, a switch you have no SNMP access to, the NetClaw host itself.
+    #
+    # The collector maps sender IP → device_name from the UNION of snmp.targets and
+    # this list. Sender IP is used rather than the hostname inside the message
+    # because it is present on every datagram and cannot be shaped by message
+    # content (Cisco omits the hostname unless `logging origin-id hostname` is set).
+    #
+    # An unlisted sender is not dropped: device_name falls back to the message
+    # hostname, then the raw IP. But the label will not match your SNMP inventory,
+    # which makes correlating logs with interface metrics harder.
+    devices:
+      - name: pfsense
+        ip: 192.168.3.1
+      # - name: HomeSwitch03       # no SNMP access on this one, logs only
+      #   ip: 192.168.3.4
+      # - name: netclaw            # the agent host's own rsyslog
+      #   ip: 192.168.3.252
+
+  # Phase 12 — SuzieQ state-history plane (optional, scale tier)
+  # Provides historical state queries (BGP, route, MAC, ARP, LLDP, interface)
+  # so investigations can ask "what was the state before the alert" without
+  # SSHing to devices at investigation time.
+  # Requires: running SuzieQ poller + REST API (see deploy/convergence/adapters/suzieq/)
+  # Credentials: SUZIEQ_DEVICE_USER / SUZIEQ_DEVICE_PASSWORD in deploy/convergence/.env
+  state:
+    suzieq:
+      enabled: false            # Scale tier — off by default
+      namespace: home           # SuzieQ namespace; multi-site → one per site
+      poll_period: 5m           # How often the poller collects (default 5m)
+      retention_days: 90        # Parquet lake retention
+      exclude_roles: [firewall] # Roles to skip (pfSense/FreeBSD unsupported)
+      # Note: inventory is rendered from device_telemetry.snmp.targets above —
+      # no second device list to maintain. Run:
+      #   python3 scripts/render-convergence-telemetry.py \
+      #     --config config/convergence.yaml \
+      #     --out-suzieq deploy/convergence/adapters/suzieq/inventory.yaml
+
+# Phase 8 — NetClaw host metrics/logs (optional)
+agent_observability:
+  token_exporter:
+    enabled: false   # systemctl --user enable --now openclaw-token-exporter
+    port: 9110
+  log_forward:
+    enabled: false   # rsyslog → Convergence Loki when full profile is up
+
+grafana:
+  provision_network_dashboards: true
+  provision_agent_dashboards: true
+
+home_api:
+  # Prefer CONVERGENCE_API_URL — Docker :3080; K3s NodePort :30080
+  url: http://127.0.0.1:3080
+  # env: CONVERGENCE_API_TOKEN (or HOME_API_TOKEN)
+
+agent:
+  alert_receiver_url: http://127.0.0.1:8099/webhook
+  # investigator_member: auto resolves guardian-claw (or network-guardian profile)
+  investigator_member: auto
+  discord_enabled: true
+
+thresholds:
+  latency:
+    green: 40
+    yellow: 80
+  loss:
+    green: 0
+    yellow: 5
+  txRetries:
+    green: 20
+    yellow: 35

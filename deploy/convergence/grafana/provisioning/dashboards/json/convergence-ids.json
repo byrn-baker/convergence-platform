@@ -1,0 +1,629 @@
+{
+  "uid": "convergence-ids",
+  "title": "IDS Capture and Alerts",
+  "tags": [
+    "convergence",
+    "ids",
+    "suricata"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "timezone": "browser",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "editable": false,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Mirrored packet rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics-longterm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(netclaw_ids_capture_packets_total{site=~\"${site:regex}\"}[$__rate_interval])",
+          "legendFormat": "{{sensor}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics-longterm"
+          },
+          "range": true
+        }
+      ],
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "pps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Capture loss fraction",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics-longterm"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(netclaw_ids_capture_drops_total{site=~\"${site:regex}\"}[$__rate_interval]) / clamp_min(rate(netclaw_ids_capture_packets_total{site=~\"${site:regex}\"}[$__rate_interval]), 1)",
+          "legendFormat": "{{sensor}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics-longterm"
+          },
+          "range": true
+        }
+      ],
+      "description": "Missed mirrored copies at the sensor, not production traffic blocked by an IPS.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Decoder event rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics-longterm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(netclaw_ids_decoder_events_total{site=~\"${site:regex}\"}[$__rate_interval])",
+          "legendFormat": "{{sensor}} / {{reason}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics-longterm"
+          },
+          "range": true
+        }
+      ],
+      "description": "Decoder categories can overlap. These are header-parser events, not TLS decryption failures.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "IDS alerts by original priority",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics-longterm"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(netclaw_ids_alerts_ingested_total{site=~\"${site:regex}\"}[$__rate_interval])",
+          "legendFormat": "{{sensor}} / priority {{priority}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics-longterm"
+          },
+          "range": true
+        }
+      ],
+      "description": "Priority 1 is highest. Counts start when telemetry was installed; archive backfill is excluded.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Mirror source visibility",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics-longterm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "netclaw_ids_source_active{site=~\"${site:regex}\"}",
+          "legendFormat": "{{sensor}} / {{source}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics-longterm"
+          },
+          "range": true
+        }
+      ],
+      "description": "1 = recent heartbeat, capture probe and matching source header; 0 = visibility unverified.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Durable delivery queues",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics-longterm"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "netclaw_ids_delivery_pending_events{site=~\"${site:regex}\"}",
+          "legendFormat": "{{sensor}} / {{destination}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics-longterm"
+          },
+          "range": true
+        }
+      ],
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "EVE observations by type",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics-longterm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(netclaw_ids_events_ingested_total{site=~\"${site:regex}\"}[$__rate_interval])",
+          "legendFormat": "{{sensor}} / {{event_type}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics-longterm"
+          },
+          "range": true
+        }
+      ],
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Time since capture statistics",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics-longterm"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - netclaw_ids_stats_timestamp_seconds{site=~\"${site:regex}\"}",
+          "legendFormat": "{{sensor}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics-longterm"
+          },
+          "range": true
+        }
+      ],
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Time since VLAN observation",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics-longterm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "time() - (netclaw_ids_vlan_last_seen_timestamp_seconds{site=~\"${site:regex}\"} > 0)",
+          "legendFormat": "{{sensor}} / VLAN {{vlan}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics-longterm"
+          },
+          "range": true
+        }
+      ],
+      "description": "A quiet VLAN does not prove capture failure. Never-observed VLANs have no series here.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Sensor spool free space",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics-longterm"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "netclaw_ids_sensor_disk_free_bytes{site=~\"${site:regex}\"}",
+          "legendFormat": "{{sensor}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics-longterm"
+          },
+          "range": true
+        }
+      ],
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Detection rules loaded",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics-longterm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "netclaw_ids_rules_loaded{site=~\"${site:regex}\"}",
+          "legendFormat": "{{sensor}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics-longterm"
+          },
+          "range": true
+        }
+      ],
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "title": "Oldest queued event age",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics-longterm"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "netclaw_ids_delivery_oldest_age_seconds{site=~\"${site:regex}\"}",
+          "legendFormat": "{{sensor}} / {{destination}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics-longterm"
+          },
+          "range": true
+        }
+      ],
+      "description": "During initial backfill, VictoriaLogs age reflects historical event receipt time.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "label": "Site",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics-longterm"
+        },
+        "query": "label_values(netclaw_ids_sensor_last_seen_timestamp_seconds, site)",
+        "refresh": 1,
+        "current": {
+          "text": "home",
+          "value": "home"
+        },
+        "includeAll": false,
+        "multi": false
+      }
+    ]
+  }
+}

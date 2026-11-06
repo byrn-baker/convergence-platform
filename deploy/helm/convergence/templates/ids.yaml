@@ -1,0 +1,92 @@
+{{- if .Values.ids.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-ids
+  labels: {{ include "convergence.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.ids.service.type }}
+  selector: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: ids}
+  ports:
+    - name: https
+      port: 8445
+      targetPort: 8445
+      {{- if .Values.ids.service.nodePort }}
+      nodePort: {{ .Values.ids.service.nodePort }}
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-ids
+  labels: {{ include "convergence.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.ids.replicas }}
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: ids}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: ids}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      securityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, fsGroupChangePolicy: OnRootMismatch}
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: ids
+          image: {{ printf "%s:%s" .Values.ids.image.repository (required "Set ids.image.tag" .Values.ids.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.ids.image.pullPolicy }}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          env:
+            - {name: IDS_CONFIG_FILE, value: /run/secrets/ids/config.json}
+          ports: [{name: https, containerPort: 8445}]
+          resources: {{ toYaml .Values.ids.resources | nindent 12 }}
+          startupProbe: {httpGet: {scheme: HTTPS, path: /healthz, port: https}, failureThreshold: 60, periodSeconds: 10, timeoutSeconds: 5}
+          readinessProbe: {httpGet: {scheme: HTTPS, path: /healthz, port: https}, periodSeconds: 10, timeoutSeconds: 5}
+          livenessProbe: {httpGet: {scheme: HTTPS, path: /healthz, port: https}, periodSeconds: 30, failureThreshold: 5, timeoutSeconds: 10}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: secrets, mountPath: /run/secrets/ids, readOnly: true}
+      volumes:
+        - {name: data, persistentVolumeClaim: {claimName: {{ required "Set ids.existingClaim" .Values.ids.existingClaim }}}}
+        - {name: secrets, secret: {secretName: {{ required "Set ids.existingSecret" .Values.ids.existingSecret }}, defaultMode: 0440}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-ip-context
+  labels: {{ include "convergence.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.ids.ipContextSchedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets: {{ toYaml . | nindent 12 }}
+          {{- end }}
+          nodeSelector: {{ toYaml .Values.nodeSelector | nindent 12 }}
+          securityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, fsGroupChangePolicy: OnRootMismatch}
+          containers:
+            - name: update
+              image: {{ printf "%s:%s" .Values.ids.image.repository .Values.ids.image.tag | quote }}
+              command: [python, /app/update-ip-context.py, --output, /data/geoip/ipinfo_lite.mmdb]
+              securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+              env:
+                - {name: IPINFO_TOKEN, valueFrom: {secretKeyRef: {name: {{ .Values.ids.existingSecret }}, key: IPINFO_TOKEN}}}
+              resources: {requests: {cpu: 20m, memory: 64Mi}, limits: {cpu: 500m, memory: 256Mi}}
+              volumeMounts: [{name: data, mountPath: /data}]
+          volumes:
+            - {name: data, persistentVolumeClaim: {claimName: {{ .Values.ids.existingClaim }}}}
+{{- end }}

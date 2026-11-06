@@ -1,0 +1,21 @@
+[Unit]
+Description=NetClaw ERSPAN source liveness (headers only)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/netclaw-ids/capture-sources.json
+
+[Service]
+Type=simple
+EnvironmentFile=/opt/netclaw-ids/sensor.env
+ExecStart=/usr/bin/python3 /opt/netclaw-ids/capture-probe.py
+Restart=always
+RestartSec=5
+UMask=0077
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/netclaw-ids
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

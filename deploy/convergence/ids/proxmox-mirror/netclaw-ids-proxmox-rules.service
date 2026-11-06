@@ -1,0 +1,9 @@
+[Unit]
+Description=Validate and reload shared rules in additional Proxmox IDS instance
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/netclaw-ids-proxmox/refresh-rules.sh
+TimeoutStartSec=300

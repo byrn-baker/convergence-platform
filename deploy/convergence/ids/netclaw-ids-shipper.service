@@ -1,0 +1,20 @@
+[Unit]
+Description=NetClaw durable Suricata EVE shipper
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/opt/netclaw-ids/sensor.env
+ExecStart=/usr/bin/python3 /opt/netclaw-ids/shipper.py
+Restart=always
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/netclaw-ids
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

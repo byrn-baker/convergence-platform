@@ -1,0 +1,22 @@
+# Optional second OTel config, merged with otel/otel-config.yaml.
+# Fixed dimensions only: no IPs, DNS names, flow IDs or signatures in metric labels.
+receivers:
+  prometheus/ids:
+    config:
+      scrape_configs:
+        - job_name: netclaw-ids
+          scrape_interval: 30s
+          scrape_timeout: 10s
+          scheme: https
+          metrics_path: /metrics
+          bearer_token: ${env:IDS_STATUS_TOKEN}
+          tls_config:
+            ca_file: /run/secrets/ids-ca.crt
+          static_configs:
+            - targets: ["${env:IDS_METRICS_TARGET}"]
+service:
+  pipelines:
+    metrics/ids:
+      receivers: [prometheus/ids]
+      processors: [memory_limiter, batch]
+      exporters: [prometheusremotewrite/prometheus, prometheusremotewrite/victoriametrics]

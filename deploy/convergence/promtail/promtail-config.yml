@@ -1,0 +1,99 @@
+# Convergence HOST log ship → Loki
+# Profiles: full | device-syslog
+#
+# SCOPE (T150 decision): promtail owns HOST sources only — OpenClaw file logs and
+# the systemd journal. Device syslog belongs to the OTel Collector.
+#
+# Why promtail keeps the journal rather than OTel: the `journald` receiver shells
+# out to `journalctl`, and the collector image is distroless (no shell, no
+# coreutils), so it would require a custom collector image maintained across every
+# version bump for no functional gain. Rationale and revisit triggers:
+# specs/080-convergence/otel-convergence.md.
+#
+# 1) (removed — see note below)
+# 2) OpenClaw gateway files (/var/log/openclaw from host /tmp/openclaw)
+# 3) Optional flat agent logs (/var/log/netclaw)
+# 4) Host journal (user + system) for mesh / members / gateway units
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Device / network syslog — REMOVED (Phase 11 / T148).
+  #
+  # Device syslog is now received by the OTel Collector (:1514 udp+tcp), parsed
+  # into structured fields, and dual-exported to Loki + VictoriaLogs. See
+  # deploy/convergence/otel/otel-config.yaml and
+  # specs/080-convergence/otel-convergence.md.
+  #
+  # Promtail keeps only the host-side sources below (OpenClaw files, systemd
+  # journal), which it handles well and which T150 will evaluate for migration.
+
+  # OpenClaw gateway file logs (host /tmp/openclaw → container /var/log/openclaw)
+  - job_name: openclaw-gateway
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: openclaw-gateway
+          service: openclaw
+          site: home
+          __path__: /var/log/openclaw/*.log
+
+  # Optional agent flat logs
+  - job_name: netclaw-agent
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: netclaw-agent
+          site: home
+          __path__: /var/log/netclaw/*.log
+
+  # systemd journal — mesh, members, gateway. These are systemd USER units
+  # (running under user@<uid>.service), not user accounts.
+  - job_name: netclaw-journal
+    journal:
+      path: /var/log/journal
+      # 7d, not 24h: mesh/member units are event-driven and can sit quiet for a
+      # day, which made the NetClaw board's N2N panel look broken (and invited a
+      # message-regex workaround) when the units were simply idle. The unit keep
+      # list below bounds the volume, and the positions file stops re-shipping.
+      max_age: 168h
+      labels:
+        job: netclaw-journal
+        site: home
+    relabel_configs:
+      # Prefer user unit (mesh/members/gateway); fall back to system unit
+      - source_labels: ["__journal__systemd_unit"]
+        target_label: unit
+      - source_labels: ["__journal__systemd_user_unit"]
+        regex: "(.+)"
+        target_label: unit
+      # Keep only NetClaw / OpenClaw related units
+      - source_labels: ["unit"]
+        regex: "(netclaw-mesh\\.service|netclaw-member-.*\\.service|openclaw-gateway\\.service|netclaw-hud\\.service|openclaw-token-exporter\\.service)"
+        action: keep
+      - source_labels: ["unit"]
+        regex: "netclaw-mesh\\.service"
+        target_label: job
+        replacement: netclaw-mesh
+      - source_labels: ["unit"]
+        regex: "netclaw-member-.*\\.service"
+        target_label: job
+        replacement: netclaw-member
+      - source_labels: ["unit"]
+        regex: "openclaw-gateway\\.service"
+        target_label: job
+        replacement: openclaw-gateway
+      - source_labels: ["unit"]
+        regex: "netclaw-hud\\.service"
+        target_label: job
+        replacement: netclaw-hud
+      - source_labels: ["__journal_priority_keyword"]
+        target_label: level

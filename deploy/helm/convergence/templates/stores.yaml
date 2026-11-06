@@ -1,0 +1,93 @@
+{{- $root := . -}}
+{{- range $component := list "postgres" "loki" }}
+{{- $cfg := index $root.Values $component }}
+{{- if or (eq $component "postgres") $cfg.enabled }}
+{{- $port := ternary 5432 3100 (eq $component "postgres") }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $root.Release.Name }}-{{ $component }}
+  labels: {{ include "convergence.labels" $root | nindent 4 }}
+spec:
+  {{- if eq $component "loki" }}
+  type: {{ $cfg.service.type }}
+  {{- end }}
+  selector: {app.kubernetes.io/instance: {{ $root.Release.Name }}, app.kubernetes.io/component: {{ $component }}}
+  ports:
+    - name: http
+      port: {{ $port }}
+      targetPort: {{ $port }}
+      {{- if and (eq $component "loki") $cfg.service.nodePort }}
+      nodePort: {{ $cfg.service.nodePort }}
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $root.Release.Name }}-{{ $component }}
+  labels: {{ include "convergence.labels" $root | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: {{ $root.Release.Name }}-{{ $component }}
+  persistentVolumeClaimRetentionPolicy: {whenDeleted: Retain, whenScaled: Retain}
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ $root.Release.Name }}, app.kubernetes.io/component: {{ $component }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ $root.Release.Name }}, app.kubernetes.io/component: {{ $component }}}
+      annotations:
+        checksum/config: {{ include (print $root.Template.BasePath "/config.yaml") $root | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with $root.Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsUser: {{ ternary 70 10001 (eq $component "postgres") }}
+        runAsGroup: {{ ternary 70 10001 (eq $component "postgres") }}
+        fsGroup: {{ ternary 70 10001 (eq $component "postgres") }}
+      containers:
+        - name: {{ $component }}
+          image: {{ $cfg.image | quote }}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          {{- if eq $component "postgres" }}
+          env:
+            - {name: POSTGRES_USER, valueFrom: {secretKeyRef: {name: {{ include "convergence.secret" $root }}, key: PGUSER}}}
+            - {name: POSTGRES_DB, valueFrom: {secretKeyRef: {name: {{ include "convergence.secret" $root }}, key: PGDATABASE}}}
+            - {name: POSTGRES_PASSWORD, valueFrom: {secretKeyRef: {name: {{ include "convergence.secret" $root }}, key: PGPASSWORD}}}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          readinessProbe:
+            exec: {command: [sh, -c, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']}
+          {{- else }}
+          args: [-config.file=/config/loki.yml]
+          readinessProbe: {httpGet: {path: /ready, port: http}, initialDelaySeconds: 10}
+          {{- end }}
+          ports: [{name: http, containerPort: {{ $port }}}]
+          resources: {{ toYaml $cfg.resources | nindent 12 }}
+          volumeMounts:
+            - {name: data, mountPath: {{ ternary "/var/lib/postgresql/data" "/data" (eq $component "postgres") }}}
+            {{- if eq $component "loki" }}
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: rules, mountPath: /rules/fake, readOnly: true}
+            {{- end }}
+      {{- if eq $component "loki" }}
+      volumes:
+        - {name: config, configMap: {name: '{{ $root.Release.Name }}-application-config'}}
+        - {name: rules, configMap: {name: '{{ $root.Release.Name }}-loki-rules'}}
+        {{- if $cfg.storage.existingClaim }}
+        - {name: data, persistentVolumeClaim: {claimName: {{ $cfg.storage.existingClaim }}}}
+        {{- end }}
+      {{- end }}
+  {{- if not $cfg.storage.existingClaim }}
+  volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata: {name: data}
+      spec:
+        storageClassName: {{ $cfg.storage.className | quote }}
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: {{ $cfg.storage.size }}}}
+  {{- end }}
+{{- end }}
+{{- end }}

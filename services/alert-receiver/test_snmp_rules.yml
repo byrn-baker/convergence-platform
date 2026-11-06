@@ -1,0 +1,24 @@
+evaluation_interval: 30s
+rule_files:
+- ../../deploy/convergence/prometheus/alerts/device.rules.yml
+tests:
+- alert_rule_test:
+  - alertname: DeviceSnmpStale
+    eval_time: 15m
+    exp_alerts:
+    - exp_annotations:
+        description: No fresh SNMP metrics for device_name=review-switch in over 5
+          minutes. Check the collector (`docker logs netclaw-convergence-otel-collector-1`),
+          SNMP_COMMUNITY, and device reachability. Collector-wide failure shows as
+          up{job="otel-collector"}==0.
+        summary: Device SNMP data is stale (review-switch)
+      exp_labels:
+        device_name: review-switch
+        investigate: 'true'
+        severity: warning
+        site: home
+  input_series:
+  - series: interface_status{job="device_snmp",device_name="review-switch",site="home",interface_name="Gi1",instance="192.0.2.1",role="switch"}
+    values: 1 1 1 1 1 _x40
+  interval: 30s
+  name: SNMP missing 13 minutes should alert

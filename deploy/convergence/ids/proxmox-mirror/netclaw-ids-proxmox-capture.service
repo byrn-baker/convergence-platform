@@ -1,0 +1,20 @@
+[Unit]
+Description=NetClaw isolated Proxmox raw Ethernet mirror capture
+Wants=network-online.target
+Requires=docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/opt/netclaw-ids-proxmox/sensor.env
+ExecStartPre=/usr/bin/python3 /opt/netclaw-ids-proxmox/capture-interface.py
+ExecStartPre=-/usr/sbin/ethtool -K ${IDS_INTERFACE} gro off lro off tso off gso off
+ExecStart=/usr/bin/docker start --attach netclaw-suricata-proxmox
+ExecStop=/usr/bin/docker stop --time 20 netclaw-suricata-proxmox
+Restart=on-failure
+RestartPreventExitStatus=137
+RestartSec=10
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

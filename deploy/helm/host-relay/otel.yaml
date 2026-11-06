@@ -1,0 +1,153 @@
+receivers:
+  syslog/devices:
+    protocol: rfc3164
+    location: UTC
+    udp:
+      listen_address: 0.0.0.0:1514
+      add_attributes: true
+    operators:
+    - type: router
+      id: vendor_router
+      routes:
+      - output: cisco_ios_parser
+        expr: 'body != nil and body matches "^<[0-9]+>[0-9]*: ?\\*?[A-Z][a-z]{2} "'
+      - output: filterlog_v4
+        expr: attributes["appname"] == "filterlog" and attributes["message"] != nil
+          and attributes["message"] matches "^([^,]*,){8}4,"
+      - output: filterlog_v6
+        expr: attributes["appname"] == "filterlog" and attributes["message"] != nil
+          and attributes["message"] matches "^([^,]*,){8}6,"
+      - output: filterlog_common
+        expr: attributes["appname"] == "filterlog"
+      default: noop
+    - id: cisco_ios_parser
+      type: regex_parser
+      parse_from: body
+      on_error: send
+      regex: '^<(?P<priority>\d+)>(?P<sequence>\d+): \*?(?P<device_time>[A-Z][a-z]{2}
+        +\d+ [\d:.]+): %(?P<mnemonic>[A-Z0-9_]+-(?P<sev_level>\d)-[A-Z0-9_]+): (?P<message>.*)$'
+      output: noop
+    - id: filterlog_v4
+      type: regex_parser
+      parse_from: attributes.message
+      on_error: send
+      regex: ^(?P<rule_nr>[^,]*),(?P<sub_rule_nr>[^,]*),(?P<anchor>[^,]*),(?P<tracker>[^,]*),(?P<fw_interface>[^,]*),(?P<reason>[^,]*),(?P<action>[^,]*),(?P<direction>[^,]*),(?P<ip_version>4),[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,(?P<proto_id>[^,]*),(?P<protocol>[^,]*),[^,]*,(?P<src_ip>[^,]*),(?P<dst_ip>[^,]*)(?:,(?P<src_port>[0-9]*),(?P<dst_port>[0-9]*))?
+      output: noop
+    - id: filterlog_v6
+      type: regex_parser
+      parse_from: attributes.message
+      on_error: send
+      regex: ^(?P<rule_nr>[^,]*),(?P<sub_rule_nr>[^,]*),(?P<anchor>[^,]*),(?P<tracker>[^,]*),(?P<fw_interface>[^,]*),(?P<reason>[^,]*),(?P<action>[^,]*),(?P<direction>[^,]*),(?P<ip_version>6),[^,]*,[^,]*,[^,]*,(?P<protocol>[^,]*),(?P<proto_id>[^,]*),[^,]*,(?P<src_ip>[^,]*),(?P<dst_ip>[^,]*)(?:,(?P<src_port>[0-9]*),(?P<dst_port>[0-9]*))?
+      output: noop
+    - id: filterlog_common
+      type: regex_parser
+      parse_from: attributes.message
+      on_error: send
+      regex: ^(?P<rule_nr>[^,]*),(?P<sub_rule_nr>[^,]*),(?P<anchor>[^,]*),(?P<tracker>[^,]*),(?P<fw_interface>[^,]*),(?P<reason>[^,]*),(?P<action>[^,]*),(?P<direction>[^,]*)
+      output: noop
+    - id: noop
+      type: noop
+  syslog/devices_tcp:
+    protocol: rfc3164
+    location: UTC
+    tcp:
+      listen_address: 0.0.0.0:1514
+      add_attributes: true
+processors:
+  transform/device_identity:
+    error_mode: ignore
+    log_statements:
+    - context: log
+      statements:
+      - set(attributes["device_name"], "HomeSwitch01") where attributes["net.peer.ip"]
+        == "192.168.3.2"
+      - set(attributes["device_name"], "HomeSwitch02") where attributes["net.peer.ip"]
+        == "192.168.3.3"
+      - set(attributes["device_name"], "HomeSwitch04") where attributes["net.peer.ip"]
+        == "192.168.3.5"
+      - set(attributes["device_name"], "pfsense")      where attributes["net.peer.ip"]
+        == "192.168.3.1"
+      - set(attributes["device_name"], attributes["hostname"]) where attributes["device_name"]
+        == nil and attributes["hostname"] != nil
+      - set(attributes["device_name"], attributes["net.peer.ip"]) where attributes["device_name"]
+        == nil and attributes["net.peer.ip"] != nil
+      - set(attributes["device_ip"], attributes["net.peer.ip"]) where attributes["net.peer.ip"]
+        != nil
+  transform/receive_time:
+    error_mode: ignore
+    log_statements:
+    - context: log
+      statements:
+      - set(time, observed_time)
+  transform/clean_body:
+    error_mode: ignore
+    log_statements:
+    - context: log
+      statements:
+      - set(body, attributes["message"]) where attributes["message"] != nil
+      - set(attributes["protocol"], ConvertCase(attributes["protocol"], "lower"))
+        where attributes["protocol"] != nil
+  groupbyattrs/device:
+    keys:
+    - device_name
+    - device_ip
+  resource/devices:
+    attributes:
+    - key: site
+      value: home
+      action: upsert
+    - key: service.name
+      value: device-syslog
+      action: upsert
+    - key: loki.resource.labels
+      value: device_name,site,service.name
+      action: insert
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+    send_batch_max_size: 512
+  memory_limiter:
+    check_interval: 5s
+    limit_percentage: 75
+    spike_limit_percentage: 15
+exporters:
+  otlphttp/k3s:
+    endpoint: ${env:K3S_OTLP_ENDPOINT}
+    timeout: 30s
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 0s
+    sending_queue:
+      enabled: true
+      queue_size: 512
+      storage: file_storage/otel
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  file_storage/otel:
+    directory: /var/lib/otelcol
+    timeout: 10s
+service:
+  extensions:
+  - health_check
+  - file_storage/otel
+  telemetry:
+    metrics:
+      address: 0.0.0.0:8888
+    logs:
+      level: info
+  pipelines:
+    logs/devices:
+      receivers:
+      - syslog/devices
+      - syslog/devices_tcp
+      processors:
+      - memory_limiter
+      - transform/device_identity
+      - transform/receive_time
+      - transform/clean_body
+      - groupbyattrs/device
+      - resource/devices
+      - batch
+      exporters:
+      - otlphttp/k3s

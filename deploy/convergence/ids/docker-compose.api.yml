@@ -1,0 +1,9 @@
+# Optional overlay; paths are relative to deploy/convergence/docker-compose.yml.
+services:
+  convergence-api:
+    environment:
+      IDS_STATUS_URL: ${IDS_STATUS_URL:?Set the HTTPS IDS ingest URL}
+      IDS_STATUS_TOKEN: ${IDS_STATUS_TOKEN:?Set the read-only IDS status token}
+      NODE_EXTRA_CA_CERTS: /run/secrets/ids-ca.crt
+    volumes:
+      - ./secrets/ids/ca.crt:/run/secrets/ids-ca.crt:ro

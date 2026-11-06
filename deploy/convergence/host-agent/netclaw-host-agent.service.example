@@ -1,0 +1,51 @@
+# Review paths and provision a NEW server-side enrollment before deployment.
+# Example only: not installed, enabled or production-qualified by this prototype.
+[Unit]
+Description=Convergence rental VM heartbeat agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=netclaw-host-agent
+Group=netclaw-host-agent
+StateDirectory=netclaw-host-agent
+StateDirectoryMode=0700
+UMask=0077
+LoadCredential=agent-token:/etc/netclaw-host-agent/token
+ExecStart=/usr/bin/python3 -I /opt/netclaw/deploy/convergence/host-agent/agent.py --config /etc/netclaw-host-agent/config.json
+Restart=on-failure
+RestartSec=30s
+RestartPreventExitStatus=2
+TimeoutStopSec=20s
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# The process only initiates outbound HTTPS. This blocks socket bind/listen use
+# through systemd's IP socket bind filter (requires compatible systemd/kernel).
+SocketBindDeny=any
+ReadWritePaths=/var/lib/netclaw-host-agent
+TasksMax=8
+MemoryMax=64M
+CPUQuota=5%
+
+[Install]
+WantedBy=multi-user.target

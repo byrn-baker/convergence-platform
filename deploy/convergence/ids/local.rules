@@ -1,0 +1,2 @@
+# A deliberately harmless, operator-triggered end-to-end test. Never auto-investigate.
+alert icmp any any -> any any (msg:"NETCLAW IDS acceptance canary"; itype:8; content:"NETCLAW-IDS-CANARY"; sid:9000001; rev:1;)

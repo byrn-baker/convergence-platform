@@ -1,0 +1,60 @@
+# snmp_exporter v0.26+ for generic wireless (T071) — auth-split format
+# IF-MIB baseline. Distinct from device-snmp (campus switches) only by profile/targets.
+auths:
+  public_v2:
+    community: public
+    version: 2
+
+modules:
+  if_mib:
+    walk:
+      - 1.3.6.1.2.1.2.2.1.2   # ifDescr
+      - 1.3.6.1.2.1.2.2.1.7   # ifAdminStatus
+      - 1.3.6.1.2.1.2.2.1.8   # ifOperStatus
+      - 1.3.6.1.2.1.31.1.1.1.6   # ifHCInOctets
+      - 1.3.6.1.2.1.31.1.1.1.10  # ifHCOutOctets
+      - 1.3.6.1.2.1.2.2.1.14  # ifInErrors
+      - 1.3.6.1.2.1.2.2.1.20  # ifOutErrors
+    metrics:
+      - name: ifDescr
+        oid: 1.3.6.1.2.1.2.2.1.2
+        type: DisplayString
+        indexes:
+          - labelname: ifIndex
+            type: gauge
+      - name: ifAdminStatus
+        oid: 1.3.6.1.2.1.2.2.1.7
+        type: gauge
+        indexes:
+          - labelname: ifIndex
+            type: gauge
+      - name: ifOperStatus
+        oid: 1.3.6.1.2.1.2.2.1.8
+        type: gauge
+        indexes:
+          - labelname: ifIndex
+            type: gauge
+      - name: ifHCInOctets
+        oid: 1.3.6.1.2.1.31.1.1.1.6
+        type: counter
+        indexes:
+          - labelname: ifIndex
+            type: gauge
+      - name: ifHCOutOctets
+        oid: 1.3.6.1.2.1.31.1.1.1.10
+        type: counter
+        indexes:
+          - labelname: ifIndex
+            type: gauge
+      - name: ifInErrors
+        oid: 1.3.6.1.2.1.2.2.1.14
+        type: counter
+        indexes:
+          - labelname: ifIndex
+            type: gauge
+      - name: ifOutErrors
+        oid: 1.3.6.1.2.1.2.2.1.20
+        type: counter
+        indexes:
+          - labelname: ifIndex
+            type: gauge

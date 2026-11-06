@@ -1,0 +1,39 @@
+# The VM retains collectors for sources addressed to it, with bounded retry queues.
+# All databases and device polling belong to the K3s Helm release.
+name: netclaw-convergence
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.104.0
+    restart: unless-stopped
+    user: '10001:10001'
+    mem_limit: 512m
+    cpus: 1
+    command: [--config=/etc/otel/config.yaml]
+    environment:
+      K3S_OTLP_ENDPOINT: http://192.168.13.12:30318
+    volumes:
+      - ./otel.yaml:/etc/otel/config.yaml:ro
+      - convergence-otel-queue:/var/lib/otelcol
+    ports: ['1514:1514/udp', '1514:1514/tcp', '8888:8888', '13133:13133']
+    networks: [convergence]
+  promtail:
+    image: grafana/promtail:3.1.0
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    command: [-config.file=/etc/promtail/config.yml]
+    volumes:
+      - ./promtail.yaml:/etc/promtail/config.yml:ro
+      - /var/lib/netclaw-log-shippers/promtail:/positions
+      - netclaw-agent-logs:/var/log/netclaw:ro
+      - /tmp/openclaw:/var/log/openclaw:ro
+      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+    ports: ['9080:9080']
+    networks: [convergence]
+networks:
+  convergence: {external: true, name: netclaw-convergence}
+volumes:
+  convergence-otel-queue: {external: true, name: netclaw-convergence_convergence-otel-queue}
+  netclaw-agent-logs: {external: true, name: netclaw-convergence_netclaw-agent-logs}

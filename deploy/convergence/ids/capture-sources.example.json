@@ -1,0 +1,16 @@
+[
+  {
+    "id": "switch-core",
+    "name": "Core switch",
+    "ip": "192.0.2.2",
+    "sessionId": 110,
+    "scope": "Ingress on endpoint ports and firewall LAG; inter-switch trunks excluded"
+  },
+  {
+    "id": "switch-access",
+    "name": "Access switch",
+    "ip": "192.0.2.3",
+    "sessionId": 112,
+    "scope": "Ingress on endpoint ports; inter-switch trunks excluded"
+  }
+]

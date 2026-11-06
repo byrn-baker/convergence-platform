@@ -1,0 +1,21 @@
+{{- if .Values.queryAccess.enabled }}
+{{- range $kind := list "metrics" "logs" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Release.Name }}-{{ $kind }}-access
+  labels: {{ include "convergence.labels" $ | nindent 4 }}
+spec:
+  type: NodePort
+  selector:
+    app: server
+    app.kubernetes.io/name: {{ $kind }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+  ports:
+    - name: http
+      port: {{ ternary 8428 9428 (eq $kind "metrics") }}
+      targetPort: {{ ternary 8428 9428 (eq $kind "metrics") }}
+      nodePort: {{ ternary $.Values.queryAccess.metricsNodePort $.Values.queryAccess.logsNodePort (eq $kind "metrics") }}
+{{- end }}
+{{- end }}

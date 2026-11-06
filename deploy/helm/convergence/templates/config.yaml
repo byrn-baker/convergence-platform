@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-application-config
+  labels: {{ include "convergence.labels" . | nindent 4 }}
+data:
+  SITES_CONFIG: {{ .Values.siteConfig | toJson | quote }}
+  loki.yml: |
+    auth_enabled: false
+    server: {http_listen_port: 3100, grpc_listen_port: 9096}
+    common:
+      path_prefix: /data/loki
+      storage:
+        filesystem: {chunks_directory: /data/loki/chunks, rules_directory: /data/loki/rules}
+      replication_factor: 1
+      ring: {kvstore: {store: inmemory}}
+    schema_config:
+      configs:
+        - from: '2024-01-01'
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index: {prefix: index_, period: 24h}
+    limits_config:
+      retention_period: {{ .Values.loki.retention }}
+      allow_structured_metadata: false
+      max_query_series: 5000
+    compactor:
+      working_directory: /data/loki/compactor
+      retention_enabled: true
+      delete_request_store: filesystem
+    ruler:
+      enable_api: false
+      storage: {type: local, local: {directory: /rules}}
+      rule_path: /tmp/loki-rules
+      wal: {dir: /data/loki/ruler-wal}
+      ring: {kvstore: {store: inmemory}}
+      remote_write:
+        enabled: true
+        clients:
+          victoria:
+            url: http://{{ .Release.Name }}-metrics:8428/api/v1/write
+  blackbox.yml: |
+    {{- toYaml .Values.blackbox.config | nindent 4 }}
+  exporter.py: |
+    {{- .Files.Get "files/unifi-exporter.py" | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-loki-rules
+  labels: {{ include "convergence.labels" . | nindent 4 }}
+data:
+  security.yml: |
+    {{- .Files.Get "files/loki-security.yml" | nindent 4 }}

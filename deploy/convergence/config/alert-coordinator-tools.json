@@ -1,0 +1,16 @@
+{
+  "tools": {
+    "fs": { "workspaceOnly": true },
+    "allow": [
+      "session_status",
+      "read",
+      "n2n-mcp__n2n_route",
+      "n2n-mcp__n2n_task_wait",
+      "n2n-mcp__n2n_task_status",
+      "n2n-mcp__n2n_task_result",
+      "n2n-mcp__n2n_member_health",
+      "convergence-case-mcp__case_get",
+      "convergence-case-mcp__case_update"
+    ]
+  }
+}

@@ -1,0 +1,138 @@
+# NetClaw Convergence — minimal Prometheus (080 Phase 3)
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # convergence-api liveness via blackbox HTTP (JSON /healthz is not Prometheus textformat)
+  - job_name: convergence-api
+    scrape_interval: 30s
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ["http://convergence-api:3000/healthz"]
+        labels:
+          site: home
+          service: convergence-api
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # WAN TCP probes via blackbox (public well-known targets)
+  - job_name: blackbox_wan_tcp
+    scrape_interval: 30s
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets:
+          - 1.1.1.1:443
+          - 8.8.8.8:443
+          - 9.9.9.9:443
+        labels:
+          site: home
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - source_labels: [__param_target]
+        target_label: target
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  - job_name: blackbox_wan_http
+    scrape_interval: 60s
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://www.cloudflare.com
+          - https://www.google.com
+        labels:
+          site: home
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # UniFi exporter (compose profile: unifi) — scrape still listed; target down is ok without profile
+  - job_name: unifi
+    scrape_interval: 30s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["unifi-exporter:9899"]
+        labels:
+          site: home
+
+  # Campus/wired device SNMP (compose profile: device-snmp, Phase 8)
+  # Distinct from generic_snmp_wireless (APs). Targets = switch mgmt IPs.
+  # Regenerate static_configs via:
+  #   python3 scripts/render-device-snmp-scrape.py --targets adapters/device-snmp/targets.example.yml
+  # Target down / profile off is ok.
+  # Device SNMP is collected by the OTel Collector and remote-written to
+  # Prometheus (Phase 11 / T151-T153, T156) — there is no scrape job. The collector
+  # sets service.name=device_snmp and service.instance.id=<ip>, which arrive as the
+  # job and instance labels, so every pre-existing selector still resolves.
+  #
+  # Collector health, so log/metric ingest cannot fail silently:
+  - job_name: otel-collector
+    scrape_interval: 30s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["otel-collector:8888"]
+        labels:
+          site: home
+          instance: otel-collector
+
+  - job_name: netclaw-openclaw
+    scrape_interval: 30s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:9110"]
+        labels:
+          site: home
+          instance: netclaw
+
+  # Edge firewall (pfSense) HTTPS management UI — override target via file edit or extra job
+  - job_name: blackbox_edge
+    scrape_interval: 30s
+    metrics_path: /probe
+    params:
+      module: [http_2xx]  # TLS insecure_skip_verify already set on this module
+    static_configs:
+      - targets:
+          - https://192.168.13.1:440
+        labels:
+          site: home
+          device_name: pfsense
+          role: firewall
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

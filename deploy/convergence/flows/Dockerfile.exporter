@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1
+FROM python:3.12-slim-bookworm AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential autoconf automake libpcap-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+# This upstream revision enables immediate capture delivery. Released 1.1.0/1.1.1
+# can leave low-rate traffic buffered indefinitely with libpcap read timeout zero.
+ADD --checksum=sha256:1a096641cb85b004aabb491ec10a5c5776f13da240762343a2b639a20f54a692 \
+    https://codeload.github.com/irino/softflowd/tar.gz/f5c0f99103755b8588159cc8c70e44fc8e7d3b12 /tmp/softflowd.tar.gz
+WORKDIR /build
+RUN tar -xzf /tmp/softflowd.tar.gz --strip-components=1 \
+    && autoreconf -fi && ./configure --prefix=/usr/local \
+    && make -j2 && make install DESTDIR=/out
+
+FROM python:3.12-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends libpcap0.8 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /out/usr/local/ /usr/local/
+COPY --from=builder /build/LICENSE /usr/share/doc/softflowd/LICENSE
+LABEL io.netclaw.softflowd.source="https://github.com/irino/softflowd" \
+      io.netclaw.softflowd.revision="f5c0f99103755b8588159cc8c70e44fc8e7d3b12"
+COPY demo.py /app/demo.py
+ENTRYPOINT ["python3", "/app/demo.py"]

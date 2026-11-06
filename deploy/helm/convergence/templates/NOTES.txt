@@ -1,0 +1,9 @@
+Convergence data plane: {{ .Release.Namespace }}/{{ .Release.Name }}
+API: http://{{ .Release.Name }}-api.{{ .Release.Namespace }}.svc.cluster.local:3000
+Application credentials: Secret {{ .Values.existingSecret }} (never included in Helm values).
+
+Run: helm test {{ .Release.Name }} -n {{ .Release.Namespace }} --logs
+Then run deploy/helm/scripts/verify-convergence.py {{ .Release.Namespace }} {{ .Release.Name }}
+
+Helm manages this data plane. External clients and historical data require an explicit cutover.
+Alerts are quiet unless explicitly configured otherwise in this release's values.

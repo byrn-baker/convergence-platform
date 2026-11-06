@@ -1,0 +1,8 @@
+# Convergence deploy secrets — never commit
+.env
+k8s/secret.yaml
+
+secrets/
+
+# Per-home generated setup bundles (credentials and local configuration).
+generated/*/

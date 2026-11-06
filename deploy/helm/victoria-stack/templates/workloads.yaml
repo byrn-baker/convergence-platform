@@ -1,0 +1,143 @@
+{{- $root := . -}}
+{{- $components := list "agent" "alertmanager" "vmalert" "collector" -}}
+{{- range $component := $components }}
+{{- if or (eq $component "agent") (and (eq $component "collector") $root.Values.collector.enabled) (and (has $component (list "alertmanager" "vmalert")) $root.Values.alerting.enabled) }}
+{{- $stateful := ne $component "vmalert" }}
+{{- $port := 8429 }}{{- $image := $root.Values.agent.image }}{{- $health := "/health" }}
+{{- $resources := $root.Values.agent.resources }}
+{{- if eq $component "alertmanager" }}{{- $port = 9093 }}{{- $image = $root.Values.alerting.alertmanagerImage }}{{- $health = "/-/healthy" }}{{- end }}
+{{- if eq $component "vmalert" }}{{- $port = 8880 }}{{- $image = $root.Values.alerting.image }}{{- end }}
+{{- if eq $component "collector" }}{{- $port = 4318 }}{{- $image = $root.Values.collector.image }}{{- $health = "/" }}{{- $resources = $root.Values.collector.resources }}{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $root.Release.Name }}-{{ $component }}
+  labels: {{ include "victoria-stack.labels" $root | nindent 4 }}
+spec:
+  {{- if eq $component "collector" }}
+  type: {{ $root.Values.collector.service.type }}
+  {{- end }}
+  selector: {app.kubernetes.io/instance: {{ $root.Release.Name }}, app.kubernetes.io/component: {{ $component }}}
+  ports:
+    - name: http
+      port: {{ $port }}
+      targetPort: {{ $port }}
+      {{- if and (eq $component "collector") $root.Values.collector.service.nodePort }}
+      nodePort: {{ $root.Values.collector.service.nodePort }}
+      {{- end }}
+    {{- if eq $component "collector" }}
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      {{- if $root.Values.collector.service.grpcNodePort }}
+      nodePort: {{ $root.Values.collector.service.grpcNodePort }}
+      {{- end }}
+    {{- with $root.Values.collector.extraServicePorts }}{{ toYaml . | nindent 4 }}{{- end }}
+    {{- end }}
+---
+apiVersion: apps/v1
+kind: {{ ternary "StatefulSet" "Deployment" $stateful }}
+metadata:
+  name: {{ $root.Release.Name }}-{{ $component }}
+  labels: {{ include "victoria-stack.labels" $root | nindent 4 }}
+spec:
+  {{- if $stateful }}
+  serviceName: {{ $root.Release.Name }}-{{ $component }}
+  persistentVolumeClaimRetentionPolicy: {whenDeleted: Retain, whenScaled: Retain}
+  {{- end }}
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ $root.Release.Name }}, app.kubernetes.io/component: {{ $component }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ $root.Release.Name }}, app.kubernetes.io/component: {{ $component }}}
+      annotations:
+        checksum/config: {{ include (print $root.Template.BasePath "/config.yaml") $root | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $root.Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
+      containers:
+        - name: {{ $component }}
+          image: {{ $image | quote }}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          args:
+          {{- if eq $component "agent" }}
+            - -promscrape.config=/config/agent.yml
+            - -remoteWrite.url=http://{{ $root.Release.Name }}-metrics:8428/api/v1/write
+            - -remoteWrite.tmpDataPath=/data/agent
+            - -remoteWrite.maxDiskUsagePerURL=1GB
+            - -httpListenAddr=:8429
+          {{- else if eq $component "alertmanager" }}
+            - --config.file=/config/alertmanager.yml
+            - --storage.path=/data/alertmanager
+            - --cluster.listen-address=
+          {{- else if eq $component "vmalert" }}
+            - -rule=/rules/*.yml
+            - -datasource.url=http://{{ $root.Release.Name }}-metrics:8428
+            - -remoteWrite.url=http://{{ $root.Release.Name }}-metrics:8428
+            - -remoteRead.url=http://{{ $root.Release.Name }}-metrics:8428
+            - -notifier.url=http://{{ $root.Release.Name }}-alertmanager:9093
+            - -httpListenAddr=:8880
+          {{- else }}
+            - --config=/config/collector.yml
+          {{- end }}
+          {{- if and (eq $component "collector") $root.Values.collector.envFrom }}
+          envFrom: {{ toYaml $root.Values.collector.envFrom | nindent 12 }}
+          {{- end }}
+          ports:
+            - {name: http, containerPort: {{ $port }}}
+            {{- if eq $component "collector" }}
+            - {name: health, containerPort: 13133}
+            {{- end }}
+          readinessProbe:
+            httpGet: {path: {{ $health | quote }}, port: {{ ternary 13133 $port (eq $component "collector") }}}
+            initialDelaySeconds: 3
+          livenessProbe:
+            httpGet: {path: {{ $health | quote }}, port: {{ ternary 13133 $port (eq $component "collector") }}}
+            initialDelaySeconds: 30
+          resources: {{ toYaml $resources | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            {{- if $stateful }}
+            - {name: data, mountPath: /data}
+            {{- else }}
+            - {name: rules, mountPath: /rules, readOnly: true}
+            {{- end }}
+            {{- if eq $component "collector" }}
+            {{- with $root.Values.collector.extraVolumeMounts }}{{ toYaml . | nindent 12 }}{{- end }}
+            {{- end }}
+            {{- if eq $component "alertmanager" }}
+            {{- with $root.Values.alerting.extraVolumeMounts }}{{ toYaml . | nindent 12 }}{{- end }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap: {name: {{ $root.Release.Name }}-victoria-config}
+        {{- if not $stateful }}
+        - name: rules
+          configMap: {name: {{ $root.Release.Name }}-victoria-rules}
+        {{- end }}
+        {{- if eq $component "collector" }}
+        {{- with $root.Values.collector.extraVolumes }}{{ toYaml . | nindent 8 }}{{- end }}
+        {{- end }}
+        {{- if eq $component "alertmanager" }}
+        {{- with $root.Values.alerting.extraVolumes }}{{ toYaml . | nindent 8 }}{{- end }}
+        {{- end }}
+  {{- if $stateful }}
+  volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata: {name: data}
+      spec:
+        storageClassName: {{ $root.Values.storage.className | quote }}
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: {{ $root.Values.storage.queueSize }}}}
+  {{- end }}
+{{- end }}
+{{- end }}

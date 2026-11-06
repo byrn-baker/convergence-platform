@@ -1,0 +1,44 @@
+{{- if .Values.flowLogs.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-flow-logs
+data:
+  collector.yaml: |
+    {{- tpl (toYaml .Values.flowLogs.config) . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ .Release.Name }}-flow-logs
+  labels: {{ include "convergence.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: flow-logs}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: flow-logs}
+      annotations:
+        checksum/config: {{ toJson .Values.flowLogs.config | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.104.0
+          args: [--config=/etc/otel/collector.yaml]
+          securityContext: {runAsUser: 0, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 96Mi}, limits: {cpu: 500m, memory: 256Mi}}
+          readinessProbe: {httpGet: {path: /, port: 13133}, initialDelaySeconds: 5}
+          livenessProbe: {httpGet: {path: /, port: 13133}, initialDelaySeconds: 20}
+          volumeMounts:
+            - {name: config, mountPath: /etc/otel, readOnly: true}
+            - {name: logs, mountPath: /var/log/pods, readOnly: true}
+            - {name: state, mountPath: /var/lib/netclaw-flow-logs}
+      volumes:
+        - {name: config, configMap: {name: '{{ .Release.Name }}-flow-logs'}}
+        - {name: logs, hostPath: {path: /var/log/pods, type: Directory}}
+        - name: state
+          hostPath:
+            path: {{ .Values.flowLogs.stateDirectory | default (printf "/var/lib/%s-%s-flow-logs" .Release.Namespace .Release.Name) | quote }}
+            type: DirectoryOrCreate
+{{- end }}

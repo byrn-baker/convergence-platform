@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "server": {
+          "type": "object",
+          "properties": {
+            "replicaCount": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            }
+          }
+        }
+      }
+    },
+    "logs": {
+      "type": "object",
+      "properties": {
+        "server": {
+          "type": "object",
+          "properties": {
+            "replicaCount": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            }
+          }
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "required": [
+        "className",
+        "queueSize"
+      ],
+      "properties": {
+        "className": {
+          "type": "string",
+          "minLength": 1
+        },
+        "queueSize": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*(Mi|Gi|Ti)$"
+        }
+      }
+    },
+    "sharedGrafana": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extraDatasources": {
+          "type": "array"
+        }
+      }
+    }
+  }
+}

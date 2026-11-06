@@ -1,0 +1,21 @@
+# Use a different namespace and release for each purpose.
+# No Convergence application or sensor credentials are required.
+metrics:
+  server:
+    retentionPeriod: 30d
+    persistentVolume: {storageClassName: longhorn, size: 20Gi}
+logs:
+  server:
+    retentionPeriod: 14d
+    persistentVolume: {storageClassName: longhorn, size: 30Gi}
+sharedGrafana:
+  enabled: true
+  # Shared home Grafana is owned by the observability Argo application.
+  registrationMode: external
+  namespace: observability
+  deployment: grafana
+  datasourceConfigMap: grafana-datasources
+  datasourceKey: datasources.yml
+  dashboardConfigMap: grafana-dashboards
+agent:
+  extraScrapeConfigs: []

@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh IDS public-IP context daily
+
+[Timer]
+OnCalendar=*-*-* 04:35:00 UTC
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target

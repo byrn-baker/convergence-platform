@@ -1,0 +1,13 @@
+Isolated Victoria stack: {{ .Release.Namespace }}/{{ .Release.Name }}
+
+Metrics query: http://{{ .Release.Name }}-metrics.{{ .Release.Namespace }}.svc.cluster.local:8428
+Metrics write: http://{{ .Release.Name }}-metrics.{{ .Release.Namespace }}.svc.cluster.local:8428/api/v1/write
+Logs query:    http://{{ .Release.Name }}-logs.{{ .Release.Namespace }}.svc.cluster.local:9428
+OTLP HTTP:     http://{{ .Release.Name }}-collector.{{ .Release.Namespace }}.svc.cluster.local:4318
+
+Run: helm test {{ .Release.Name }} -n {{ .Release.Namespace }} --logs
+Data volumes are retained on uninstall. No Grafana server is installed.
+{{- if .Values.sharedGrafana.enabled }}
+Shared Grafana: namespace {{ .Values.sharedGrafana.namespace }} / deployment {{ .Values.sharedGrafana.deployment }}
+The registrar adds release-specific data sources and dashboard copies, preserving existing defaults.
+{{- end }}

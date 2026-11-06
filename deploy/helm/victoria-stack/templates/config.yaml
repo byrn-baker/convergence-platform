@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-victoria-config
+  labels: {{ include "victoria-stack.labels" . | nindent 4 }}
+data:
+  agent.yml: |
+    global:
+      scrape_interval: {{ .Values.agent.scrapeInterval }}
+    scrape_configs:
+      - job_name: victoria-stack
+        static_configs:
+          - targets: [{{ printf "%s-metrics:8428" .Release.Name | quote }}, {{ printf "%s-logs:9428" .Release.Name | quote }}, {{ printf "%s-agent:8429" .Release.Name | quote }}]
+        relabel_configs:
+          - target_label: project
+            replacement: {{ .Release.Name | quote }}
+    {{- with .Values.agent.extraScrapeConfigs }}
+      {{- tpl (toYaml .) $ | nindent 6 }}
+    {{- end }}
+  alertmanager.yml: |
+    {{- toYaml .Values.alerting.alertmanagerConfig | nindent 4 }}
+  collector.yml: |
+    {{- if .Values.collector.config }}
+    {{- tpl (toYaml .Values.collector.config) . | nindent 4 }}
+    {{- else }}
+    receivers:
+      otlp:
+        protocols:
+          grpc: {endpoint: '0.0.0.0:4317'}
+          http: {endpoint: '0.0.0.0:4318'}
+    processors:
+      memory_limiter: {check_interval: 1s, limit_mib: 384, spike_limit_mib: 96}
+      batch: {}
+    exporters:
+      otlphttp/logs:
+        logs_endpoint: http://{{ .Release.Name }}-logs:9428/insert/opentelemetry/v1/logs
+        sending_queue: {enabled: true, storage: file_storage}
+        retry_on_failure: {enabled: true}
+      prometheusremotewrite:
+        endpoint: http://{{ .Release.Name }}-metrics:8428/api/v1/write
+        resource_to_telemetry_conversion: {enabled: true}
+    extensions:
+      file_storage: {directory: /data}
+      health_check: {endpoint: '0.0.0.0:13133'}
+    service:
+      extensions: [file_storage, health_check]
+      pipelines:
+        logs: {receivers: [otlp], processors: [memory_limiter, batch], exporters: [otlphttp/logs]}
+        metrics: {receivers: [otlp], processors: [memory_limiter, batch], exporters: [prometheusremotewrite]}
+    {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-victoria-rules
+  labels: {{ include "victoria-stack.labels" . | nindent 4 }}
+data:
+  {{- range $file, $content := .Values.alerting.ruleFiles }}
+  {{ $file }}: |
+    {{- toYaml $content | nindent 4 }}
+  {{- end }}

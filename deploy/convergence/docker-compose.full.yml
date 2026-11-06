@@ -1,0 +1,211 @@
+# NetClaw Convergence — Docker FULL stack overlay (080 Phase 7+, T072)
+#
+# Adds long-term storage + dashboards + active bandwidth testing on top of the
+# minimal stack (docker-compose.yml): Loki, VictoriaMetrics, Grafana, speedtest.
+#
+# This is an ADDITIVE overlay — always run with the base file first:
+#
+#   docker compose \
+#     -f deploy/convergence/docker-compose.yml \
+#     -f deploy/convergence/docker-compose.full.yml \
+#     --env-file deploy/convergence/.env \
+#     up -d --build
+#
+# Core Prometheus in docker-compose.yml does not remote_write anywhere by
+# default (minimal stack, 15d local retention). This overlay does NOT modify
+# prometheus.yml — VictoriaMetrics here is deployed for later wiring (long-term
+# retention via remote_write) and for direct PromQL querying if you choose to
+# point Grafana / convergence-api at it. See "Wiring remote_write" below.
+#
+# Everything here is optional. Only start what you need:
+#   --profile full           → loki + victoriametrics + grafana
+#   --profile speedtest       → pushgateway + speedtest runner (also add
+#                                pushgateway as a Prometheus scrape target,
+#                                see prometheus/prometheus.yml comment)
+
+name: netclaw-convergence
+
+services:
+  loki:
+    profiles: ["full"]
+    image: grafana/loki:3.1.0
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - convergence-lokidata:/loki
+      # Ruler rules, file-managed (read-only). Single-tenant Loki reads <dir>/fake/.
+      - ./loki/rules:/loki/rules:ro
+    ports:
+      - "${LOKI_HOST_PORT:-3100}:3100"
+    networks: [convergence]
+
+  victoriametrics:
+    profiles: ["full"]
+    image: victoriametrics/victoria-metrics:latest
+    restart: unless-stopped
+    command:
+      - -retentionPeriod=365d
+      - -storageDataPath=/victoria-metrics-data
+      - -httpListenAddr=:8428
+    volumes:
+      - convergence-vmdata:/victoria-metrics-data
+    ports:
+      - "${VICTORIAMETRICS_HOST_PORT:-8428}:8428"
+    networks: [convergence]
+
+  grafana:
+    profiles: ["full"]
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3300}
+    volumes:
+      - convergence-grafanadata:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki
+      - victoriametrics
+    ports:
+      - "${GRAFANA_HOST_PORT:-3300}:3000"
+    networks: [convergence]
+
+  # --- Log ship: device syslog + optional agent files → Loki (Phase 8) ---
+  promtail:
+    profiles: ["full", "device-syslog"]
+    image: grafana/promtail:3.1.0
+    restart: unless-stopped
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      # Optional agent flat logs (create dir / empty ok)
+      - netclaw-agent-logs:/var/log/netclaw:ro
+      # OpenClaw gateway logs (host default path)
+      - ${OPENCLAW_LOG_DIR:-/tmp/openclaw}:/var/log/openclaw:ro
+      # systemd journal for mesh / members / gateway (NetClaw dashboard)
+      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+    ports:
+      # Device syslog is received by syslog-gateway (RFC3164 → RFC5424), not here.
+      # promtail listens for RFC5424 on internal :1601 only.
+      - "${PROMTAIL_HTTP_PORT:-9080}:9080"
+    depends_on:
+      - loki
+    networks: [convergence]
+
+  # --- OTel Collector: device telemetry hub (Phase 11 / T146-T147) ---
+  # Parses vendor-default RFC3164 syslog into structured fields at ingest and
+  # dual-exports to Loki (14d, interactive) + VictoriaLogs (365d, long-term).
+  # Decision record: specs/080-convergence/otel-convergence.md
+  #
+  # Replaces the T141 syslog-gateway (syslog-ng RFC3164→RFC5424 front-end), which
+  # only existed because promtail's syslog target speaks RFC5424 only. The OTel
+  # syslog receiver speaks rfc3164 natively, so the extra hop is gone.
+  #
+  # SNMP receivers arrive in Phase 11 PR3 (T151-T153); snmp_exporter still owns
+  # metrics for now.
+  # One-shot: Docker creates named volumes root-owned, but the collector image
+  # runs as UID 10001, so the persistent send queue would be unwritable. Fix the
+  # ownership once here rather than running the collector as root — it listens on
+  # a network port, so it should stay unprivileged.
+  otel-queue-init:
+    profiles: ["full", "device-syslog"]
+    image: busybox:1.36
+    command: ["sh", "-c", "mkdir -p /var/lib/otelcol && chown -R 10001:10001 /var/lib/otelcol"]
+    volumes:
+      - convergence-otel-queue:/var/lib/otelcol
+    networks: [convergence]
+
+  otel-collector:
+    profiles: ["full", "device-syslog"]
+    image: otel/opentelemetry-collector-contrib:0.104.0
+    restart: unless-stopped
+    command: ["--config=/etc/otel/config.yaml"]
+    user: "10001:10001"
+    environment:
+      # SNMP read community for the device receivers. Stays in env, never in the
+      # committed config (FR-022).
+      SNMP_COMMUNITY: "${SNMP_COMMUNITY:-public}"
+    volumes:
+      - ./otel/otel-config.yaml:/etc/otel/config.yaml:ro
+      - convergence-otel-queue:/var/lib/otelcol
+    ports:
+      # Operator-facing syslog destination — unchanged from the gateway, so
+      # generated device checklists and existing device config stay valid.
+      - "${SYSLOG_HOST_PORT:-1514}:1514/udp"
+      - "${SYSLOG_HOST_PORT:-1514}:1514/tcp"
+      - "${OTEL_HEALTH_PORT:-13133}:13133"
+      - "${OTEL_METRICS_PORT:-8888}:8888"
+    depends_on:
+      loki:
+        condition: service_started
+      victorialogs:
+        condition: service_started
+      otel-queue-init:
+        condition: service_completed_successfully
+    networks: [convergence]
+
+  # --- VictoriaLogs: long-term (365d) structured log store ---
+  # Loki keeps 14d for interactive querying; VictoriaLogs keeps a year without
+  # Loki's label-cardinality constraints. This is the reason for the dual write.
+  victorialogs:
+    profiles: ["full", "device-syslog"]
+    image: victoriametrics/victoria-logs:v1.52.0
+    restart: unless-stopped
+    command:
+      - -retentionPeriod=${VICTORIALOGS_RETENTION:-365d}
+      - -storageDataPath=/victoria-logs-data
+      - -httpListenAddr=:9428
+    volumes:
+      - convergence-vlogsdata:/victoria-logs-data
+    ports:
+      - "${VICTORIALOGS_HOST_PORT:-9428}:9428"
+    networks: [convergence]
+
+  # --- WAN speedtest (active bandwidth validation) ---
+  pushgateway:
+    profiles: ["speedtest", "full"]
+    image: prom/pushgateway:v1.10.0
+    restart: unless-stopped
+    command:
+      - --persistence.file=/data/pushgateway.store
+      - --persistence.interval=5m
+    volumes:
+      - convergence-pushgwdata:/data
+    ports:
+      - "${PUSHGATEWAY_HOST_PORT:-9091}:9091"
+    networks: [convergence]
+
+  speedtest:
+    profiles: ["speedtest", "full"]
+    image: python:3.12-slim
+    restart: unless-stopped
+    working_dir: /app
+    command: ["python", "-u", "/app/run.py"]
+    environment:
+      OOKLA_VERSION: "1.2.0"
+      PUSHGATEWAY_URL: "http://pushgateway:9091"
+      SITE_LABEL: ${SITE_LABEL:-home}
+      SPEEDTEST_INTERVAL_SECONDS: ${SPEEDTEST_INTERVAL_SECONDS:-3600}
+      SPEEDTEST_SERVER_ID: ${SPEEDTEST_SERVER_ID:-}
+    volumes:
+      - ./speedtest/run.py:/app/run.py:ro
+    depends_on:
+      - pushgateway
+    networks: [convergence]
+
+networks:
+  convergence:
+    name: netclaw-convergence
+
+volumes:
+  convergence-lokidata:
+  convergence-vmdata:
+  convergence-grafanadata:
+  netclaw-agent-logs:
+  convergence-pushgwdata:
+  convergence-otel-queue:
+  convergence-vlogsdata:

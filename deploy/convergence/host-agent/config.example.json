@@ -1,0 +1,7 @@
+{
+  "endpoint": "https://telemetry.example.invalid:8445/v1/host-events",
+  "token_file": "/run/credentials/netclaw-host-agent.service/agent-token",
+  "spool_dir": "/var/lib/netclaw-host-agent",
+  "interval_seconds": 30,
+  "spool_bytes": 33554432
+}

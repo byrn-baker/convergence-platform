@@ -1,0 +1,11 @@
+{{- if .Values.victoria.sharedGrafana.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-convergence-dashboards
+  labels:
+    {{- include "convergence.labels" . | nindent 4 }}
+    netclaw.io/grafana-bundle: {{ .Release.Name }}
+data:
+{{ (.Files.Glob "files/dashboards/*.json").AsConfig | indent 2 }}
+{{- end }}

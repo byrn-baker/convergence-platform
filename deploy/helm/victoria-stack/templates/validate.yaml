@@ -1,0 +1,3 @@
+{{- if gt (len .Release.Name) 40 -}}
+{{- fail "Use a release name of at most 40 characters to leave room for component suffixes" -}}
+{{- end -}}

@@ -1,0 +1,86 @@
+victoria: {}
+nodeSelector: {}
+imagePullSecrets: []
+existingSecret: ''
+queryAccess:
+  enabled: false
+  metricsNodePort: 30429
+  logsNodePort: 30428
+siteConfig:
+  home:
+    name: Home
+    wanInterface: wan
+    speedtestTarget: 1000000000
+api:
+  enabled: true
+  image: {repository: netclaw-convergence-api, tag: '', pullPolicy: IfNotPresent}
+  nodeSelector: {}
+  service: {type: ClusterIP, nodePort: null}
+  rateLimitPerMinute: 1000
+  idsEnabled: false
+  alertReceiverUrl: ''
+  # All application secrets come from an independently managed K8s Secret.
+  env: {}
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: '1', memory: 512Mi}
+postgres:
+  image: postgres:16-alpine
+  storage: {className: longhorn, size: 10Gi}
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: '1', memory: 768Mi}
+loki:
+  enabled: true
+  image: grafana/loki:3.1.0
+  retention: 336h
+  storage: {className: longhorn, size: 10Gi, existingClaim: ''}
+  service: {type: ClusterIP, nodePort: null}
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: '1', memory: 1Gi}
+blackbox:
+  enabled: true
+  image: prom/blackbox-exporter:v0.25.0
+  config:
+    modules:
+      http_2xx: {prober: http, timeout: 5s, http: {preferred_ip_protocol: ip4}}
+      icmp: {prober: icmp, timeout: 5s, icmp: {preferred_ip_protocol: ip4}}
+      tcp_connect: {prober: tcp, timeout: 5s}
+# Optional device sources are explicitly enabled; no devices are reconfigured.
+unifi:
+  enabled: false
+  image: python:3.12-alpine
+  controllerUrl: ''
+pushgateway:
+  enabled: true
+  image: prom/pushgateway:v1.10.0
+speedtest:
+  enabled: false
+  replicas: 1
+  image: python:3.12-slim
+  site: home
+  intervalSeconds: 3600
+flowLogs:
+  enabled: false
+  config: {}
+  stateDirectory: ''
+ids:
+  enabled: false
+  replicas: 1
+  image: {repository: netclaw-ids-ingest, tag: '', pullPolicy: IfNotPresent}
+  existingSecret: ''
+  existingClaim: ''
+  service: {type: ClusterIP, nodePort: null}
+  resources:
+    requests: {cpu: 100m, memory: 512Mi}
+    limits: {cpu: '2', memory: 6Gi}
+  ipContextSchedule: '17 4 * * *'
+# Optional private dashboard for fresh installs. Existing shared Grafana is untouched.
+grafana:
+  enabled: false
+  image: grafana/grafana:12.3.3
+  storage: {className: local-path, size: 1Gi}
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: '1', memory: 512Mi}

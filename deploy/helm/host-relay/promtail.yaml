@@ -1,0 +1,67 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+positions:
+  filename: /positions/positions.yaml
+clients:
+- url: http://192.168.13.12:30310/loki/api/v1/push
+scrape_configs:
+- job_name: openclaw-gateway
+  static_configs:
+  - targets:
+    - localhost
+    labels:
+      job: openclaw-gateway
+      service: openclaw
+      site: home
+      __path__: /var/log/openclaw/*.log
+- job_name: netclaw-agent
+  static_configs:
+  - targets:
+    - localhost
+    labels:
+      job: netclaw-agent
+      site: home
+      __path__: /var/log/netclaw/*.log
+- job_name: netclaw-journal
+  journal:
+    path: /var/log/journal
+    max_age: 168h
+    labels:
+      job: netclaw-journal
+      site: home
+  relabel_configs:
+  - source_labels:
+    - __journal__systemd_unit
+    target_label: unit
+  - source_labels:
+    - __journal__systemd_user_unit
+    regex: (.+)
+    target_label: unit
+  - source_labels:
+    - unit
+    regex: (netclaw-mesh\.service|netclaw-member-.*\.service|openclaw-gateway\.service|netclaw-hud\.service|openclaw-token-exporter\.service)
+    action: keep
+  - source_labels:
+    - unit
+    regex: netclaw-mesh\.service
+    target_label: job
+    replacement: netclaw-mesh
+  - source_labels:
+    - unit
+    regex: netclaw-member-.*\.service
+    target_label: job
+    replacement: netclaw-member
+  - source_labels:
+    - unit
+    regex: openclaw-gateway\.service
+    target_label: job
+    replacement: openclaw-gateway
+  - source_labels:
+    - unit
+    regex: netclaw-hud\.service
+    target_label: job
+    replacement: netclaw-hud
+  - source_labels:
+    - __journal_priority_keyword
+    target_label: level

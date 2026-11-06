@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "existingSecret": {
+      "type": "string"
+    },
+    "siteConfig": {
+      "type": "object",
+      "minProperties": 1
+    },
+    "api": {
+      "type": "object",
+      "properties": {
+        "rateLimitPerMinute": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "image": {
+          "type": "object",
+          "properties": {
+            "tag": {
+              "type": "string"
+            }
+          }
+        },
+        "service": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "ClusterIP",
+                "NodePort"
+              ]
+            },
+            "nodePort": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 30000,
+              "maximum": 32767
+            }
+          }
+        }
+      }
+    }
+  }
+}

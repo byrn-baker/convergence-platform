@@ -1,0 +1,36 @@
+{
+  "tools": {
+    "fs": { "workspaceOnly": true },
+    "allow": [
+      "session_status",
+      "read",
+      "pyats-mcp__pyats_list_devices",
+      "pyats-mcp__pyats_search_devices",
+      "pyats-mcp__pyats_run_show_command",
+      "pyats-mcp__pyats_run_show_command_multi",
+      "pyats-mcp__pyats_device_health",
+      "pyats-mcp__pyats_get_neighbors",
+      "pyats-mcp__pyats_show_logging",
+      "prometheus-mcp__*",
+      "grafana-mcp__query_*",
+      "grafana-mcp__list_*",
+      "grafana-mcp__get_*",
+      "grafana-mcp__search_*",
+      "pfsense-mcp__get_*",
+      "pfsense-mcp__list_*",
+      "pfsense-mcp__search_*",
+      "unifi-network__integration_get_*",
+      "unifi-network__integration_list_*",
+      "greynoise-community-mcp__*",
+      "rag-mcp__rag_search",
+      "rag-mcp__rag_list",
+      "rag-mcp__rag_stats",
+      "convergence-case-mcp__*",
+      "memory-mcp__memory_get_facts",
+      "memory-mcp__memory_timeline",
+      "memory-mcp__memory_recall",
+      "memory-mcp__memory_get_decisions",
+      "memory-mcp__memory_query_graph"
+    ]
+  }
+}
