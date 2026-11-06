@@ -79,7 +79,10 @@ spec:
         - name: config
           configMap: {name: {{ .Release.Name }}-grafana}
   volumeClaimTemplates:
-    - metadata: {name: data}
+    # apiVersion/kind as the API server stores them, or Argo CD reports drift forever.
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata: {name: data}
       spec:
         accessModes: [ReadWriteOnce]
         storageClassName: {{ .Values.grafana.storage.className | quote }}

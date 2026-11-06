@@ -137,3 +137,11 @@ def test_portable_fresh_bundle_renders_optional_grafana_and_local_path(tmp_path)
     config=next(d for d in objects if d['kind']=='ConfigMap' and d['metadata']['name']=='office-grafana')
     assert json.loads(config['data']['health.json'])['uid']=='convergence-installation'
     assert all(d['spec'].get('type','ClusterIP')=='ClusterIP' for d in objects if d['kind']=='Service')
+
+
+def test_every_volume_claim_template_names_its_kind():
+    """The API server adds apiVersion/kind; a template without them stays OutOfSync in Argo CD."""
+    objects=render('convergence','convergence','convergence','--set','existingSecret=x','--set','api.image.tag=t',
+                   '--set','grafana.enabled=true')
+    claims=[c for o in objects if o and o.get('kind')=='StatefulSet' for c in o['spec'].get('volumeClaimTemplates',[])]
+    assert claims and all(c.get('apiVersion')=='v1' and c.get('kind')=='PersistentVolumeClaim' for c in claims)
