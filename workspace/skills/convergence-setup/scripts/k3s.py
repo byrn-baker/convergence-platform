@@ -144,7 +144,8 @@ def load(bundle, repo):
     return bundle, options
 
 
-def install(repo, bundle):
+def ensure_release_secret(repo, bundle):
+    """Shared by Helm and Argo CD installs: target checks plus the never-rotate Secret rule."""
     bundle, options = load(bundle, repo)
     desired = json.loads((bundle/'secret.json').read_text())
     values = json.loads((bundle/'values.json').read_text())
@@ -171,11 +172,63 @@ def install(repo, bundle):
         if any(options['release'] in r['metadata']['name'] for r in resources):
             raise ValueError('Existing release data has no matching Secret; restore credentials first')
         run(k+['create','-f',str(bundle/'secret.json')], sensitive=True)
+    return bundle, options
+
+
+def install(repo, bundle):
+    bundle, options = ensure_release_secret(repo, bundle)
     run(['helm','upgrade','--install',options['release'],str(repo/'deploy/helm/convergence'),
          '--kube-context',options['context'],'--namespace',options['namespace'],
          '--values',str(bundle/'values.json'),'--wait','--timeout','10m'])
     return {'status':'installed','context':options['context'],'namespace':options['namespace'],
             'release':options['release'], 'next':'Run the port-forward and acceptance checks in docs/convergence/k3s.md'}
+
+
+def application(options, values, repo_url, path, revision, argocd_namespace='argocd'):
+    """Argo CD Application for the chart; values come from the private bundle, the Secret stays out of Git."""
+    if not re.fullmatch(r'(https://|ssh://|git@)[A-Za-z0-9._~:/@+-]+', repo_url):
+        raise ValueError('Repository URL must be https://, ssh:// or git@')
+    if not re.fullmatch(r'[A-Za-z0-9._/-]+', path) or '..' in path or not re.fullmatch(r'[A-Za-z0-9._/-]+', revision):
+        raise ValueError('Invalid chart path or revision')
+    return {'apiVersion':'argoproj.io/v1alpha1','kind':'Application',
+        'metadata':{'name':options['release'],'namespace':argocd_namespace,
+                    'finalizers':['resources-finalizer.argocd.argoproj.io']},
+        'spec':{'project':'default',
+            'source':{'repoURL':repo_url,'targetRevision':revision,'path':path,
+                      'helm':{'releaseName':options['release'],'valuesObject':values}},
+            'destination':{'server':'https://kubernetes.default.svc','namespace':options['namespace']},
+            'syncPolicy':{'automated':{'prune':False,'selfHeal':True},
+                          'syncOptions':['ServerSideApply=true']}}}
+
+
+def repository_secret(repo_url, key_file, argocd_namespace='argocd'):
+    key = Path(key_file).expanduser().read_text()
+    if 'PRIVATE KEY' not in key:
+        raise ValueError('Repository key file is not a private key')
+    name = 'repo-'+re.sub(r'[^a-z0-9-]+','-',repo_url.lower()).strip('-')[-40:]
+    return {'apiVersion':'v1','kind':'Secret','type':'Opaque',
+        'metadata':{'name':name,'namespace':argocd_namespace,
+                    'labels':{'argocd.argoproj.io/secret-type':'repository'}},
+        'stringData':{'type':'git','url':repo_url,'sshPrivateKey':key}}
+
+
+def argocd(repo, bundle, repo_url, path, revision, key_file=None, argocd_namespace='argocd'):
+    bundle, options = ensure_release_secret(repo, bundle)
+    values = json.loads((bundle/'values.json').read_text())
+    app = application(options, values, repo_url, path, revision, argocd_namespace)
+    prefix = ['kubectl','--context',options['context'],'--namespace',argocd_namespace]
+    run(prefix+['get','crd','applications.argoproj.io','-o','name'])
+    if key_file:
+        # Applied from stdin so the key never lands in a file outside the user's own.
+        secret = json.dumps(repository_secret(repo_url, key_file, argocd_namespace))
+        result = subprocess.run(prefix+['apply','-f','-'], input=secret, capture_output=True, text=True)
+        if result.returncode:
+            raise ValueError('Command failed: kubectl (repository credential output withheld)')
+    result = subprocess.run(prefix+['apply','-f','-'], input=json.dumps(app), capture_output=True, text=True)
+    if result.returncode:
+        raise ValueError('Command failed: kubectl apply Application: '+result.stderr.strip()[-1500:])
+    return {'status':'submitted','application':options['release'],'argocd_namespace':argocd_namespace,
+            'next':'kubectl --context '+options['context']+' -n '+argocd_namespace+' get application '+options['release']+' -w'}
 
 
 def main():
@@ -188,6 +241,11 @@ def main():
         prep.add_argument('--'+key,required=True)
     prep.add_argument('--no-grafana',action='store_false',dest='grafana',default=True)
     apply=sub.add_parser('install');apply.add_argument('--bundle',required=True)
+    gitops=sub.add_parser('argocd',help='hand the release to an existing Argo CD instead of helm install')
+    gitops.add_argument('--bundle',required=True); gitops.add_argument('--repo-url',required=True)
+    gitops.add_argument('--path',default='deploy/helm/convergence'); gitops.add_argument('--revision',required=True)
+    gitops.add_argument('--repo-key-file',help='read-only deploy key for a private repository')
+    gitops.add_argument('--argocd-namespace',default='argocd')
     args=parser.parse_args()
     try:
         repo=repo_path(args.repo)
@@ -195,6 +253,8 @@ def main():
         elif args.command=='prepare':
             options={k:v for k,v in vars(args).items() if k not in ('repo','command','output')}
             result=prepare(repo,args.output,options)
+        elif args.command=='argocd':
+            result=argocd(repo,args.bundle,args.repo_url,args.path,args.revision,args.repo_key_file,args.argocd_namespace)
         else: result=install(repo,args.bundle)
         print(json.dumps(result,indent=2));return 0
     except (OSError, ValueError, KeyError) as exc:

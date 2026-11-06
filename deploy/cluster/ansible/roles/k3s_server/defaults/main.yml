@@ -1,0 +1,4 @@
+---
+k3s_disable: []
+# Small clusters run workloads on the servers; set true to keep them control-plane only.
+k3s_server_taint: false

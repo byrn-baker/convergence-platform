@@ -1,0 +1,21 @@
+---
+- name: Install keepalived
+  ansible.builtin.apt: {name: keepalived, state: present}
+
+- name: Health check
+  ansible.builtin.copy:
+    dest: /usr/local/bin/check_k3s.sh
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      systemctl is-active --quiet k3s && k3s kubectl get --raw /readyz >/dev/null 2>&1
+
+- name: Configuration
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    mode: "0600"
+  notify: Restart keepalived
+
+- name: Running
+  ansible.builtin.systemd: {name: keepalived, state: started, enabled: true}

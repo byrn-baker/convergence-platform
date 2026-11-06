@@ -1,0 +1,31 @@
+global_defs {
+    router_id {{ inventory_hostname }}
+    script_user root
+    enable_script_security
+}
+
+vrrp_script check_k3s {
+    script "/usr/local/bin/check_k3s.sh"
+    interval 2
+    weight -50
+    fall 3
+    rise 2
+}
+
+vrrp_instance K3S_API {
+    state {{ 'MASTER' if inventory_hostname == groups['k3s_init_node'][0] else 'BACKUP' }}
+    interface {{ network_interface | default(ansible_default_ipv4.interface) }}
+    virtual_router_id {{ keepalived_router_id }}
+    priority {{ 150 - 10 * groups['k3s_servers'].index(inventory_hostname) }}
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass {{ keepalived_auth_pass }}
+    }
+    virtual_ipaddress {
+        {{ virtual_ip }}/{{ virtual_ip_cidr }}
+    }
+    track_script {
+        check_k3s
+    }
+}

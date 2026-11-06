@@ -1,0 +1,21 @@
+---
+- name: Configuration directory
+  ansible.builtin.file: {path: /etc/rancher/k3s, state: directory, mode: "0755"}
+
+- name: Token file
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/cluster-token
+    content: "{{ k3s_token }}"
+    mode: "0600"
+  no_log: true
+
+- name: Join as an agent (through the VIP when there is one)
+  ansible.builtin.shell: >
+    set -o pipefail &&
+    curl -sfL https://get.k3s.io |
+    INSTALL_K3S_VERSION={{ k3s_version }}
+    K3S_URL=https://{{ virtual_ip | default(hostvars[groups['k3s_init_node'][0]].ansible_host) }}:6443
+    sh -s - agent --token-file /etc/rancher/k3s/cluster-token
+  args:
+    creates: /usr/local/bin/k3s-agent-uninstall.sh
+    executable: /bin/bash

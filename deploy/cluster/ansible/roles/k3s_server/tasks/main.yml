@@ -1,0 +1,49 @@
+---
+- name: Server arguments
+  ansible.builtin.set_fact:
+    k3s_server_args: >-
+      --token-file /etc/rancher/k3s/cluster-token
+      --tls-san {{ ansible_host }}
+      {% if virtual_ip is defined %}--tls-san {{ virtual_ip }}{% endif %}
+      {% for c in k3s_disable %} --disable {{ c }}{% endfor %}
+      {% if k3s_server_taint %} --node-taint node-role.kubernetes.io/control-plane=true:NoSchedule{% endif %}
+      --write-kubeconfig-mode 600
+
+- name: Configuration directory
+  ansible.builtin.file: {path: /etc/rancher/k3s, state: directory, mode: "0755"}
+
+- name: Token file
+  ansible.builtin.copy:
+    dest: /etc/rancher/k3s/cluster-token
+    content: "{{ k3s_token }}"
+    mode: "0600"
+  no_log: true
+
+- name: Initialise the cluster (first server)
+  when: inventory_hostname == groups['k3s_init_node'][0]
+  ansible.builtin.shell: >
+    set -o pipefail &&
+    curl -sfL https://get.k3s.io |
+    INSTALL_K3S_VERSION={{ k3s_version }} sh -s - server --cluster-init {{ k3s_server_args }}
+  args:
+    creates: /usr/local/bin/k3s
+    executable: /bin/bash
+
+- name: Join the cluster (other servers)
+  when: inventory_hostname != groups['k3s_init_node'][0]
+  ansible.builtin.shell: >
+    set -o pipefail &&
+    curl -sfL https://get.k3s.io |
+    INSTALL_K3S_VERSION={{ k3s_version }} sh -s - server
+    --server https://{{ hostvars[groups['k3s_init_node'][0]].ansible_host }}:6443 {{ k3s_server_args }}
+  args:
+    creates: /usr/local/bin/k3s
+    executable: /bin/bash
+
+- name: Wait for this node
+  ansible.builtin.command: k3s kubectl get node {{ inventory_hostname }}
+  register: ready
+  retries: 36
+  delay: 5
+  until: ready.rc == 0
+  changed_when: false

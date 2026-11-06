@@ -1,0 +1,51 @@
+---
+# Build a K3s cluster: embedded etcd on 1, 3 or 5 servers, optional keepalived VIP
+# for the API, and any number of agents. Run with the generated inventory and the
+# private secrets file:  ansible-playbook -i inventory.json -e @cluster-secrets.json site.yml
+- name: Prepare nodes
+  hosts: k3s_cluster
+  become: true
+  roles: [node]
+
+- name: Servers
+  hosts: k3s_servers
+  become: true
+  serial: 1
+  roles: [k3s_server]
+
+- name: API virtual IP
+  hosts: k3s_servers
+  become: true
+  roles:
+    - role: keepalived
+      when: virtual_ip is defined and groups['k3s_servers'] | length > 1
+
+- name: Agents
+  hosts: k3s_agents
+  become: true
+  roles: [k3s_agent]
+
+- name: Kubeconfig for the controller
+  hosts: k3s_init_node
+  become: true
+  tasks:
+    - name: Wait for every node to be Ready
+      ansible.builtin.command: k3s kubectl wait --for=condition=Ready node --all --timeout=300s
+      changed_when: false
+    - name: Read kubeconfig
+      ansible.builtin.slurp:
+        src: /etc/rancher/k3s/k3s.yaml
+      register: kubeconfig
+    - name: Write kubeconfig on the controller (API via the VIP when present)
+      become: false
+      delegate_to: localhost
+      ansible.builtin.copy:
+        dest: "{{ kubeconfig_local_path }}"
+        mode: "0600"
+        content: >-
+          {{ kubeconfig.content | b64decode
+             | replace('127.0.0.1', virtual_ip | default(hostvars[groups['k3s_init_node'][0]].ansible_host))
+             | replace('name: default', 'name: ' + kube_context)
+             | replace('cluster: default', 'cluster: ' + kube_context)
+             | replace('user: default', 'user: ' + kube_context)
+             | replace('current-context: default', 'current-context: ' + kube_context) }}

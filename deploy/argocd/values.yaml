@@ -1,0 +1,33 @@
+# Minimal Argo CD for a Convergence cluster: no ingress or SSO; reach it with a
+# port-forward and the generated initial admin password. Add your own ingress and
+# SSO before exposing it beyond the operator's host.
+configs:
+  cm:
+    application.resourceTrackingMethod: annotation
+    admin.enabled: true
+    users.anonymous.enabled: false
+    exec.enabled: false
+  params:
+    server.insecure: true
+dex:
+  enabled: false
+notifications:
+  enabled: false
+controller:
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: '2', memory: 1Gi}
+server:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: '1', memory: 512Mi}
+repoServer:
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: '2', memory: 1Gi}
+applicationSet:
+  enabled: false
+redis:
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}

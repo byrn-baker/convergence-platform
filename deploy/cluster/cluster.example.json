@@ -1,0 +1,21 @@
+{
+  "node": "pve1",
+  "template": 8000,
+  "storage": "local-lvm",
+  "bridge": "vmbr0",
+  "vlan": null,
+  "vmid_range": [7000, 7009],
+  "name_prefix": "cvg-",
+  "ci_user": "ubuntu",
+  "ssh_public_key": "~/.ssh/id_ed25519.pub",
+  "gateway": "192.0.2.1",
+  "cidr": 24,
+  "nameservers": ["192.0.2.1"],
+  "vip": "192.0.2.50",
+  "k3s_version": "v1.35.6+k3s1",
+  "nodes": [
+    {"name": "cvg-s1", "vmid": 7000, "role": "server", "cores": 4, "memory_mb": 8192, "disk_gb": 40, "ip": "192.0.2.51"},
+    {"name": "cvg-s2", "vmid": 7001, "role": "server", "cores": 4, "memory_mb": 8192, "disk_gb": 40, "ip": "192.0.2.52"},
+    {"name": "cvg-s3", "vmid": 7002, "role": "server", "cores": 4, "memory_mb": 8192, "disk_gb": 40, "ip": "192.0.2.53"}
+  ]
+}

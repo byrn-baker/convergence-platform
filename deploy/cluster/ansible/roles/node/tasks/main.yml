@@ -1,0 +1,33 @@
+---
+- name: Wait for cloud-init to finish
+  ansible.builtin.command: cloud-init status --wait
+  changed_when: false
+  failed_when: false
+
+- name: Install prerequisites
+  ansible.builtin.apt:
+    name: [curl, ca-certificates, open-iscsi, nfs-common, qemu-guest-agent]
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Start the guest agent
+  ansible.builtin.systemd: {name: qemu-guest-agent, state: started, enabled: true}
+  failed_when: false
+
+- name: Kernel modules
+  community.general.modprobe: {name: "{{ item }}", state: present, persistent: present}
+  loop: [br_netfilter, overlay]
+
+- name: Kernel parameters
+  ansible.posix.sysctl: {name: "{{ item.key }}", value: "{{ item.value }}", sysctl_set: true, reload: true}
+  loop:
+    - {key: net.bridge.bridge-nf-call-iptables, value: "1"}
+    - {key: net.ipv4.ip_forward, value: "1"}
+    - {key: net.ipv4.ip_nonlocal_bind, value: "1"}
+
+- name: Cluster nodes in /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: "\\s{{ item }}$"
+    line: "{{ hostvars[item].ansible_host }} {{ item }}"
+  loop: "{{ groups['k3s_cluster'] }}"

@@ -1,9 +1,9 @@
 ---
 name: convergence-setup
-description: Set up NetClaw Convergence on a user's network from a fresh checkout, or complete an existing installation. Discover host and network prerequisites, configure recommended K3s/Helm services or a local Docker trial, connect telemetry and the HUD, and verify Guardian and optional passive IDS/JEV integrations. Use for Convergence installation or onboarding; use alert-triage for individual incidents.
+description: Set up Convergence on a user's network, or complete an existing installation. Asks only for what it cannot discover, then builds a local Docker trial, installs into an existing K3s cluster (Helm or Argo CD), or builds a new K3s cluster on Proxmox VE first. Connects telemetry and the NetClaw HUD and verifies each layer. Use for Convergence installation or onboarding; use alert-triage for individual incidents.
 license: Apache-2.0
 metadata:
-  version: "1.2.0"
+  version: "1.3.0"
   openclaw:
     requires:
       bins: [python3]
@@ -18,10 +18,11 @@ coverage or a working investigator.
 
 ## Locate and discover
 
-Resolve the NetClaw checkout from the current directory, the selected runtime's
-`NETCLAW_DIR`, or the user's stated path. Verify `deploy/convergence/` and
-`scripts/install.sh` exist. If the checkout is absent, obtain the user's intended
-repository/revision and clone it into their chosen location. The skill also works
+Resolve the Convergence checkout from the user's stated path or a previous setup
+handover. Verify `deploy/convergence/`, `deploy/helm/convergence/` and
+`deploy/cluster/` exist. If it is absent, ask which repository and release to use
+and clone it into a location the user chooses; never into the NetClaw checkout.
+The NetClaw checkout (`NETCLAW_DIR`) is needed only for HUD wiring. The skill also works
 before installation: read this file directly from `workspace/skills/convergence-setup/`.
 Run the bundled helper from its actual location, passing the checkout explicitly:
 
@@ -39,7 +40,9 @@ that the installation is broken.
 
 Discover or ask only for unresolved choices:
 
-- Deployment host and OS; Docker, existing K3s, or reuse of existing observability.
+- Where it runs: a local Docker trial, an existing K3s cluster, a **new K3s cluster
+  on Proxmox VE**, or reuse of existing observability. For K3s, Helm directly or
+  Argo CD from the user's repository.
 - Site identity, router/firewall, wireless system, managed switches, VLANs/subnets,
   and which devices and traffic the user wants monitored.
 - HUD access: local, selected LAN/subnets, or an existing authenticated proxy.
@@ -78,6 +81,8 @@ Read the applicable branch:
 
 - **Local Docker trial or an existing host deployment:** [Docker and host setup](references/docker.md).
 - **Recommended K3s/Helm or reuse of an existing monitoring stack:** [K3s and reuse](references/k3s.md).
+- **New K3s cluster on Proxmox VE, optionally managed by Argo CD:** [Cluster on Proxmox](references/cluster.md),
+  then [K3s and reuse](references/k3s.md) for the release.
 - **Passive IDS, Victoria storage, firewall flows/top talkers, source/destination context or JEV:**
   [Optional integrations](references/integrations.md), reading only selected sections.
 
