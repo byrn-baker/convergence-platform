@@ -1,7 +1,7 @@
 # Network-wide passive capture and encrypted traffic visibility
 
 This extends the [initial IDS installation](convergence-ids.md) with endpoint
-ingress capture on HomeSwitch01, HomeSwitch02 and HomeSwitch04. The machine-readable
+ingress capture on access-sw01, access-sw02 and access-sw04. The machine-readable
 [capture plan](../../deploy/convergence/ids/home-capture-plan.json) records the
 selected ports, VLANs, ERSPAN identities and known gaps. It contains topology,
 not credentials. Update it when devices move or switch ports change.
@@ -13,10 +13,10 @@ Other lab VLANs found on trunks are not silently added to this scope.
 
 ```mermaid
 flowchart LR
-  FW[pfSense internal LAG] --> S1[HomeSwitch01]
+  FW[pfSense internal LAG] --> S1[access-sw01]
   E1[Home endpoints / Sophie office AP] --> S1
-  E2[R640 physical uplinks / basement AP / other endpoints] --> S2[HomeSwitch02]
-  E4[Six K3s nodes / office AP / NAS / printer] --> S4[HomeSwitch04]
+  E2[hypervisor physical uplinks / downstairs AP / other endpoints] --> S2[access-sw02]
+  E4[Six K3s nodes / office AP / NAS / printer] --> S4[access-sw04]
   S4 <-->|Gi47 to Gi44: transit excluded| S1
   S1 <-->|Po3: transit excluded| S2
   S1 -->|Ingress copies: ERSPAN 110| IDS[Suricata VM 113]
@@ -42,18 +42,18 @@ adding the ERSPAN transport uplinks as mirror sources.
 
 | Switch | Origin / monitor session / ERSPAN ID | Endpoint ingress sources | Excluded transit |
 |---|---|---|---|
-| HomeSwitch01 | `192.168.3.2` / 10 / 110 | Gi1/0/1,3,7,11,16,17,18,20,41,45,46; Po1 | Po3 and Gi1/0/44 |
-| HomeSwitch02 | `192.168.3.3` / 12 / 112 | Gi1/0/9–13,26,29,46; Te1/1/1–2 | Po3 |
-| HomeSwitch04 | `192.168.3.5` / 14 / 114 | Gi1/0/3,5,11–12,35–40 | Gi1/0/47 |
+| access-sw01 | `192.168.3.2` / 10 / 110 | Gi1/0/1,3,7,11,16,17,18,20,41,45,46; Po1 | Po3 and Gi1/0/44 |
+| access-sw02 | `192.168.3.3` / 12 / 112 | Gi1/0/9–13,26,29,46; Te1/1/1–2 | Po3 |
+| access-sw04 | `192.168.3.5` / 14 / 114 | Gi1/0/3,5,11–12,35–40 | Gi1/0/47 |
 
-All six home K3s nodes attach to HomeSwitch04 Gi1/0/35–40, in node order
+All six home K3s nodes attach to access-sw04 Gi1/0/35–40, in node order
 server-1, server-2, server-3, worker-1, worker-2, worker-macmini-1. Their addresses
 are `192.168.13.2`, `.3`, `.4`, `.10`, `.11` and `.12`. The observed CNI is Flannel
 VXLAN with pod subnets within `10.42.0.0/16`.
 
 UniFi inventory identified four online APs. The office AP attaches to
-HomeSwitch04 Gi1/0/5; Sophie's office AP to HomeSwitch01 Gi1/0/17; basement laundry
-AP to HomeSwitch02 Gi1/0/13. The master-bedroom AP's MAC was learned behind that
+access-sw04 Gi1/0/5; Sophie's office AP to access-sw01 Gi1/0/17; basement laundry
+AP to access-sw02 Gi1/0/13. The master-bedroom AP's MAC was learned behind that
 same basement uplink. The precise downstream/mesh forwarding arrangement still
 needs verification. AP-local conversations are not claimed as captured.
 
@@ -61,24 +61,24 @@ needs verification. AP-local conversations are not claimed as captured.
 
 1. Read the running configurations, CDP/LLDP neighbors, MAC tables, interface
    state, trunk allowed VLANs and LAG membership. Port descriptions can be stale:
-   HomeSwitch01 Gi44 was labelled as a wall plate but CDP identified HomeSwitch04.
+   access-sw01 Gi44 was labelled as a wall plate but CDP identified access-sw04.
 2. Save private before-change configurations. Check that the session numbers are
    unused or owned by this deployment. Do not overwrite another SPAN session.
 3. Confirm only the intended management SVI is active before enabling `ip routing`
-   for ERSPAN. On HomeSwitch02, this deployment enabled it with only Vlan3 active;
-   the existing MGMT default route remains `192.168.3.1`. HomeSwitch01 and 04
+   for ERSPAN. On access-sw02, this deployment enabled it with only Vlan3 active;
+   the existing MGMT default route remains `192.168.3.1`. access-sw01 and 04
    already had routing enabled. No monitored user-VLAN SVI was added.
-4. Verify the entire mirror path can carry encapsulation overhead. HomeSwitch04
+4. Verify the entire mirror path can carry encapsulation overhead. access-sw04
    initially used system MTU 1500; it was changed to 9198, matching the other two
    switches. The setting applied without a reload on the deployed IOS XE 16.12.
-   The sensor remains 9000 and R640 bridge/uplink 9500. This is a global switch
+   The sensor remains 9000 and hypervisor bridge/uplink 9500. This is a global switch
    setting: check routed-interface MTUs and device-specific behavior elsewhere.
-5. Check link capacity before adding copies. HomeSwitch04's uplink is 1 Gb/s and
+5. Check link capacity before adding copies. access-sw04's uplink is 1 Gb/s and
    carries normal traffic and mirror copies. Its historical CRC/output-drop
    counters were nonzero before this change; compare deltas, not lifetime counts.
 
 For a new source, use the existing site's verified management VRF and a unique
-ERSPAN ID. Stage the session in shutdown state. Example for HomeSwitch04:
+ERSPAN ID. Stage the session in shutdown state. Example for access-sw04:
 
 ```text
 mac address-table static bc24.11ef.9e87 vlan 3 interface GigabitEthernet1/0/47
@@ -100,7 +100,7 @@ monitor session 14 type erspan-source
 
 Use the source table for the other switches. VLAN filtering limits trunk
 sources; access-port selection must itself respect the VLAN scope. The static
-sensor MAC entry on HomeSwitch01 remains via Po3 and on HomeSwitch02 via Te1/1/1.
+sensor MAC entry on access-sw01 remains via Po3 and on access-sw02 via Te1/1/1.
 All three entries pin the sensor's transport path: review them before moving
 the VM or changing its MAC.
 
@@ -159,7 +159,7 @@ continues delivering observations. Counts reset with probe restart.
 
 ## Activate and validate
 
-Enable the staged sessions with `no shutdown`. On HomeSwitch01, replace the old
+Enable the staged sessions with `no shutdown`. On access-sw01, replace the old
 Po1 both-direction source with the listed RX sources; do not leave both capture
 strategies active. Inspect the actual running-config diff and `show monitor
 session all`: a tool's success response alone does not prove IOS accepted every
@@ -171,7 +171,7 @@ Required checks:
   IDs match the trusted plan. Unknown origins cannot claim a configured identity.
 * A direct, same-VLAN ICMP canary between two K3s nodes produces SID 9000001 with
   the original VLAN and endpoint addresses in EVE, Loki and a Convergence case.
-* A 1500-byte original IPv4 packet from HomeSwitch04 arrives intact; inspect
+* A 1500-byte original IPv4 packet from access-sw04 arrives intact; inspect
   fragmentation, decoder errors and switch port error deltas.
 * A cross-node pod flow shows inner `10.42.*` addresses after VXLAN decoding.
   Seeing only outer UDP/8472 is insufficient proof of pod visibility.
@@ -187,7 +187,7 @@ Required checks:
 ## Recorded validation — 24 October 2026
 
 All three source sessions were enabled and their exact RX port lists verified
-against the plan. HomeSwitch04 reported an applied MTU of 9198. Its uplink CRC
+against the plan. access-sw04 reported an applied MTU of 9198. Its uplink CRC
 and output-drop counters did not increase between pre-change and verification
 samples. This is a short observation, not a long-term link-health certification.
 
@@ -220,7 +220,7 @@ host/AP-internal capture boundaries.
 
 | Boundary | Next implementation | Acceptance evidence |
 |---|---|---|
-| VMs on the same R640 bridge | Host/virtual-bridge capture excluding sensor and mirrored GRE | Canary between co-resident VMs that never traverses eno1 |
+| VMs on the same hypervisor bridge | Host/virtual-bridge capture excluding sensor and mirrored GRE | Canary between co-resident VMs that never traverses eno1 |
 | Pods on the same K3s node | Per-node capture or compatible network/runtime telemetry; validate ARM64 and amd64 | Same-node pod conversation plus workload identity |
 | Local AP or mesh forwarding | Verify topology and AP capture capabilities; supplement with endpoint telemetry | Two clients whose packets remain inside that wireless path |
 | New or moved endpoint | Update topology/port inventory and reviewed capture plan | Both flow directions and source liveness after the move |
@@ -270,7 +270,7 @@ based on coverage and operational cost.
 
 ## Rollback
 
-Shut down sessions 12 and 14 first. Restore HomeSwitch01 session 10 to the
+Shut down sessions 12 and 14 first. Restore access-sw01 session 10 to the
 original Po1 both-direction source by removing the added RX source list and
 adding `source interface Po1 both`. Leave the original filter, destination,
 VRF, MTU and ID intact. Verify the firewall canary and save the configurations.
@@ -279,8 +279,8 @@ Restore the sensor's prior YAML, environment and capture unit; stop/disable the
 probe if returning to the old deployment. Restore the private controller config
 without the additional capture sources, then restart ingestion. Retain EVE,
 cursor state and case history. Remove only owned unused mirror sessions/static
-MAC entries after copies have stopped. Reverting HomeSwitch02 routing or
-HomeSwitch04's MTU requires checking that no subsequent change depends on them;
+MAC entries after copies have stopped. Reverting access-sw02 routing or
+access-sw04's MTU requires checking that no subsequent change depends on them;
 neither is an automatic rollback action.
 
 ## Primary references

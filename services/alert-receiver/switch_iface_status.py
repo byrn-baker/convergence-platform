@@ -6,7 +6,7 @@ connects to the device, runs 'show interfaces status', and prints the rows for
 the interfaces passed on argv. No config changes.
 
 Usage:
-  switch_iface_status.py HomeSwitch01 Gi1/0/4 Gi1/0/8 ...
+  switch_iface_status.py access-sw01 Gi1/0/4 Gi1/0/8 ...
 """
 import os
 import sys

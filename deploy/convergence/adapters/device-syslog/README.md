@@ -68,7 +68,7 @@ fleet cannot.
 
 ```yaml
 # BEGIN netclaw-convergence-device-map
-- set(attributes["device_name"], "HomeSwitch01") where attributes["net.peer.ip"] == "192.168.3.2"
+- set(attributes["device_name"], "access-sw01") where attributes["net.peer.ip"] == "192.168.3.2"
 # END netclaw-convergence-device-map
 ```
 

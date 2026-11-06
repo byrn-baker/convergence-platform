@@ -89,17 +89,17 @@ device_telemetry:
     poll_interval: 60s
     # community / v3: env only — SNMP_COMMUNITY, never committed
     targets:
-      - name: HomeSwitch01
+      - name: access-sw01
         ip: 192.168.3.2
         role: switch           # switch | firewall | other
         vendor: cisco          # cisco | pfsense | generic
         template: cisco        # maps to snmp module / template pack
-      - name: HomeSwitch04
+      - name: access-sw04
         ip: 192.168.3.5
         role: switch
         vendor: cisco
         template: cisco
-      - name: pfSense-FW01
+      - name: edge-fw01
         ip: 192.168.3.1
         role: firewall
         vendor: pfsense

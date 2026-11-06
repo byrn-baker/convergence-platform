@@ -785,7 +785,7 @@
       "description": "Recent gateway/WAN/DHCP/DNS/link events from pfSense and core switches (syslog via OTel \u2192 Loki). Closest real analog to the demo event stream until product-level monitoring events exist.",
       "targets": [
         {
-          "expr": "{device_name=~\"pfsense|HomeSwitch01|HomeSwitch02\"} |~ \"(?i)(gateway|wan|dhcp|dns|link (up|down)|carrier|dpinger|interface)\"",
+          "expr": "{device_name=~\"pfsense|access-sw01|access-sw02\"} |~ \"(?i)(gateway|wan|dhcp|dns|link (up|down)|carrier|dpinger|interface)\"",
           "refId": "A"
         }
       ],

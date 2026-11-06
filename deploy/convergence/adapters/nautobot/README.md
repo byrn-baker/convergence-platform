@@ -16,7 +16,7 @@ sot:
 Set credentials in `deploy/convergence/.env` (Docker) or K8s secret:
 
 ```bash
-NAUTOBOT_URL=https://nautobot.internal.byrnbaker.me
+NAUTOBOT_URL=https://nautobot.example.internal
 NAUTOBOT_TOKEN=<your-api-token>
 ```
 

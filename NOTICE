@@ -1,0 +1,9 @@
+Convergence
+Copyright (c) 2026 Brian Baker. Licensed under the MIT License (see LICENSE).
+
+This repository includes scripts/write-env.py from NetClaw
+(https://github.com/automateyournetwork/netclaw), licensed under the
+Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0).
+That file keeps its original license.
+
+Dependencies and container base images keep their own licenses.

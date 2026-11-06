@@ -29,7 +29,8 @@ def read_env(path: Path) -> dict:
 root_env = read_env(REPO / ".env")
 recv_env = read_env(REPO / "services/alert-receiver/.env")
 
-nb = (root_env.get("NAUTOBOT_URL") or "https://nautobot.internal.byrnbaker.me").rstrip("/")
+nb = (root_env.get("NAUTOBOT_URL") or "").rstrip("/")
+assert nb, "NAUTOBOT_URL missing"
 tok = root_env.get("NAUTOBOT_TOKEN", "")
 secret = recv_env.get("NAUTOBOT_WEBHOOK_SECRET", "")
 

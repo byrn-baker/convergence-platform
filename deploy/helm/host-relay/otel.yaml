@@ -59,11 +59,11 @@ processors:
     log_statements:
     - context: log
       statements:
-      - set(attributes["device_name"], "HomeSwitch01") where attributes["net.peer.ip"]
+      - set(attributes["device_name"], "access-sw01") where attributes["net.peer.ip"]
         == "192.168.3.2"
-      - set(attributes["device_name"], "HomeSwitch02") where attributes["net.peer.ip"]
+      - set(attributes["device_name"], "access-sw02") where attributes["net.peer.ip"]
         == "192.168.3.3"
-      - set(attributes["device_name"], "HomeSwitch04") where attributes["net.peer.ip"]
+      - set(attributes["device_name"], "access-sw04") where attributes["net.peer.ip"]
         == "192.168.3.5"
       - set(attributes["device_name"], "pfsense")      where attributes["net.peer.ip"]
         == "192.168.3.1"

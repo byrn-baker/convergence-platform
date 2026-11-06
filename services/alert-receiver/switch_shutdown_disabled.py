@@ -5,7 +5,7 @@ baseline -> apply 'shutdown' -> verify -> save. Reversible via 'no shutdown'.
 Reads creds from ~/.openclaw/.env, uses the Nautobot-generated testbed.
 
 Usage:
-  switch_shutdown_disabled.py HomeSwitch01 Gi1/0/4 Gi1/0/8 ...
+  switch_shutdown_disabled.py access-sw01 Gi1/0/4 Gi1/0/8 ...
 """
 import os
 import sys

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# From NetClaw (https://github.com/automateyournetwork/netclaw), Apache License 2.0.
+# Only this header differs from NetClaw's copy, so bundle files are written the same way; see NOTICE.
 """Read literal dotenv values or atomically update an assignment from stdin.
 
 Environment files are data, not shell programs. Never source their contents.

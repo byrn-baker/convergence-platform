@@ -22,7 +22,7 @@
       {
         "name": "device",
         "type": "custom",
-        "query": "pfsense,HomeSwitch01,HomeSwitch02,local-ai",
+        "query": "pfsense,access-sw01,access-sw02,local-ai",
         "current": {
           "text": "All",
           "value": "$__all"
@@ -176,7 +176,7 @@
       },
       "targets": [
         {
-          "expr": "{service_name=\"network-devices\", device_name=~\"HomeSwitch.*\"}",
+          "expr": "{service_name=\"network-devices\", device_name=~\"access-sw.*\"}",
           "maxLines": 100
         }
       ],

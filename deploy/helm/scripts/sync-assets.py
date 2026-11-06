@@ -26,13 +26,13 @@ if profile_path.exists():
  collector=yaml.safe_load((root/'deploy/convergence/otel/otel-config.yaml').read_text())
  collector['receivers']={k:v for k,v in collector['receivers'].items() if not k.startswith('snmp/')}
  collector['receivers']['otlp']={'protocols':{'grpc':{'endpoint':'0.0.0.0:4317'},'http':{'endpoint':'0.0.0.0:4318'}}}
- collector['processors']={k:v for k,v in collector['processors'].items() if not k.startswith('resource/homeswitch')}
+ collector['processors']={k:v for k,v in collector['processors'].items() if not k.startswith('resource/access-sw')}
  collector['exporters'].pop('prometheusremotewrite/prometheus',None)
  for exporter in collector['exporters'].values():
   for key,value in list(exporter.items()):
    if isinstance(value,str):exporter[key]=value.replace('http://loki:3100','http://{{ .Release.Name }}-loki:3100').replace('http://victorialogs:9428','http://{{ .Release.Name }}-logs:9428').replace('http://victoriametrics:8428','http://{{ .Release.Name }}-metrics:8428')
  collector['extensions']['file_storage/otel']['directory']='/data'
- collector['service']['pipelines']={k:v for k,v in collector['service']['pipelines'].items() if not k.startswith('metrics/homeswitch')}
+ collector['service']['pipelines']={k:v for k,v in collector['service']['pipelines'].items() if not k.startswith('metrics/access-sw')}
  collector['service']['pipelines']['logs/otlp']={'receivers':['otlp'],'processors':['memory_limiter','batch'],'exporters':['loki','otlphttp/victorialogs']}
  collector['service']['pipelines']['metrics/otlp']={'receivers':['otlp'],'processors':['memory_limiter','batch'],'exporters':['prometheusremotewrite/victoriametrics']}
  rules={p.name:yaml.safe_load(p.read_text()) for p in (root/'deploy/convergence/prometheus/alerts').glob('*.rules.yml') if p.name!='suzieq.rules.yml'}

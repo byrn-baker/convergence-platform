@@ -39,7 +39,7 @@ device telemetry, matching the pilot `k3s-observability-stack` design:
 
 ## Verified facts (measured, not assumed)
 
-Probed with `otel/opentelemetry-collector-contrib:0.104.0` against HomeSwitch01
+Probed with `otel/opentelemetry-collector-contrib:0.104.0` against access-sw01
 (`deploy/convergence/otel/probe-snmp-names.yaml`, read-only SNMP):
 
 ### Metric names are already identical — no rename needed
@@ -62,13 +62,13 @@ emits the final names directly.
 Probe output:
 
 ```text
-interface_status{device_name="HomeSwitch01",interface_name="GigabitEthernet1/0/1",site="home"} 1
+interface_status{device_name="access-sw01",interface_name="GigabitEthernet1/0/1",site="home"} 1
 ```
 
 versus snmp_exporter today:
 
 ```text
-interface_status{device_name="HomeSwitch02",ifDescr="GigabitEthernet0/0",ifIndex="1",
+interface_status{device_name="access-sw02",ifDescr="GigabitEthernet0/0",ifIndex="1",
                  ifName="Gi0/0",instance="192.168.3.3",interface_name="GigabitEthernet0/0",
                  job="device_snmp",role="switch",site="home",snmp_module="cisco",vendor="cisco"}
 ```
@@ -98,11 +98,11 @@ pipeline:
 
 ```yaml
 processors:
-  resource/homeswitch01:
+  resource/access-sw01:
     attributes:
       - {key: service.name,        value: device_snmp,     action: upsert}   # → job
       - {key: service.instance.id, value: "192.168.3.2",   action: upsert}   # → instance
-      - {key: device_name,         value: HomeSwitch01,    action: upsert}
+      - {key: device_name,         value: access-sw01,    action: upsert}
       - {key: role,                value: switch,          action: upsert}
       - {key: vendor,              value: cisco,           action: upsert}
       - {key: site,                value: home,            action: upsert}
@@ -219,11 +219,11 @@ units** are running on this host:
 | `openclaw-gateway.service` | yes — the only one with streams in Loki |
 | `netclaw-mesh.service` | no (last entry ~22h ago) |
 | `netclaw-hud.service` | no |
-| `netclaw-member-byrns-risk-cml.service` | no |
-| `netclaw-member-byrns-risk-guardian-claw.service` | no (last entry ~41h ago) |
-| `netclaw-member-byrns-risk-pyats.service` | no |
-| `netclaw-member-byrns-risk-secops.service` | no |
-| `netclaw-member-byrns-risk-viz.service` | no |
+| `netclaw-member-<risk>-cml.service` | no |
+| `netclaw-member-<risk>-guardian-claw.service` | no (last entry ~41h ago) |
+| `netclaw-member-<risk>-pyats.service` | no |
+| `netclaw-member-<risk>-secops.service` | no |
+| `netclaw-member-<risk>-viz.service` | no |
 
 So seven of the eight have no streams in Loki right now. These are **systemd
 units, not user accounts** — all eight are `active (running)`; they are simply

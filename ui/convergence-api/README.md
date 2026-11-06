@@ -14,7 +14,7 @@ Until Docker/K3s Home deploy lands, the HUD can point at the **existing** pilot:
 
 ```bash
 # ~/.openclaw/.env or netclaw/.env
-HOME_API_URL=https://network-guardian.localedgedatacenter.com
+HOME_API_URL=https://convergence.example.com
 HOME_API_TOKEN=<same as NETWORK_GUARDIAN_TOKEN / API key>
 # aliases accepted:
 # NETWORK_GUARDIAN_URL / NETWORK_GUARDIAN_TOKEN

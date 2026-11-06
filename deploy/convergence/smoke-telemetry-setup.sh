@@ -75,7 +75,7 @@ case "$MODE" in
     fi
     ok "nautobot dry-run exits 0"
     # Write for real to temp (not live ~/.openclaw config)
-    run_setup --mode nautobot --select 'HomeSwitch,pfSense' \
+    run_setup --mode nautobot --select 'access-sw,pfSense' \
       --write --out "$OUT_YAML" --out-targets "$OUT_TARGETS" \
       >"${TMPDIR_RUN}/write.log" 2>&1 || {
         bad "nautobot write to temp yaml"
@@ -99,7 +99,7 @@ case "$MODE" in
     ;;
   manual)
     run_setup --mode manual \
-      --csv 'HomeSwitch01=192.168.3.2:cisco,HomeSwitch04=192.168.3.5:cisco' \
+      --csv 'access-sw01=192.168.3.2:cisco,access-sw04=192.168.3.5:cisco' \
       --write --out "$OUT_YAML" --out-targets "$OUT_TARGETS" \
       >"${TMPDIR_RUN}/write.log" 2>&1 || {
         bad "manual csv write"

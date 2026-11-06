@@ -59,7 +59,7 @@ processors:
   resource/probe:
     attributes:
       - key: device_name
-        value: HomeSwitch01
+        value: access-sw01
         action: upsert
       - key: site
         value: home

@@ -15,7 +15,7 @@ data:
   PGDATABASE: "guardian"
   PGUSER: "guardian"
   NAUTOBOT_URL: "http://nautobot.nautobot.svc:8080"
-  PUBLIC_URL: "https://guardian.byrnbaker.me"
+  PUBLIC_URL: "https://convergence.example.com"
   SITES_CONFIG: |
     {
       "home": {

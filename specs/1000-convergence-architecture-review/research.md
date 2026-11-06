@@ -42,11 +42,10 @@ that maps to "running and monitoring a network like a NOC should."
 |------|------|-----------|
 | netclaw | `/home/ubuntu/netclaw` | Alert receiver, skills, iN2N members, convergence deploy |
 | k3s-observability-stack | `/home/ubuntu/k3s-observability-stack` | Production OBS (what's *actually* running) |
-| localedgedatacenter_page | `/home/ubuntu/localedgedatacenter_page` | Marketing (out of scope but referenced) |
 
 ## Current System State (from spec 118 work)
 
-### iN2N Risk Architecture (byrns-risk)
+### iN2N Risk Architecture (operator Risk)
 - **Border**: `anthropic/claude-sonnet-5` (fallback: `ollama/deepseek-v4-flash:cloud`)
 - **Alert triage**: `ollama/deepseek-v4-flash:cloud`
 - **Members (active)**: pyats (nemotron-3-super), cml (qwen3.5:27b), guardian-claw (qwen3.5:27b), viz (gemma4:31b), secops (nemotron-3-nano:30b)

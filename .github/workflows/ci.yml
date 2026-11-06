@@ -1,0 +1,99 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The alert receiver's JEV review uses NetClaw's JEV core (NETCLAW_DIR).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: automateyournetwork/netclaw
+          path: netclaw
+          sparse-checkout: mcp-servers/jev-mcp
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.19.0
+      - name: Install test dependencies
+        run: |
+          pip install pytest pyyaml
+          pip install -r services/ids-ingest/requirements.txt -r services/alert-receiver/requirements.txt
+      - name: Build chart dependencies
+        run: helm dependency build deploy/helm/convergence
+      - name: Setup, cluster and chart tests
+        env:
+          HELM_BIN: helm
+        run: python -m pytest -q tests/unit deploy/helm/tests
+      - name: Chart assets match their sources
+        run: python deploy/helm/scripts/sync-assets.py --check
+      - name: Service and agent tests
+        env:
+          NETCLAW_DIR: ${{ github.workspace }}/netclaw
+        run: |
+          for d in services/ids-ingest services/alert-receiver services/proxmox-observer \
+                   services/proxmox-mirror services/proxmox-shipper \
+                   deploy/convergence/host-agent deploy/convergence/ids/proxmox-mirror; do
+            (cd "$d" && python -m pytest -q)
+          done
+
+  node:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ui/convergence-api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: node --test test-*.cjs
+
+  images:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [python, node]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - name: convergence-api
+            context: ui/convergence-api
+          - name: convergence-ids-ingest
+            context: services/ids-ingest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha,format=long
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

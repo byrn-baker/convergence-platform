@@ -1,7 +1,7 @@
 # Spec 1013: Rental VM host telemetry prototype
 
 Status: draft capability; code-only prototype complete and independently reviewed.
-Authorized by the owner-provided LocalEdge proposal; deployment remains unqualified.
+Authorized by the owner's hosting proposal; deployment remains unqualified.
 Fork service work based on 52ac80f0, independent of upstream connector/spec167 work.
 
 ## Goal and trust boundary

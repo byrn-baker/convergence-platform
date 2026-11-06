@@ -639,7 +639,7 @@ def _pick_best_nautobot_device(results: list, query: str) -> Optional[dict]:
     """Choose the best device when Nautobot returns multiple name matches.
 
     Alert labels are often short (pfsense, r640) while SoT names are longer
-    (pfSense-FW01, r640-pve). Prefer exact casefold name, then startswith,
+    (edge-fw01, pve1). Prefer exact casefold name, then startswith,
     then shortest name containing the query.
     """
     if not results:

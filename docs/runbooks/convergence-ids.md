@@ -2,7 +2,7 @@
 
 This runbook builds a Suricata sensor VM, mirrors selected traffic to it with
 ERSPAN, and delivers authenticated EVE observations into NetClaw Convergence.
-It includes the deployment used in the home/LocalEdge network on 24 October 2026.
+It includes the deployment used in the example home lab on 24 October 2026.
 The sensor is passive: it cannot block packets or change firewall policy.
 
 The live deployment now extends this initial firewall capture with
@@ -18,10 +18,10 @@ For current long-term event retention, sensor metrics and replay behavior, follo
 
 ```mermaid
 flowchart LR
-    VLAN[Selected home and LocalEdge VLANs] --> SW[HomeSwitch01]
+    VLAN[Selected home lab VLANs] --> SW[access-sw01]
     SW <-->|Port-channel1, both directions| FW[pfSense internal LAG]
     SW -->|ERSPAN II, session 10 / ID 110, MGMT VRF| TRUNK[Existing switch trunk]
-    TRUNK --> BR[R640 eno1 / vmbr0]
+    TRUNK --> BR[hypervisor eno1 / vmbr0]
     BR --> IDS[Dedicated Suricata VM]
     IDS --> EVE[Rotating EVE JSON + durable cursor]
     EVE -->|HTTPS + sensor token| IN[IDS ingestion service]
@@ -91,11 +91,11 @@ Raw EVE VLAN fields remain available in Loki and VictoriaLogs.
 
 | Component | Value |
 |---|---|
-| Hypervisor / template | `r640-pve` / Ubuntu 24.04 cloud-init template `8000` |
+| Hypervisor / template | `pve1` / Ubuntu 24.04 cloud-init template `8000` |
 | Sensor VM | `113`, `netclaw-ids-01`; 4 vCPU, 8 GiB RAM, 80 GiB disk on `vm_disk` |
 | Sensor address | `192.168.3.200/24`, gateway/DNS `192.168.3.1`; reserved in Nautobot |
 | NIC | VirtIO on `vmbr0`, VLAN tag 3; guest MTU 9000 |
-| Mirror source | HomeSwitch01 `Port-channel1`, both directions |
+| Mirror source | access-sw01 `Port-channel1`, both directions |
 | ERSPAN transport | `192.168.3.2` → `192.168.3.200`, VRF `MGMT`, ID `110`, session `10` |
 | Ingest service | NetClaw host `192.168.3.252:8445`, HTTPS |
 | Sensor identity / site | `home-ids-01` / `home` |
@@ -113,9 +113,9 @@ Raw EVE VLAN fields remain available in Loki and VictoriaLogs.
 | 101 | `192.168.101.0/24` | Personal-device / kids' laptops |
 | 102 | `192.168.102.0/24` | IoT |
 | 103 | `192.168.103.0/24` | Personal computer |
-| 104 | `192.168.104.0/24` | LocalEdge hosting |
-| 300 | `10.30.0.0/24` | LocalEdge backend |
-| 301 | `10.30.1.0/24` | LocalEdge customers |
+| 104 | `192.168.104.0/24` | Hosting |
+| 300 | `10.30.0.0/24` | Hosting backend |
+| 301 | `10.30.1.0/24` | Hosting tenants |
 
 HOME_NET contains those IPv4 networks plus IPv6 ULA/link-local ranges. No routed
 global IPv6 prefix was found on these interfaces during setup. Add actual global
@@ -143,11 +143,11 @@ correct routing table, and enough bandwidth for copies plus normal traffic.
 management VRF routing table is insufficient: `show ip route vrf MGMT` reported
 `Extended Host Mode is enabled` before this deployment. Check raw output and
 `show running-config all`, since a structured parser can omit that warning.
-On HomeSwitch01 we enabled `ip routing` after verifying VLAN 3 was the only
+On access-sw01 we enabled `ip routing` after verifying VLAN 3 was the only
 active SVI and that its existing management default route remained valid.
 No SVI or route for the monitored user VLANs was added.
 Use the whole port-channel; choosing one LAG member can omit one flow direction.
-Do not convert the R640's existing production uplink into a local SPAN destination.
+Do not convert the hypervisor's existing production uplink into a local SPAN destination.
 
 Reserve an unused sensor address in IPAM. Check DHCP pools/reservations, leases,
 Proxmox allocations and ARP as well as ping. A failed ping alone proves nothing.
@@ -187,7 +187,7 @@ From the repository root, run the preflight first:
 
 ```bash
 .venv/bin/python deploy/convergence/ids/provision-proxmox.py \
-  --node r640-pve --template 8000 --vmid 113 --storage vm_disk \
+  --node pve1 --template 8000 --vmid 113 --storage vm_disk \
   --vlan 3 --address 192.168.3.200/24 --gateway 192.168.3.1 \
   --dns 192.168.3.1 --ssh-key ~/.ssh/id_ed25519.pub --reset-cloud-init
 ```
@@ -310,9 +310,9 @@ Give the mirror destination a stable unicast forwarding path. In this deployment
 the sensor's MAC is `bc24.11ef.9e87`:
 
 ```text
-! HomeSwitch01: path to the switch hosting the R640
+! access-sw01: path to the switch hosting the hypervisor
 mac address-table static bc24.11ef.9e87 vlan 3 interface Port-channel3
-! HomeSwitch02: R640 eno1 uplink
+! access-sw02: hypervisor eno1 uplink
 mac address-table static bc24.11ef.9e87 vlan 3 interface TenGigabitEthernet1/1/1
 ```
 
@@ -533,7 +533,7 @@ monitor session 10 type erspan-source
 Save the switch configuration. Stop `netclaw-ids-capture` on the sensor; leave the
 shipper/ingestion service running long enough to drain pending observations.
 If abandoning this source permanently, remove only `monitor session 10`, then
-remove the two sensor-specific static MAC entries and save. HomeSwitch01's
+remove the two sensor-specific static MAC entries and save. access-sw01's
 `ip routing` was enabled as an ERSPAN prerequisite; restoring `no ip routing`
 is appropriate only if its Layer 3 configuration still matches the pre-deployment
 baseline. Review any subsequent routing changes first. Existing firewall policy

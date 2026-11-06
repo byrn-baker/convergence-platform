@@ -8,8 +8,8 @@ Device admin-state: 'show interfaces status' status == 'disabled' -> admin down
 (enabled False); anything else (connected/notconnect/err-disabled) -> enabled True.
 
 Usage:
-  reconcile_admin_state.py HomeSwitch01 HomeSwitch02          # report only
-  reconcile_admin_state.py --apply HomeSwitch01 HomeSwitch02  # sync Nautobot
+  reconcile_admin_state.py access-sw01 access-sw02          # report only
+  reconcile_admin_state.py --apply access-sw01 access-sw02  # sync Nautobot
 """
 import json
 import os
@@ -37,7 +37,9 @@ load_env(REPO / ".env")
 load_env(Path.home() / ".openclaw/.env")
 os.environ.setdefault("PYATS_TESTBED_PATH", str(REPO / "testbed/testbed.yaml"))
 
-NB = (os.environ.get("NAUTOBOT_URL") or "https://nautobot.internal.byrnbaker.me").rstrip("/")
+NB = (os.environ.get("NAUTOBOT_URL") or "").rstrip("/")
+if not NB:
+    sys.exit("NAUTOBOT_URL is not set")
 TOK = os.environ.get("NAUTOBOT_TOKEN", "")
 CTX = ssl.create_default_context()
 CTX.check_hostname = False

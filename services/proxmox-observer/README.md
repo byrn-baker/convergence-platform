@@ -25,7 +25,7 @@ For a capture canary, replace the unit's `ExecStart` via a systemd drop-in:
 ```ini
 [Service]
 ExecStart=
-ExecStart=/usr/bin/python3 /opt/netclaw-proxmox-observer/collector.py --node r640-pve --capture-vm 6095
+ExecStart=/usr/bin/python3 /opt/netclaw-proxmox-observer/collector.py --node pve1 --capture-vm 9001
 ```
 
 `--capture-vm` is repeatable and limits packet capture only: inventory and counters still include every QEMU VM, and the snapshot explicitly labels restricted coverage. Remove these flags to capture all discovered running VM TAPs. The coordinator performs installation and live verification; this repository implementation does not apply remote changes.

@@ -5,8 +5,8 @@ retained metrics and logs, alerting, an evidence API, and optional passive IDS a
 hypervisor-side VM observation. NetClaw connects to it through the read-only
 `convergence-read` integration; Convergence itself runs and is operated separately.
 
-> **Status:** private while the split from `byrn-baker/netclaw-convergence` is
-> reviewed. See [Before publication](#before-publication).
+Convergence grew inside the [netclaw-convergence](https://github.com/byrn-baker/netclaw-convergence)
+fork and now lives here; its design history is in [specs/](specs).
 
 ## Ways to run it
 
@@ -41,19 +41,14 @@ python3 -m pytest tests/unit deploy/helm/tests
 NETCLAW_DIR=/path/to/netclaw bash tests/convergence-host/run-tests.sh
 ```
 
-## Before publication
+## Images
 
-- Generalize home-specific content still in runbooks, the collector config
-  (`deploy/convergence/otel/`), Kustomize overlays and test fixtures.
-- Replace `ui/convergence-api/build.sh` (builds a retired image name).
-- Publish images and charts from CI so NetClaw can pin a release.
-- Choose the repository license (see below).
-- Move the NetClaw HUD tests in `tests/convergence-home` and
-  `tests/convergence-host-status` to NetClaw.
+Tagged releases publish `ghcr.io/byrn-baker/convergence-api` and
+`ghcr.io/byrn-baker/convergence-ids-ingest` for amd64 and arm64. To build locally
+instead, run `ui/convergence-api/build.sh`; the K3s guide shows how to load a local
+image into a cluster without a registry.
 
 ## License
 
-Not settled yet; decide before publication. `ui/convergence-api/` is MIT (see its
-[LICENSE](ui/convergence-api/LICENSE) and [NOTICE](ui/convergence-api/NOTICE.md)).
-Everything else was developed inside the Apache-2.0 NetClaw fork, and the vendored
-`scripts/write-env.py` is NetClaw's (Apache-2.0).
+MIT, see [LICENSE](LICENSE). `scripts/write-env.py` comes from NetClaw and keeps its
+Apache-2.0 license; see [NOTICE](NOTICE).

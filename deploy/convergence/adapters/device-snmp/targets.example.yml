@@ -8,17 +8,17 @@
 site: home
 
 targets:
-  - name: HomeSwitch01
+  - name: access-sw01
     ip: 192.168.3.2
     role: switch
     vendor: cisco
     template: cisco
-  - name: HomeSwitch02
+  - name: access-sw02
     ip: 192.168.3.3
     role: switch
     vendor: cisco
     template: cisco
-  - name: HomeSwitch04
+  - name: access-sw04
     ip: 192.168.3.5
     role: switch
     vendor: cisco

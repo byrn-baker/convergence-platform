@@ -47,23 +47,23 @@ device_telemetry:
     version: v2c
     poll_interval: 60s
     targets:
-      - name: HomeSwitch01
+      - name: access-sw01
         ip: 192.168.3.2
         role: switch
         vendor: cisco
         template: cisco
-      - name: HomeSwitch02
+      - name: access-sw02
         ip: 192.168.3.3
         role: switch
         vendor: cisco
         template: cisco
-      - name: HomeSwitch04
+      - name: access-sw04
         ip: 192.168.3.5
         role: switch
         vendor: cisco
         template: cisco
       # Optional firewall SNMP (IF-MIB); edge HTTPS stays blackbox_edge
-      # - name: pfSense-FW01
+      # - name: edge-fw01
       #   ip: 192.168.3.1
       #   role: firewall
       #   vendor: pfsense
@@ -85,7 +85,7 @@ device_telemetry:
     devices:
       - name: pfsense
         ip: 192.168.3.1
-      # - name: HomeSwitch03       # no SNMP access on this one, logs only
+      # - name: access-sw03       # no SNMP access on this one, logs only
       #   ip: 192.168.3.4
       # - name: netclaw            # the agent host's own rsyslog
       #   ip: 192.168.3.252
