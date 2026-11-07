@@ -117,6 +117,20 @@ The bundle contains:
 | `secret.json` | Generated API, PostgreSQL and Grafana credentials; keep private |
 | `deployment.json` | Exact target identity for repeatable setup |
 | `hud.env` | Matching credentials for an existing NetClaw HUD; URLs initially assume local port-forwards |
+| `receiver.env`, `investigation-policy.yaml` | Only with `--receiver-url`: the host alert receiver's settings and an observe-only policy |
+
+Alerts become cases through the **alert receiver**, a small service on the NetClaw
+host. To connect it, add `--receiver-url` with the receiver's address as the cluster
+reaches it, and `--receiver-api-url` with the API's address as that host reaches it
+(for example a NodePort; the default is the port-forward `http://127.0.0.1:3080`):
+
+```bash
+  --receiver-url http://192.0.2.10:8099 --receiver-api-url http://192.0.2.20:30300
+```
+
+Alertmanager then posts to the receiver with a generated token mounted from the
+release Secret, and the API can reach the receiver for JEV reviews and "Need more"
+re-investigations. See [section 7](#7-alert-receiver-and-netclaw-investigations).
 
 Review `values.json` before installing. The generated settings use small volumes,
 7-day Victoria retention and 72-hour Loki retention. Increase capacity for your
@@ -201,3 +215,21 @@ python3 deploy/helm/scripts/render-device-telemetry.py --site "$site" \
   `count by (device_name) ({service_name="device_snmp"})` in VictoriaMetrics.
 
 Continue with [NetClaw integration, telemetry, backup and upgrades](operations.md).
+
+## 7. Alert receiver and NetClaw investigations
+
+With a bundle prepared using `--receiver-url`, run the receiver on that host as a
+user service and check it:
+
+```bash
+python3 setup/receiver.py install --env-file "$bundle/receiver.env" --start
+python3 setup/receiver.py status
+```
+
+The API's address in `receiver.env` must stay reachable from that host; a temporary
+port-forward is not enough for a service. If the API runs as a NodePort, set the
+service type in `values.json` before installing. Firing alerts now create cases.
+The bundled policy observes only (tier T0): no model runs.
+
+To have NetClaw investigate admitted cases and record its findings, follow
+[setup/netclaw.md](setup/netclaw.md).

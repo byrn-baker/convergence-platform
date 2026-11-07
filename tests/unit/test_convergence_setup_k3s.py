@@ -81,3 +81,35 @@ def test_release_data_ignores_operator_claims_but_not_chart_volumes():
     chart=[item('StatefulSet','convergence-postgres'),item('PersistentVolumeClaim','data-convergence-postgres-0')]
     assert k3s.release_data(chart,'convergence')==['convergence-postgres','data-convergence-postgres-0']
     assert k3s.release_data([item('StatefulSet','other-postgres')],'convergence')==[]
+
+
+def test_receiver_wiring_mounts_the_token_and_writes_receiver_env(tmp_path):
+    bundle = tmp_path/'bundle'
+    k3s.prepare(ROOT, bundle, options(receiver_url='http://192.0.2.10:8099/',
+                                      receiver_api_url='http://192.0.2.20:30300'))
+    secret = json.loads((bundle/'secret.json').read_text())['stringData']
+    values = json.loads((bundle/'values.json').read_text())
+    token = secret['ALERT_RECEIVER_TOKEN']
+    assert values['api']['alertReceiverUrl'] == 'http://192.0.2.10:8099'
+    alerting = values['victoria']['alerting']
+    hook = alerting['alertmanagerConfig']['receivers'][0]['webhook_configs'][0]
+    assert hook['url'] == 'http://192.0.2.10:8099/webhook' and hook['send_resolved']
+    assert hook['http_config']['authorization']['credentials_file'] == '/run/secrets/receiver/token'
+    assert alerting['extraVolumes'][0]['secret'] == {'secretName': 'trial-credentials',
+        'items': [{'key': 'ALERT_RECEIVER_TOKEN', 'path': 'token'}]}
+    assert token not in json.dumps(values)
+    env = (bundle/'receiver.env').read_text()
+    assert 'ALERT_RECEIVER_PORT=8099' in env and 'GUARDIAN_DEFAULT_SITE=cottage' in env
+    assert 'NETWORK_GUARDIAN_URL=http://192.0.2.20:30300' in env and token in env
+    assert 'INVESTIGATION_POLICY_PATH='+str(bundle/'investigation-policy.yaml') in env
+    assert json.loads((bundle/'investigation-policy.yaml').read_text())['allow_t2'] == []
+    assert (bundle/'receiver.env').stat().st_mode & 0o777 == 0o600
+
+
+def test_receiver_options_are_optional_and_validated(tmp_path):
+    k3s.prepare(ROOT, tmp_path/'plain', options())
+    assert not (tmp_path/'plain/receiver.env').exists()
+    manifest = json.loads((tmp_path/'plain/deployment.json').read_text())
+    assert not any(k.startswith('receiver') for k in manifest['options'])
+    with pytest.raises(ValueError, match='no path'):
+        k3s.prepare(ROOT, tmp_path/'bad', options(receiver_url='http://192.0.2.10:8099/webhook'))

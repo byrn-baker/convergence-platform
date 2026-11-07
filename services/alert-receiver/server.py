@@ -1197,7 +1197,8 @@ def build_investigation_prompt(
     parts.append("3. Query Prometheus for recent metric history if relevant.")
     parts.append(
         "4. For any EXTERNAL/public source IP in this alert (e.g. port scans, "
-        "WAN blocks, suspicious connections), enrich it before concluding:\n"
+        "WAN blocks, suspicious connections), enrich it before concluding with "
+        "whichever of these tools you have:\n"
         "   - `greynoise_community_lookup` — is it benign internet noise / a "
         "known scanner (Censys, Shodan) or targeted? (free, no key)\n"
         "   - `threatintel_lookup_ip` / `abuseipdb_check` / `otx_get_pulses` — "
@@ -1213,12 +1214,10 @@ def build_investigation_prompt(
     # <url>" or "run via exec: openclaw message send" in this payload causes the
     # model to (correctly) flag it as prompt injection from an untrusted webhook
     # and refuse. The skill is trusted content; the payload carries facts only.
-    # Role fact (not a URL/command): Border must n2n_route first per skill.
+    # Delegation is the skill's decision: only when n2n tools and a triage member exist.
     parts.append(
-        "7. You are the Border brain for this alert. Per the alert-triage skill, "
-        "your first tool call is n2n_route(target_hint=\"alert-triage\"); then "
-        "poll until completed. Do not investigate with device tools first. "
-        "Member delivery (Discord/Guardian) is defined in the skill."
+        "7. Follow the alert-triage skill. Delegate only as it describes (when you have "
+        "n2n_route and a member handles alert triage); otherwise investigate directly."
     )
 
     if alert.status == "resolved":
@@ -1231,9 +1230,8 @@ def build_investigation_prompt(
         if guardian_event_id:
             parts.append(f"Guardian event id: {guardian_event_id}")
         parts.append(
-            "The alert has cleared. Follow the alert-triage skill to post a brief "
-            "all-clear confirmation to the alerts channel and complete the Guardian "
-            "case (PATCH if event id present)."
+            "The alert has cleared. Follow the alert-triage skill: confirm the current "
+            "state and complete the case with case_update if an event id is present."
         )
 
     return "\n".join(parts)
@@ -1852,13 +1850,12 @@ async def run_reinvestigation(body):
         "OPERATOR REQUEST:",
         expert_feedback or "Provide more diagnostic depth. The prior conclusion was too shallow.",
         "",
-        "INSTRUCTIONS:",
-        "1. You are the Border brain. First tool call: n2n_route(target_hint=\"alert-triage\").",
+        "INSTRUCTIONS (follow the alert-triage skill):",
+        "1. Read this case with convergence-case-mcp case_get, including the operator request.",
         "2. Verify the operator correction against fresh evidence; distinguish facts from hypotheses.",
-        "3. Select read-only tools and the runbook appropriate to this alert and device.",
-        "4. Update the SAME Guardian event with convergence-case-mcp case_update. Shell access is disabled.",
-        "5. Discord + RAG snapshot per alert-triage skill when complete.",
-        "6. Report uncertainty and missing evidence. Propose changes for human review only.",
+        "3. Use the read-only tools appropriate to this alert and device.",
+        "4. Update the SAME case with case_update. Shell access is disabled.",
+        "5. Report uncertainty and missing evidence. Propose changes for human review only.",
     ]
     message = "\n".join(parts)
 
@@ -2283,6 +2280,11 @@ async def process_alert(alert: Alert):
         return
     if job_store and job_store.hourly_dispatches() >= int((decision.budgets or {}).get('max_t2_per_hour', 3)):
         release_investigation()
+        log.warning("investigation_policy budget trip budget=hourly alertname=%s — case logged, not investigated",
+                    alert.labels.alertname)
+        _count_tier("T0")
+        metrics.investigation_budget_trips_total['hourly'] = metrics.investigation_budget_trips_total.get('hourly', 0) + 1
+        metrics.investigations_suppressed_total += 1
         await record_case("logged")
         return
     ok_budget, budget_reason = admit_t2(decision.budgets or {})

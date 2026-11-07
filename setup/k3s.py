@@ -85,6 +85,7 @@ def prepare(repo, bundle, options):
                     {'source_labels':['__param_target'],'target_label':'instance'},
                     {'target_label':'__address__','replacement':release+'-blackbox:9115'}]}]}}}
     writer = env_writer(repo)
+    receiver = receiver_wiring(options, secret, values, token) if options.get('receiver_url') else None
     bundle.mkdir(parents=True, mode=0o700)
     writer.write_private(bundle/'.gitignore', '*\n')
     for name, data in [('secret.json',secret), ('values.json',values)]:
@@ -92,9 +93,44 @@ def prepare(repo, bundle, options):
     writer.write_private(bundle/'hud.env', ''.join(k+'='+writer.quote(v)+'\n' for k,v in {
         'CONVERGENCE_API_URL':'http://127.0.0.1:3080', 'CONVERGENCE_API_TOKEN':token,
         'PROMETHEUS_URL':'http://127.0.0.1:8428','ALERTMANAGER_URL':'http://127.0.0.1:9093'}.items()))
+    if receiver:
+        receiver['INVESTIGATION_POLICY_PATH'] = str(bundle/'investigation-policy.yaml')
+        writer.write_private(bundle/'receiver.env', ''.join(k+'='+writer.quote(v)+'\n' for k,v in receiver.items()))
+        writer.write_private(bundle/'investigation-policy.yaml', json.dumps(
+            {'version':1, 'default_tier':'T0', 'allow_t1':[], 'allow_t2':[]}, indent=2)+'\n')
     writer.write_private(bundle/'deployment.json',json.dumps({'schema_version':1,'kind':'k3s','options':identity},indent=2)+'\n')
     return {'status':'prepared','bundle':str(bundle),
             'next':'Build/deliver the API image, review values.json, then run install --bundle with this helper.'}
+
+
+def receiver_wiring(options, secret, values, api_token):
+    """Alertmanager and the API reach the host alert receiver with one generated token.
+
+    The token is mounted into Alertmanager from the release Secret (never rendered into
+    values). Returns the receiver's environment for receiver.env.
+    """
+    url = options['receiver_url'].rstrip('/')
+    api_url = (options.get('receiver_api_url') or 'http://127.0.0.1:3080').rstrip('/')
+    for value in (url, api_url):
+        if not re.fullmatch(r'https?://[A-Za-z0-9.:\[\]-]+(:\d+)?', value):
+            raise ValueError('Receiver and API URLs must be http(s)://host[:port] with no path')
+    token = secrets.token_hex(32)
+    secret['stringData']['ALERT_RECEIVER_TOKEN'] = token
+    values['api']['alertReceiverUrl'] = url
+    values['victoria']['alerting'] = {
+        'alertmanagerConfig':{
+            'route':{'receiver':'convergence', 'group_by':['site','alertname'], 'group_wait':'30s',
+                     'group_interval':'5m', 'repeat_interval':'4h'},
+            'receivers':[{'name':'convergence', 'webhook_configs':[{'url':url+'/webhook', 'send_resolved':True,
+                'http_config':{'authorization':{'type':'Bearer', 'credentials_file':'/run/secrets/receiver/token'}}}]}]},
+        'extraVolumes':[{'name':'receiver-token', 'secret':{'secretName':options['release']+'-credentials',
+            'items':[{'key':'ALERT_RECEIVER_TOKEN', 'path':'token'}]}}],
+        'extraVolumeMounts':[{'name':'receiver-token', 'mountPath':'/run/secrets/receiver', 'readOnly':True}]}
+    port = re.search(r':(\d+)$', url)
+    return {'ALERT_RECEIVER_HOST':'0.0.0.0', 'ALERT_RECEIVER_PORT':port.group(1) if port else '8099',
+            'ALERT_RECEIVER_TOKEN':token, 'NETWORK_GUARDIAN_URL':api_url, 'NETWORK_GUARDIAN_TOKEN':api_token,
+            'GUARDIAN_DEFAULT_SITE':options['site'], 'OPENCLAW_GATEWAY_URL':'', 'OPENCLAW_HOOK_TOKEN':'',
+            'DISCORD_WEBHOOK_URL':'', 'RECONCILE_ENABLED':'false'}
 
 
 def run(command, *, sensitive=False):
@@ -251,6 +287,8 @@ def main():
     for key in ('output','context','namespace','release','site','storage-class','image'):
         prep.add_argument('--'+key,required=True)
     prep.add_argument('--no-grafana',action='store_false',dest='grafana',default=True)
+    prep.add_argument('--receiver-url',help='alert receiver as reached from the cluster, e.g. http://192.0.2.10:8099')
+    prep.add_argument('--receiver-api-url',help='this API as reached from the receiver host (default: the port-forward http://127.0.0.1:3080)')
     apply=sub.add_parser('install');apply.add_argument('--bundle',required=True)
     gitops=sub.add_parser('argocd',help='hand the release to an existing Argo CD instead of helm install')
     gitops.add_argument('--bundle',required=True); gitops.add_argument('--repo-url',required=True)
@@ -262,7 +300,9 @@ def main():
         repo=repo_path(args.repo)
         if args.command=='preflight': result=preflight(args.context)
         elif args.command=='prepare':
-            options={k:v for k,v in vars(args).items() if k not in ('repo','command','output')}
+            # Optional settings join the bundle identity only when used, so older bundles stay valid.
+            options={k:v for k,v in vars(args).items() if k not in ('repo','command','output')
+                     and not (k.startswith('receiver_') and v is None)}
             result=prepare(repo,args.output,options)
         elif args.command=='argocd':
             result=argocd(repo,args.bundle,args.repo_url,args.path,args.revision,args.repo_key_file,args.argocd_namespace)

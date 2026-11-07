@@ -37,8 +37,8 @@ alert (e.g. per-switch-port) must never open dozens of concurrent sessions.
 | Rate limit | 3 / minute | `MAX_INVESTIGATIONS_PER_MINUTE` |
 | Concurrency | 2 in-flight (no queue) | `MAX_CONCURRENT_INVESTIGATIONS` |
 
-**Policy file:** `~/.openclaw/investigation-policy.yaml`  
-**Seed:** `./scripts/netclaw-investigation-policy.sh seed-observe-only`  
+**Policy file:** `INVESTIGATION_POLICY_PATH` (setup bundles write an observe-only one;
+default `~/.openclaw/investigation-policy.yaml`)
 **Status:** `GET /policy/status`  
 **Spec:** `specs/080-convergence/investigation-policy.md`
 
@@ -48,9 +48,11 @@ alert (e.g. per-switch-port) must never open dozens of concurrent sessions.
 | T1 | Cheap notify/summary — no full MCP investigation |
 | T2 | Multi-tool hook (only if `allow_t2` matches + budgets) via thin agent id `alert` |
 
-**Thin T2 agent (T106):** `./scripts/netclaw-alert-agent-profile.sh apply`  
-routes `hooks/alert` to OpenClaw agent `alert` with a slim MCP allowlist
-(prometheus/rag/memory/pfsense/unifi…). Interactive `main` keeps the full set.
+**Restricted T2 agent:** `python3 setup/netclaw.py apply` routes `hooks/alert` to the
+OpenClaw agent `alert` with only the `alert-triage` skill, the case tools and the
+read-only tools you allow ([procedure](../../docs/convergence/setup/netclaw.md)).
+Interactive NetClaw keeps its own tools. Run the receiver itself with
+`python3 setup/receiver.py install --env-file <bundle>/receiver.env --start`.
 
 See **`docs/CONVERGENCE-ALERT-SAFETY.md`**. Metrics: `netclaw_investigations_by_tier`,
 `netclaw_investigation_budget_trips_total`, `netclaw_investigations_suppressed_*`.

@@ -186,7 +186,7 @@ replacing jobs. They prevent repeated history scans during admission, retention,
 capacity checks and worker polling. A representative retained-history benchmark
 dropped from 67 ms to 0.24 ms per enqueue after these indexes were added.
 Back up the receiver SQLite database using SQLite's backup interface before
-upgrading, then restart `netclaw-alert-receiver.service` to apply the indexes.
+upgrading, then restart the receiver service (`convergence-alert-receiver`) to apply the indexes.
 Preserve both receiver jobs and the IDS ingest outbox during recovery.
 
 HTTP 429 from `/api/events` indicates the shared per-IP API budget is exhausted;

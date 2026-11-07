@@ -66,26 +66,21 @@ the existing case-update and learning path.
    Each case has a server-derived budget identity based on its site and UUID;
    caller-provided `JEV_TASK_ID` values cannot reset the case budget. Core settings
    in `JEV_DATA_DIR/settings.json` retain their existing precedence over env limits.
-3. The receiver reads only JEV configuration from the root `.env`. To use another
-   file, set `CONVERGENCE_JEV_ENV_FILE` in the receiver service environment. Explicit
-   process variables override that file. The receiver Python runtime needs the
-   repository's existing `httpx` and `python-dotenv` dependencies.
-4. For the hardened systemd service, install the optional
-   [JEV drop-in](../../scripts/systemd/netclaw-alert-receiver-jev.conf.example).
-   Adapt its paths (including the tokenizer cache) and ensure both directories
-   exist. It permits writes only to
-   the JEV ledger and local GAIT repository in addition to existing receiver paths:
+3. The receiver uses NetClaw's JEV client and reads only JEV settings. Install it with
+   the NetClaw checkout and the file holding those settings:
 
    ```bash
-   sudo install -d /etc/systemd/system/netclaw-alert-receiver.service.d
-   sudo install -m 644 scripts/systemd/netclaw-alert-receiver-jev.conf.example \
-     /etc/systemd/system/netclaw-alert-receiver.service.d/jev.conf
-   sudo systemctl daemon-reload
+   python3 setup/receiver.py install --env-file "$bundle/receiver.env" \
+     --netclaw-dir ~/netclaw --jev-env-file ~/.openclaw/.env --start
    ```
 
+   Without `--jev-env-file` it reads the NetClaw checkout's `.env`. Explicit process
+   variables override that file.
+4. The receiver runs as a user service, so the JEV ledger (`JEV_DATA_DIR`) and the
+   tokenizer cache only need to be writable by that user; create them with mode `0700`.
 5. Rebuild/restart `convergence-api` using **all Compose overlays and env files
    used by your deployment**. API startup adds the nullable JSONB review column
-   idempotently. Restart `netclaw-alert-receiver`, build `ui/netclaw-visual`, then
+   idempotently. Restart the receiver (`systemctl --user restart convergence-alert-receiver`), build `ui/netclaw-visual`, then
    restart its preview service. The existing HUD proxy already forwards the new
    route. The base Compose file includes the Linux `host.docker.internal`
    host-gateway mapping needed for receiver callbacks. API writes require an

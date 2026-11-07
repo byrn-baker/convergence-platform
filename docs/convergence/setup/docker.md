@@ -37,12 +37,10 @@ to the selected site with the operator role; a separate token authenticates
 receiver writes. Keep those files private. `receiver-token` is readable by the
 unprivileged Alertmanager container beneath an owner-only bundle directory.
 
-- Install `services/alert-receiver/requirements.txt` in the chosen virtualenv.
-  Render `services/alert-receiver/netclaw-alert-receiver.service` for the actual user,
-  checkout, Python executable and bundle `EnvironmentFile`. Preserve its existing
-  write restrictions and add only required data paths. The shipped unit's
-  `/home/ubuntu` paths are examples. Use an explicit
-  `INVESTIGATION_POLICY_PATH` from the bundle. Receiver defaults remain observe-only;
+- Run the receiver as a user service from this checkout with the bundle's
+  environment: `python3 setup/receiver.py install --env-file "$bundle/receiver.env" --start`,
+  then `setup/receiver.py status`. It uses the bundle's
+  `INVESTIGATION_POLICY_PATH`. Receiver defaults remain observe-only;
   hooks and outbound notifications are blank. Limit receiver access to the Docker
   network and the selected collectors, allowing the generated host-gateway callback.
 - Merge the selected `hud.env` assignments into the active runtime's env with the
@@ -59,7 +57,8 @@ unprivileged Alertmanager container beneath an owner-only bundle directory.
 - Select model/authentication through `docs/MODELS.md` and the active runtime.
   OpenClaw and Hermes have different investigator support; verify what is installed
   rather than provisioning an OpenClaw member silently on a Hermes setup.
-- For an OpenClaw Guardian, inspect the NetClaw checkout's Guardian provisioning in
+- For NetClaw investigations of admitted cases, follow `docs/convergence/setup/netclaw.md`.
+- For an OpenClaw Guardian member instead, inspect the NetClaw checkout's Guardian provisioning in
   dry-run mode and its `docs/N2N-RISK.md`. Provision/reuse the chosen member and apply
   `deploy/convergence/config/guardian-instructions.md` plus the scoped read tools.
   Verify the member's own credentials and `convergence-case-mcp` tools; a member

@@ -18,6 +18,10 @@ fork and now lives here; its design history is in [specs/](specs).
 
 VM Security findings can be tried without a hypervisor; see [docs/convergence/vm-security.md](docs/convergence/vm-security.md).
 
+Alerts become cases through the alert receiver on the NetClaw host. Optionally,
+NetClaw investigates admitted cases with a restricted agent and records its findings
+on them: see [docs/convergence/setup/netclaw.md](docs/convergence/setup/netclaw.md).
+
 NetClaw's `convergence-setup` skill can do any of these for you, following the
 [setup procedures](docs/convergence/setup/): it discovers what it can, asks for the rest, shows
 the plan before changing anything, and verifies each layer.
@@ -31,7 +35,8 @@ deploy/convergence/        Docker trial (Compose), adapters, Grafana, flow demo,
 deploy/helm/               Helm charts (convergence, victoria-stack), tooling and tests
 deploy/cluster/            Proxmox VM provisioning (proxmox.py) and K3s Ansible playbooks
 deploy/argocd/             Argo CD install
-setup/                     Setup helpers (Docker bundle, K3s/Argo CD, verification, flows)
+setup/                     Setup helpers (Docker bundle, K3s/Argo CD, receiver, NetClaw, verification, flows)
+integrations/netclaw/      The alert-triage skill installed by setup/netclaw.py
 docs/  specs/  tests/
 ```
 
