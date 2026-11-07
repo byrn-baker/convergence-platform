@@ -11,8 +11,13 @@ import rag_bridge
 FAKE_RAG = '''
 import json
 import os
+import sys
 import time
 from pathlib import Path
+
+if Path(sys.argv[0]).name == "rag_worker.py":
+    if any(Path(entry).name == "alert-receiver" for entry in sys.path if entry):
+        raise RuntimeError("receiver is on sys.path")
 
 def _record(op, payload):
     path = Path(os.environ["RAG_CALL_LOG"])
@@ -22,7 +27,10 @@ def _record(op, payload):
 def _do_search(query, k=5, collection="documents", **kwargs):
     print("embedding model loaded", flush=True)
     if query == "garbage":
-        print("not-json", flush=True)
+        sys.__stdout__.write("not-json\\n")
+        sys.__stdout__.flush()
+        raise SystemExit(0)
+    if query == "empty":
         raise SystemExit(0)
     if query == "sleep":
         time.sleep(5)
@@ -117,6 +125,81 @@ def test_worker_failure_raises(call_log):
 def test_unparsable_output_raises(call_log):
     with pytest.raises(RuntimeError, match='unparsable'):
         rag_bridge.search('garbage', 1, 'documents')
+
+
+def test_empty_stdout_raises(call_log):
+    with pytest.raises(RuntimeError, match='no JSON'):
+        rag_bridge.search('empty', 1, 'documents')
+
+
+def test_missing_interpreter_names_it_without_the_path(call_log, tmp_path, monkeypatch):
+    missing = tmp_path / 'no-such-python'
+    monkeypatch.setenv('RAG_PYTHON', str(missing))
+    with pytest.raises(OSError, match='RAG interpreter is missing') as caught:
+        rag_bridge.search('q', 1, 'documents')
+    assert str(missing) not in str(caught.value)
+
+
+def test_missing_rag_directory_names_it_without_the_path(call_log, tmp_path, monkeypatch):
+    home = tmp_path / 'empty-netclaw'
+    home.mkdir()
+    monkeypatch.setenv('NETCLAW_DIR', str(home))
+    with pytest.raises(OSError, match='rag-mcp directory is missing') as caught:
+        rag_bridge.search('q', 1, 'documents')
+    assert str(home) not in str(caught.value)
+
+
+def test_missing_interpreter_and_directory_are_both_named(tmp_path, monkeypatch):
+    monkeypatch.setenv('RAG_PYTHON', str(tmp_path / 'missing-python'))
+    monkeypatch.setenv('NETCLAW_DIR', str(tmp_path / 'missing-home'))
+    with pytest.raises(OSError, match='interpreter and rag-mcp directory') as caught:
+        rag_bridge.search('q', 1, 'documents')
+    text = str(caught.value)
+    assert 'missing-python' not in text
+    assert 'missing-home' not in text
+
+
+def test_timeout_falls_back_when_invalid_or_non_positive(monkeypatch):
+    monkeypatch.setenv('RAG_TIMEOUT_SECONDS', 'nope')
+    assert rag_bridge._timeout_seconds() == 180
+    monkeypatch.setenv('RAG_TIMEOUT_SECONDS', '0')
+    assert rag_bridge._timeout_seconds() == 180
+    monkeypatch.setenv('RAG_TIMEOUT_SECONDS', '-5')
+    assert rag_bridge._timeout_seconds() == 180
+
+
+def test_public_tail_redacts_secrets_and_keeps_the_last_300_characters():
+    assert rag_bridge._public_tail('Authorization bearer sk-live-abc.def extra') == (
+        'Authorization bearer [redacted] extra')
+    assert rag_bridge._public_tail('failed api_key=supersecret now') == 'failed api_key=[redacted] now'
+    assert rag_bridge._public_tail('{"api_key": "supersecret"}') == '{"api_key": "[redacted]"}'
+    assert rag_bridge._public_tail("{'token': 'supersecret'}") == "{'token': '[redacted]'}"
+    assert rag_bridge._public_tail('get https://user:pass@chroma.internal/v1') == (
+        'get https://[redacted]@chroma.internal/v1')
+    long_text = 'HEAD' + ('y' * 400) + 'TAIL'
+    capped = rag_bridge._public_tail(long_text)
+    assert len(capped) == 300
+    assert capped.endswith('TAIL')
+    assert 'HEAD' not in capped
+
+
+def test_prior_search_returns_empty_when_search_raises(monkeypatch):
+    import server
+    monkeypatch.setattr(server, 'RAG_PRIOR_SEARCH', True)
+    seen = []
+
+    def boom(*args, **kwargs):
+        seen.append(args)
+        raise RuntimeError('rag down')
+
+    monkeypatch.setattr(server.rag_bridge, 'search', boom)
+    alert = server.Alert(
+        status='firing',
+        labels=server.AlertLabel(alertname='InstanceDown'),
+        annotations=server.AlertAnnotation(summary='pfsense'),
+    )
+    assert server._search_prior_investigations(alert, {'name': 'fw'}) == []
+    assert seen
 
 
 def test_timeout_raises(call_log, monkeypatch):

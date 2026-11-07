@@ -1,8 +1,10 @@
 """One rag-mcp call for rag_bridge.
 
-Stdin is a JSON object. The last stdout line is JSON. Logs may precede it.
-This process must not import the alert receiver.
+Stdin is a JSON object. The only stdout line is the JSON result. Prints from
+rag-mcp go to stderr while the call runs. This process must not import the
+alert receiver.
 """
+import contextlib
 import json
 import os
 import sys
@@ -16,6 +18,22 @@ def _load():
     return rag_mcp_server
 
 
+def _call(payload, op):
+    rag = _load()
+    if op == 'search':
+        return rag._do_search(query=payload['query'], k=payload['k'], collection=payload['collection'])
+    if op == 'snapshot':
+        return rag._do_snapshot(
+            label=payload['label'],
+            content=payload['content'],
+            source_description=payload['source_description'],
+            devices=payload.get('devices') or [],
+            commands=payload.get('commands') or [],
+        )
+    rag.registry.set_status(payload['document_id'], 'superseded')
+    return None
+
+
 def main(argv):
     if len(argv) != 2 or argv[1] not in ('search', 'snapshot', 'supersede'):
         print('usage: rag_worker.py search|snapshot|supersede', file=sys.stderr)
@@ -25,23 +43,11 @@ def main(argv):
     except json.JSONDecodeError:
         print('invalid JSON request', file=sys.stderr)
         return 2
-    rag = _load()
-    op = argv[1]
-    if op == 'search':
-        result = rag._do_search(query=payload['query'], k=payload['k'], collection=payload['collection'])
-    elif op == 'snapshot':
-        result = rag._do_snapshot(
-            label=payload['label'],
-            content=payload['content'],
-            source_description=payload['source_description'],
-            devices=payload.get('devices') or [],
-            commands=payload.get('commands') or [],
-        )
-    else:
-        rag.registry.set_status(payload['document_id'], 'superseded')
-        result = None
-    sys.stdout.write(json.dumps(result, default=str) + '\n')
-    sys.stdout.flush()
+    real_stdout = sys.stdout
+    with contextlib.redirect_stdout(sys.stderr):
+        result = _call(payload, argv[1])
+    real_stdout.write(json.dumps(result, default=str) + '\n')
+    real_stdout.flush()
     return 0
 
 

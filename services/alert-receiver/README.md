@@ -58,8 +58,11 @@ NetClaw-side features (RAG priors and snapshots, skill scoping, JEV) load from t
 NetClaw checkout named by `NETCLAW_DIR` (`--netclaw-dir`). RAG's own libraries are not
 in the receiver virtualenv. Pass `--rag-python` (with `--netclaw-dir`) so priors and
 snapshots run in NetClaw's RAG runtime: the `command` of `mcp.servers["rag-mcp"]` in
-`~/.openclaw/openclaw.json`. A local device inventory
-is read from `ALERT_RECEIVER_INVENTORY` (default: `inventory.yaml` beside `server.py`).
+`~/.openclaw/openclaw.json`. The receiver env file must set the same `RAG_DATA_DIR`,
+`RAG_EMBEDDING_MODEL` and `RAG_RERANK_ENABLED` as NetClaw's rag-mcp (`~/.openclaw/.env`),
+so searches use the same store and embedding model. Each call loads that model (seconds).
+rag-mcp's own MCP server already opens the same store from another process. A local device
+inventory is read from `ALERT_RECEIVER_INVENTORY` (default: `inventory.yaml` beside `server.py`).
 
 See **`docs/CONVERGENCE-ALERT-SAFETY.md`**. Metrics: `netclaw_investigations_by_tier`,
 `netclaw_investigation_budget_trips_total`, `netclaw_investigations_suppressed_*`.

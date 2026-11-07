@@ -6,13 +6,18 @@ runtime). Otherwise rag_mcp_server is imported in-process, as before.
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 from pathlib import Path
 
 _WORKER = Path(__file__).with_name('rag_worker.py')
-_SECRET = re.compile(
-    r'(?i)(bearer\s+)\S+|((?:api[_-]?key|token|password|secret|authorization)\s*[=:]\s*)\S+')
+_URL_CREDS = re.compile(r'(?i)([a-z][a-z0-9+.-]*://)[^\s/@]+(?::[^\s/@]*)?@')
+_QUOTED_SECRET = re.compile(
+    r'''(?is)(?P<q>['"])(?P<key>api[_-]?key|token|password|secret|authorization)(?P=q)\s*:\s*(?P<vq>['"]).*?(?P=vq)''')
+_BEARER = re.compile(r'(?i)(bearer\s+)\S+')
+_ASSIGNED_SECRET = re.compile(
+    r'''(?i)(?<!['"])((?:api[_-]?key|token|password|secret|authorization)\s*[=:]\s*)(?!['"])\S+''')
 
 
 def search(query, k, collection):
@@ -68,12 +73,20 @@ def _timeout_seconds():
     return timeout if timeout > 0 else 180
 
 
+def _quoted_secret(match):
+    key = f"{match.group('q')}{match.group('key')}{match.group('q')}"
+    return f"{key}: {match.group('vq')}[redacted]{match.group('vq')}"
+
+
 def _public_tail(text):
     if not text:
         return ''
     if isinstance(text, bytes):
         text = text.decode('utf-8', 'replace')
-    cleaned = _SECRET.sub(lambda match: f'{(match.group(1) or "")}{(match.group(2) or "")}[redacted]', text)
+    cleaned = _URL_CREDS.sub(r'\1[redacted]@', text)
+    cleaned = _QUOTED_SECRET.sub(_quoted_secret, cleaned)
+    cleaned = _BEARER.sub(r'\1[redacted]', cleaned)
+    cleaned = _ASSIGNED_SECRET.sub(r'\1[redacted]', cleaned)
     cleaned = ' '.join(cleaned.split())
     if len(cleaned) > 300:
         cleaned = cleaned[-300:]
@@ -87,32 +100,62 @@ def _fail(reason, stderr):
     return RuntimeError(reason)
 
 
+def _missing_runtime(python, rag_dir):
+    interpreter_missing = not python or not Path(python).is_file() or not os.access(python, os.X_OK)
+    directory_missing = not Path(rag_dir).is_dir()
+    if interpreter_missing and directory_missing:
+        return 'RAG interpreter and rag-mcp directory are missing'
+    if interpreter_missing:
+        return 'RAG interpreter is missing'
+    if directory_missing:
+        return 'rag-mcp directory is missing'
+    return ''
+
+
+def _kill_group(proc):
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
 def _run(op, payload):
+    python = os.environ['RAG_PYTHON']
+    rag_dir = _rag_dir()
+    problem = _missing_runtime(python, rag_dir)
+    if problem:
+        raise OSError(problem)
     env = os.environ.copy()
     env['NETCLAW_DIR'] = str(_netclaw_dir())
     try:
-        completed = subprocess.run(
-            [os.environ['RAG_PYTHON'], str(_WORKER), op],
-            input=json.dumps(payload),
-            capture_output=True,
+        proc = subprocess.Popen(
+            [python, '-P', str(_WORKER), op],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(rag_dir),
+            env=env,
+            start_new_session=True,
             text=True,
             encoding='utf-8',
             errors='replace',
-            cwd=str(_rag_dir()),
-            env=env,
-            timeout=_timeout_seconds(),
-            check=False,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise _fail('RAG worker timed out', exc.stderr) from None
-    except OSError as exc:
-        raise RuntimeError(f'RAG worker could not start: {exc.strerror}') from None
-    if completed.returncode != 0:
-        raise _fail('RAG worker failed', completed.stderr)
-    lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    except OSError:
+        raise OSError('RAG worker could not start') from None
+    try:
+        stdout, stderr = proc.communicate(json.dumps(payload), timeout=_timeout_seconds())
+    except subprocess.TimeoutExpired:
+        _kill_group(proc)
+        _, stderr = proc.communicate()
+        raise _fail('RAG worker timed out', stderr) from None
+    if proc.returncode != 0:
+        raise _fail('RAG worker failed', stderr)
+    lines = [line for line in (stdout or '').splitlines() if line.strip()]
     if not lines:
-        raise _fail('RAG worker returned no JSON', completed.stderr)
+        raise _fail('RAG worker returned no JSON', stderr)
     try:
         return json.loads(lines[-1])
     except json.JSONDecodeError:
-        raise _fail('RAG worker returned unparsable output', completed.stderr) from None
+        raise _fail('RAG worker returned unparsable output', stderr) from None

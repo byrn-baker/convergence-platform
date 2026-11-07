@@ -1649,7 +1649,7 @@ async def _snapshot_event_to_rag(event: dict, site: str) -> dict:
     label = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in label)[:80]
 
     if event.get('rag_document_id'):
-        rag_bridge.supersede(event['rag_document_id'])
+        await asyncio.to_thread(rag_bridge.supersede, event['rag_document_id'])
     label = f"{label}-{event_id}-{content_hash[:12]}"
     result = await asyncio.to_thread(
         rag_bridge.snapshot,
@@ -1683,7 +1683,7 @@ async def _snapshot_event_to_rag(event: dict, site: str) -> dict:
         if patch_resp.status_code == 200:
             # Preserve historical snapshots, but exclude corrected versions from retrieval.
             if event.get('rag_document_id'):
-                rag_bridge.supersede(event['rag_document_id'])
+                await asyncio.to_thread(rag_bridge.supersede, event['rag_document_id'])
             log.info(f"Guardian event {event_id} linked to RAG snapshot {snapshot_id}")
         else:
             log.warning(f"Failed to PATCH Guardian event: {patch_resp.status_code}")

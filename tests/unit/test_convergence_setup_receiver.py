@@ -1,5 +1,6 @@
 """The receiver unit runs this checkout with the bundle's environment, for any user and path."""
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,19 @@ def test_unit_records_rag_python():
                          Path('/n'), Path('/n/.env'), Path('/opt/rag/bin/python3'))
     assert 'Environment=RAG_PYTHON=/opt/rag/bin/python3' in text
     assert 'Environment=NETCLAW_DIR=/n' in text
+
+
+def test_rag_python_keeps_the_symlink_path(tmp_path):
+    link = tmp_path / 'rag-runtime' / 'bin' / 'python3'
+    link.parent.mkdir(parents=True)
+    link.symlink_to(sys.executable)
+    recorded = receiver._rag_python(str(link), Path('/n'))
+    assert recorded == link.absolute()
+    assert recorded.is_symlink()
+    text = receiver.unit('convergence-alert-receiver', Path('/b/receiver.env'), Path('/s/venv'), Path('/s'),
+                         Path('/n'), None, recorded)
+    assert f'Environment=RAG_PYTHON={recorded}' in text
+    assert str(link.resolve()) not in text
 
 
 def test_unit_rejects_rag_python_paths_systemd_would_reinterpret():

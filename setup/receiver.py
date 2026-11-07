@@ -104,7 +104,8 @@ def _rag_python(raw, netclaw):
         return None
     if not netclaw:
         raise ValueError('--rag-python needs --netclaw-dir')
-    path = Path(raw).expanduser().resolve()
+    # absolute(), not resolve(): a venv python is a symlink to the system interpreter.
+    path = Path(raw).expanduser().absolute()
     if not path.is_file() or not os.access(path, os.X_OK):
         raise ValueError(f'{path} is not an executable')
     return path

@@ -111,9 +111,15 @@ python3 setup/receiver.py install --env-file "$bundle/receiver.env" \
 ```
 
 `--rag-python` must be an existing executable and requires `--netclaw-dir`. Take the
-path from the `command` of `mcp.servers["rag-mcp"]` in `~/.openclaw/openclaw.json`.
+path from the `command` of `mcp.servers["rag-mcp"]` in `~/.openclaw/openclaw.json`
+(keep that symlink: it is the runtime, not the system interpreter it points at).
 Without `--rag-python`, the receiver imports `rag-mcp` in-process and those calls
 fail when the runtime's modules are missing.
+
+The receiver env file must carry the same `RAG_DATA_DIR`, `RAG_EMBEDDING_MODEL` and
+`RAG_RERANK_ENABLED` as NetClaw's rag-mcp (`~/.openclaw/.env`), so searches use the
+same store and embedding model. Each call loads that model, which takes seconds.
+rag-mcp's own MCP server already opens the same store from another process.
 
 ## JEV reviews (optional)
 
