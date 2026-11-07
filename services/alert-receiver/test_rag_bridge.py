@@ -1,7 +1,9 @@
 """rag_bridge calls NetClaw rag-mcp in-process, or through RAG_PYTHON."""
 import json
 import os
+import signal
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -15,25 +17,56 @@ import sys
 import time
 from pathlib import Path
 
-if Path(sys.argv[0]).name == "rag_worker.py":
-    if any(Path(entry).name == "alert-receiver" for entry in sys.path if entry):
-        raise RuntimeError("receiver is on sys.path")
+def _stdout_pipe_fd():
+    stderr_target = os.readlink("/proc/self/fd/2")
+    for fd in range(3, 32):
+        try:
+            target = os.readlink(f"/proc/self/fd/{fd}")
+        except OSError:
+            continue
+        if target.startswith("pipe:") and target != stderr_target:
+            return fd
+    raise RuntimeError("original stdout fd not found")
 
 def _record(op, payload):
     path = Path(os.environ["RAG_CALL_LOG"])
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps({"op": op, "payload": payload, "pid": os.getpid()}) + "\\n")
 
+def _note_worker():
+    if Path(sys.argv[0]).name != "rag_worker.py":
+        return
+    if "-P" in sys.argv:
+        raise RuntimeError("python -P is not available on 3.10")
+    names = [Path(entry).name for entry in sys.path if entry]
+    if "alert-receiver" in names:
+        raise RuntimeError("receiver is on sys.path")
+    _record("worker", {"argv": sys.argv, "path_names": names})
+
+_note_worker()
+
 def _do_search(query, k=5, collection="documents", **kwargs):
     print("embedding model loaded", flush=True)
     if query == "garbage":
-        sys.__stdout__.write("not-json\\n")
-        sys.__stdout__.flush()
+        os.write(_stdout_pipe_fd(), b"not-json\\n")
         raise SystemExit(0)
     if query == "empty":
         raise SystemExit(0)
     if query == "sleep":
         time.sleep(5)
+    if query == "orphan":
+        import subprocess
+        pid_path = os.environ["RAG_ORPHAN_PID"]
+        subprocess.Popen([sys.executable, "-c",
+            "import os,time,pathlib; pathlib.Path(%r).write_text(str(os.getpid())); time.sleep(60)" % pid_path])
+        for _ in range(50):
+            if Path(pid_path).exists():
+                break
+            time.sleep(0.01)
+        raise SystemExit(0)
+    if query == "late":
+        import atexit
+        atexit.register(lambda: os.write(1, b"late-noise\\n"))
     if query == "fail":
         raise RuntimeError("search blew up")
     _record("search", {"query": query, "k": k, "collection": collection})
@@ -85,6 +118,12 @@ def recorded(log):
     return [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
 
 
+def one(log, op):
+    matches = [call for call in recorded(log) if call['op'] == op]
+    assert matches, op
+    return matches[0]
+
+
 def test_search_round_trip_ignores_log_lines(call_log):
     result = rag_bridge.search('InstanceDown pfsense', 2, 'investigations')
     assert result == {
@@ -94,7 +133,7 @@ def test_search_round_trip_ignores_log_lines(call_log):
             'collection': 'investigations',
         },
     }
-    call = recorded(call_log)[0]
+    call = one(call_log, 'search')
     assert call['pid'] != os.getpid()
     assert call['payload'] == {'query': 'InstanceDown pfsense', 'k': 2, 'collection': 'investigations'}
 
@@ -103,7 +142,7 @@ def test_snapshot_round_trip(call_log):
     result = rag_bridge.snapshot('wan-down', 'link down', 'guardian case', ['fw1'], ['show version'])
     assert result['data']['snapshot_id'] == 'snap-1'
     assert result['data']['chunk_count'] == 2
-    assert recorded(call_log)[0]['payload'] == {
+    assert one(call_log, 'snapshot')['payload'] == {
         'label': 'wan-down',
         'content': 'link down',
         'source_description': 'guardian case',
@@ -114,7 +153,7 @@ def test_snapshot_round_trip(call_log):
 
 def test_supersede_round_trip(call_log):
     assert rag_bridge.supersede('doc-9') is None
-    assert recorded(call_log)[0]['payload'] == {'doc_id': 'doc-9', 'status': 'superseded'}
+    assert one(call_log, 'set_status')['payload'] == {'doc_id': 'doc-9', 'status': 'superseded'}
 
 
 def test_worker_failure_raises(call_log):
@@ -181,6 +220,73 @@ def test_public_tail_redacts_secrets_and_keeps_the_last_300_characters():
     assert len(capped) == 300
     assert capped.endswith('TAIL')
     assert 'HEAD' not in capped
+    quoted = rag_bridge._public_tail("Settings(api_key='sk-live-secret')")
+    assert 'sk-live-secret' not in quoted and '[redacted]' in quoted
+    assert 'hunter2' not in rag_bridge._public_tail('password="hunter2"')
+    assert 'yaml-token-value' not in rag_bridge._public_tail('token: "yaml-token-value"')
+    assert 'ghp_example' not in rag_bridge._public_tail('"access_token": "ghp_example"')
+    assert 'cs_example' not in rag_bridge._public_tail("'client_secret': 'cs_example'")
+    assert 'hf_example' not in rag_bridge._public_tail('"hf_token": "hf_example"')
+    header = rag_bridge._public_tail('Authorization: Basic abc==')
+    assert 'abc==' not in header and 'Basic' not in header and '[redacted]' in header
+    assert rag_bridge._public_tail('https://user:p@ss/word@host/v1') == 'https://[redacted]@host/v1'
+    assert rag_bridge._public_tail('https://user:p/ass@host/v1') == 'https://[redacted]@host/v1'
+
+
+def test_worker_runs_without_dash_p(call_log):
+    rag_bridge.search('InstanceDown', 1, 'investigations')
+    noted = one(call_log, 'worker')
+    assert '-P' not in noted['payload']['argv']
+    assert 'alert-receiver' not in noted['payload']['path_names']
+
+
+def test_bytes_after_the_result_do_not_replace_json(call_log):
+    result = rag_bridge.search('late', 1, 'investigations')
+    assert result['data']['results'][0]['chunk_text'] == 'prior outage'
+
+
+def test_timeout_kills_grandchild_holding_pipes(call_log, tmp_path, monkeypatch):
+    pid_path = tmp_path / 'orphan.pid'
+    monkeypatch.setenv('RAG_ORPHAN_PID', str(pid_path))
+    monkeypatch.setenv('RAG_TIMEOUT_SECONDS', '1')
+    try:
+        with pytest.raises(RuntimeError, match='timed out'):
+            rag_bridge.search('orphan', 1, 'documents')
+        assert pid_path.exists()
+        pid = int(pid_path.read_text())
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return
+            time.sleep(0.05)
+        raise AssertionError('grandchild still alive')
+    finally:
+        if pid_path.exists():
+            try:
+                os.kill(int(pid_path.read_text()), signal.SIGKILL)
+            except (ProcessLookupError, ValueError):
+                pass
+
+
+def test_bare_interpreter_name_uses_path(call_log, monkeypatch):
+    monkeypatch.setenv('RAG_PYTHON', 'python3')
+    result = rag_bridge.search('InstanceDown', 1, 'investigations')
+    assert result['success'] is True
+    assert one(call_log, 'search')['payload']['query'] == 'InstanceDown'
+
+
+def test_start_failure_keeps_errno_without_the_path(call_log, tmp_path, monkeypatch):
+    script = tmp_path / 'not-elf'
+    script.write_text('not a binary\n')
+    script.chmod(0o755)
+    monkeypatch.setenv('RAG_PYTHON', str(script))
+    with pytest.raises(OSError, match='ENOEXEC') as caught:
+        rag_bridge.search('q', 1, 'documents')
+    text = str(caught.value)
+    assert str(script) not in text
+    assert 'Exec format error' in text
 
 
 def test_prior_search_returns_empty_when_search_raises(monkeypatch):
@@ -219,6 +325,6 @@ def test_unset_rag_python_uses_in_process(call_log, monkeypatch):
         while inserted in sys.path:
             sys.path.remove(inserted)
     assert result['data']['results'][0]['chunk_text'] == 'prior outage'
-    call = recorded(call_log)[0]
+    call = one(call_log, 'search')
     assert call['pid'] == os.getpid()
     assert call['payload'] == {'query': 'InstanceDown', 'k': 2, 'collection': 'investigations'}

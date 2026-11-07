@@ -1,14 +1,39 @@
 """One rag-mcp call for rag_bridge.
 
-Stdin is a JSON object. The only stdout line is the JSON result. Prints from
-rag-mcp go to stderr while the call runs. This process must not import the
-alert receiver.
+Stdin is a JSON object. The only bytes on the original stdout are the JSON
+result. fd 1 is moved onto stderr at startup so later prints, atexit hooks
+and native writes cannot follow that line. This process must not import the
+alert receiver. It drops its own directory from sys.path instead of using
+Python 3.11's -P flag.
 """
-import contextlib
 import json
 import os
 import sys
 from pathlib import Path
+
+
+def _drop_own_directory():
+    if not sys.path or not sys.path[0]:
+        return
+    own = Path(__file__).resolve().parent
+    try:
+        first = Path(sys.path[0]).resolve()
+    except OSError:
+        return
+    if first == own:
+        del sys.path[0]
+
+
+def _point_stdout_at_stderr():
+    saved = os.dup(1)
+    os.dup2(2, 1)
+    sys.stdout = sys.stderr
+    return saved
+
+
+def _write_result(saved, result):
+    os.write(saved, (json.dumps(result, default=str) + '\n').encode())
+    os.close(saved)
 
 
 def _load():
@@ -35,19 +60,22 @@ def _call(payload, op):
 
 
 def main(argv):
-    if len(argv) != 2 or argv[1] not in ('search', 'snapshot', 'supersede'):
-        print('usage: rag_worker.py search|snapshot|supersede', file=sys.stderr)
-        return 2
+    saved = _point_stdout_at_stderr()
+    _drop_own_directory()
     try:
-        payload = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        print('invalid JSON request', file=sys.stderr)
-        return 2
-    real_stdout = sys.stdout
-    with contextlib.redirect_stdout(sys.stderr):
+        if len(argv) != 2 or argv[1] not in ('search', 'snapshot', 'supersede'):
+            print('usage: rag_worker.py search|snapshot|supersede', file=sys.stderr)
+            return 2
+        try:
+            payload = json.load(sys.stdin)
+        except json.JSONDecodeError:
+            print('invalid JSON request', file=sys.stderr)
+            return 2
         result = _call(payload, argv[1])
-    real_stdout.write(json.dumps(result, default=str) + '\n')
-    real_stdout.flush()
+    except BaseException:
+        os.close(saved)
+        raise
+    _write_result(saved, result)
     return 0
 
 
