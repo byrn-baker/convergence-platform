@@ -144,6 +144,18 @@ def load(bundle, repo):
     return bundle, options
 
 
+def release_data(resources, release):
+    """The chart's own StatefulSets and their claims (<template>-<release>-<component>-<n>).
+
+    Operator-created claims such as <release>-ids-data are prerequisites, not release data.
+    """
+    statefulset = re.compile(re.escape(release)+r'-[a-z0-9-]+')
+    claim = re.compile(r'[a-z0-9-]+-'+re.escape(release)+r'-[a-z0-9-]+-\d+')
+    return [r['metadata']['name'] for r in resources
+            if (r['kind'] == 'StatefulSet' and statefulset.fullmatch(r['metadata']['name']))
+            or (r['kind'] == 'PersistentVolumeClaim' and claim.fullmatch(r['metadata']['name']))]
+
+
 def ensure_release_secret(repo, bundle):
     """Shared by Helm and Argo CD installs: target checks plus the never-rotate Secret rule."""
     bundle, options = load(bundle, repo)
@@ -168,8 +180,7 @@ def ensure_release_secret(repo, bundle):
         require_matching_secret(desired,json.loads(existing))
     else:
         # An existing release/PVC with a missing Secret must not receive new passwords.
-        resources = json.loads(run(k+['get','statefulsets,pvc','-o','json']))['items']
-        if any(options['release'] in r['metadata']['name'] for r in resources):
+        if release_data(json.loads(run(k+['get','statefulsets,pvc','-o','json']))['items'], options['release']):
             raise ValueError('Existing release data has no matching Secret; restore credentials first')
         run(k+['create','-f',str(bundle/'secret.json')], sensitive=True)
     return bundle, options

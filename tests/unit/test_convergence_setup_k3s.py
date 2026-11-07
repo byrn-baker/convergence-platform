@@ -72,3 +72,12 @@ def test_install_never_overwrites_foreign_credentials(tmp_path, monkeypatch):
     with pytest.raises(ValueError,match='credentials'):k3s.install(ROOT,bundle)
     assert all(c[:5]==['kubectl','--context','lab-context','--namespace','observability-trial'] for c in calls)
     assert not any('create' in c or 'upgrade' in c for c in calls)
+
+
+def test_release_data_ignores_operator_claims_but_not_chart_volumes():
+    item=lambda kind,name:{'kind':kind,'metadata':{'name':name}}
+    operator=[item('PersistentVolumeClaim','convergence-ids-data')]
+    assert k3s.release_data(operator,'convergence')==[]
+    chart=[item('StatefulSet','convergence-postgres'),item('PersistentVolumeClaim','data-convergence-postgres-0')]
+    assert k3s.release_data(chart,'convergence')==['convergence-postgres','data-convergence-postgres-0']
+    assert k3s.release_data([item('StatefulSet','other-postgres')],'convergence')==[]
