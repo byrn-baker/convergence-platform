@@ -1,6 +1,6 @@
 ---
 - name: Install keepalived
-  ansible.builtin.apt: {name: keepalived, state: present}
+  ansible.builtin.apt: {name: keepalived, state: present, lock_timeout: 900}
 
 - name: Health check
   ansible.builtin.copy:

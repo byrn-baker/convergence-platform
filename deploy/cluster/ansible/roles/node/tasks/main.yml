@@ -9,6 +9,8 @@
     name: [curl, ca-certificates, open-iscsi, nfs-common, qemu-guest-agent]
     update_cache: true
     cache_valid_time: 3600
+    # A fresh cloud image runs unattended-upgrades on first boot and holds the dpkg lock.
+    lock_timeout: 900
 
 - name: Start the guest agent
   ansible.builtin.systemd: {name: qemu-guest-agent, state: started, enabled: true}
