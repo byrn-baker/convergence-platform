@@ -233,6 +233,60 @@ def test_public_tail_redacts_secrets_and_keeps_the_last_300_characters():
     assert rag_bridge._public_tail('https://user:p/ass@host/v1') == 'https://[redacted]@host/v1'
 
 
+def test_public_tail_redacts_equals_form_authorization():
+    assert rag_bridge._public_tail('failed Authorization=Basic xyz now') == (
+        'failed Authorization=[redacted] now')
+    spaced = rag_bridge._public_tail('Authorization = Basic xyz')
+    assert 'xyz' not in spaced and 'Basic' not in spaced and '[redacted]' in spaced
+
+
+def test_public_tail_redacts_a_huge_single_token_quickly():
+    started = time.perf_counter()
+    tail = rag_bridge._public_tail('x' * 200_000)
+    elapsed = time.perf_counter() - started
+    assert elapsed < 0.5
+    assert tail == 'x' * 300
+    # The secret sits inside the last 4096 but outside the last 300, so it is
+    # redacted before the final cut. Cutting first would leave the s-run.
+    hidden = rag_bridge._public_tail(('a' * 5000) + 'api_key=' + ('s' * 350))
+    assert 's' * 40 not in hidden
+    assert hidden.endswith('api_key=[redacted]')
+    kept = rag_bridge._public_tail(('y' * 10_000) + ' api_key=supersecret')
+    assert 'supersecret' not in kept
+    assert kept.endswith('api_key=[redacted]')
+
+
+def test_relative_rag_python_is_absolute_before_worker_cwd(call_log, tmp_path, monkeypatch):
+    link = tmp_path / 'runtime' / 'python3'
+    link.parent.mkdir()
+    link.symlink_to(sys.executable)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('RAG_PYTHON', 'runtime/python3')
+    resolved = rag_bridge._interpreter('runtime/python3')
+    assert resolved == os.path.abspath(link)
+    assert os.path.isabs(resolved)
+    assert Path(resolved).is_symlink()
+    assert resolved != os.path.realpath(link)
+    result = rag_bridge.search('InstanceDown', 1, 'investigations')
+    assert result['success'] is True
+    assert one(call_log, 'search')['pid'] != os.getpid()
+
+
+def test_public_tail_keeps_ordinary_words_and_stops_at_the_line():
+    plain = 'TokenizerError: vocab mismatch max_tokens=128'
+    assert rag_bridge._public_tail(plain) == plain
+    assert rag_bridge._public_tail('api-key=still-secret') == 'api-key=[redacted]'
+    open_quote = rag_bridge._public_tail('token: "secret-value\nnext line stays visible')
+    assert 'secret-value' not in open_quote
+    assert 'next line stays visible' in open_quote
+    assert '[redacted]' in open_quote
+    later_quote = rag_bridge._public_tail('token: "secret-value\nnext "quote" stays')
+    assert 'secret-value' not in later_quote
+    assert 'next' in later_quote and 'quote' in later_quote and 'stays' in later_quote
+    same_line = rag_bridge._public_tail('token: "secret" password=hunter2')
+    assert 'hunter2' not in same_line and 'password=[redacted]' in same_line
+
+
 def test_worker_runs_without_dash_p(call_log):
     rag_bridge.search('InstanceDown', 1, 'investigations')
     noted = one(call_log, 'worker')

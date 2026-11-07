@@ -15,15 +15,21 @@ from pathlib import Path
 
 _WORKER = Path(__file__).with_name('rag_worker.py')
 _REAP_SECONDS = 5
+_REDACT_WINDOW = 4096
 _SECRET_WORD = r'api[_-]?key|token|password|secret|authorization'
-_SECRET_KEY = rf'[A-Za-z0-9_.-]*(?:{_SECRET_WORD})[A-Za-z0-9_.-]*'
+# The key must end on the secret word. A trailing \b keeps TokenizerError
+# and max_tokens, while access_token and api_key still match.
+_SECRET_KEY = rf'[A-Za-z0-9_.-]*?(?:{_SECRET_WORD})\b'
 # Userinfo runs up to the last "@" so a password may contain "/" or "@".
 _URL_CREDS = re.compile(r'(?i)([a-z][a-z0-9+.-]*://)\S+@')
-_AUTH_HEADER = re.compile(r'(?i)(authorization\s*:\s*)\S+(?:\s+\S+)?')
+# Colon or equals, then one or two words: "Authorization=Basic xyz".
+_AUTH_HEADER = re.compile(r'(?i)(authorization\s*[:=]\s*)\S+(?:\s+\S+)?')
+# A quoted value closes on the same line, or the rest of that line only.
+_QUOTED_VALUE = r'''(?:(?P<vq>['"]).*?(?P=vq)|(?P<uq>['"])[^\n]*)'''
 _QUOTED_KEY = re.compile(
-    rf'''(?is)(?P<q>['"])(?P<key>{_SECRET_KEY})(?P=q)\s*[:=]\s*(?P<vq>['"]).*?(?P=vq)''')
+    rf'''(?i)(?P<q>['"])(?P<key>{_SECRET_KEY})(?P=q)\s*[:=]\s*{_QUOTED_VALUE}''')
 _BARE_KEY_QUOTED_VALUE = re.compile(
-    rf'''(?is)(?<!['"\w])(?P<key>{_SECRET_KEY})\s*[:=]\s*(?P<vq>['"]).*?(?P=vq)''')
+    rf'''(?i)(?<!['"\w])(?P<key>{_SECRET_KEY})\s*[:=]\s*{_QUOTED_VALUE}''')
 _BEARER = re.compile(r'(?i)(bearer\s+)\S+')
 _BARE_KEY_BARE_VALUE = re.compile(
     rf'''(?i)(?<!['"\w])(?P<key>{_SECRET_KEY})\s*[:=]\s*(?!['"])\S+''')
@@ -82,13 +88,20 @@ def _timeout_seconds():
     return timeout if timeout > 0 else 180
 
 
+def _quoted_span(match, prefix):
+    if match.group('vq'):
+        quote = match.group('vq')
+        return f"{prefix}{quote}[redacted]{quote}"
+    return f"{prefix}{match.group('uq')}[redacted]"
+
+
 def _quoted_key(match):
     key = f"{match.group('q')}{match.group('key')}{match.group('q')}"
-    return f"{key}: {match.group('vq')}[redacted]{match.group('vq')}"
+    return _quoted_span(match, f"{key}: ")
 
 
 def _bare_quoted(match):
-    return f"{match.group('key')}={match.group('vq')}[redacted]{match.group('vq')}"
+    return _quoted_span(match, f"{match.group('key')}=")
 
 
 def _public_tail(text):
@@ -96,6 +109,9 @@ def _public_tail(text):
         return ''
     if isinstance(text, bytes):
         text = text.decode('utf-8', 'replace')
+    # A single huge token makes the URL pattern backtrack. Redact the tail only.
+    if len(text) > _REDACT_WINDOW:
+        text = text[-_REDACT_WINDOW:]
     cleaned = _URL_CREDS.sub(r'\1[redacted]@', text)
     cleaned = _AUTH_HEADER.sub(r'\1[redacted]', cleaned)
     cleaned = _QUOTED_KEY.sub(_quoted_key, cleaned)
@@ -116,15 +132,21 @@ def _fail(reason, stderr):
 
 
 def _interpreter(python):
-    """Return an executable path. A bare name is looked up on PATH; symlinks stay."""
+    """Return an absolute executable path. A bare name is looked up on PATH.
+
+    abspath does not follow symlinks. A relative RAG_PYTHON must be absolute
+    before the worker runs with cwd set to the rag-mcp directory.
+    """
     raw = python or ''
     if not raw:
         return ''
     candidate = Path(raw).expanduser()
     if candidate.is_file() and os.access(candidate, os.X_OK):
-        return str(candidate)
+        return os.path.abspath(candidate)
     found = shutil.which(raw)
-    return found or str(candidate)
+    if found:
+        return os.path.abspath(found)
+    return os.path.abspath(candidate)
 
 
 def _prepare(python, rag_dir):
