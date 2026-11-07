@@ -145,3 +145,36 @@ def test_every_volume_claim_template_names_its_kind():
                    '--set','grafana.enabled=true')
     claims=[c for o in objects if o and o.get('kind')=='StatefulSet' for c in o['spec'].get('volumeClaimTemplates',[])]
     assert claims and all(c.get('apiVersion')=='v1' and c.get('kind')=='PersistentVolumeClaim' for c in claims)
+
+
+def test_device_telemetry_values_render_syslog_and_snmp_for_this_site(tmp_path):
+    out=tmp_path/'device.json'
+    subprocess.run([sys.executable,str(CHART/'scripts/render-device-telemetry.py'),'--site','lab',
+        '--device','edge-fw01=192.0.2.1','--snmp','access-sw01=192.0.2.2','--snmp-secret','lab-snmp',
+        '--collector-node','node-a','--output',str(out)],check=True)
+    objects=render('convergence','qual','convergence','--set','existingSecret=x','--set','api.image.tag=t','-f',str(out))
+    config=[o for o in objects if o['kind']=='ConfigMap' and 'collector.yml' in o.get('data',{})][0]
+    collector=yaml.safe_load(config['data']['collector.yml'])
+    assert {'syslog/devices','syslog/devices_tcp','snmp/access-sw01','otlp'}<=set(collector['receivers'])
+    assert collector['exporters']['loki']['endpoint']=='http://qual-loki:3100/loki/api/v1/push'
+    assert {'action':'upsert','key':'site','value':'lab'} in collector['processors']['resource/devices']['attributes']
+    statements=' '.join(collector['processors']['transform/device_identity']['log_statements'][0]['statements'])
+    assert '"edge-fw01") where attributes["net.peer.ip"] == "192.0.2.1"' in statements and 'access-sw' in statements
+    assert '192.168.' not in config['data']['collector.yml']
+    assert collector['receivers']['snmp/access-sw01']['community']=='${env:SNMP_COMMUNITY}'
+    service=[o for o in objects if o['kind']=='Service' and o['metadata']['name']=='qual-collector'][0]
+    ports={(p['name'],p.get('protocol','TCP'),p.get('nodePort')) for p in service['spec']['ports']}
+    assert {('syslog-udp','UDP',31514),('syslog-tcp','TCP',31515)}<=ports
+    assert service['spec']['externalTrafficPolicy']=='Local'
+    workload=[o for o in objects if o['kind'] in ('StatefulSet','Deployment') and o['metadata']['name']=='qual-collector'][0]
+    assert workload['spec']['template']['spec']['containers'][0]['envFrom']==[{'secretRef':{'name':'lab-snmp'}}]
+    assert workload['spec']['template']['spec']['nodeSelector']=={'kubernetes.io/hostname':'node-a'}
+    other=[o for o in objects if o['kind'] in ('StatefulSet','Deployment') and o['metadata']['name']=='qual-agent'][0]
+    assert 'nodeSelector' not in other['spec']['template']['spec']
+
+
+def test_device_telemetry_refuses_snmp_without_a_secret_and_bad_names(tmp_path):
+    script=str(CHART/'scripts/render-device-telemetry.py')
+    for args in (['--snmp','sw=192.0.2.2'],['--device','Bad_Name=192.0.2.1'],['--device','fw=not-an-ip']):
+        result=subprocess.run([sys.executable,script,'--site','lab',*args,'--output',str(tmp_path/'x.json')],capture_output=True)
+        assert result.returncode==2

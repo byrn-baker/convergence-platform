@@ -56,8 +56,9 @@ namespace for a parallel trial; existing installations follow [operations](opera
 
 ## 2. Build and deliver the API image
 
-There is no assumed public prebuilt Convergence API image. Build from the checkout
-and use a revision-specific tag:
+Releases publish `ghcr.io/byrn-baker/convergence-api:<version>` (amd64 and arm64,
+public). Use it with `--image ghcr.io/byrn-baker/convergence-api:0.1.1` and skip the
+rest of this step. To build from the checkout instead, use a revision-specific tag:
 
 ```bash
 image="netclaw-convergence-api:$(git rev-parse --short=12 HEAD)"
@@ -173,5 +174,30 @@ If NetClaw runs on another machine, `127.0.0.1` means that other machine. Run a
 forward on the NetClaw host or design private, authenticated service access;
 see [operations](operations.md). Do not expose the unauthenticated storage APIs
 with a public NodePort or ingress just to make a dashboard work.
+
+## 6. Device syslog and SNMP (optional)
+
+The collector accepts only OTLP until you give it an inventory. Render the values for
+your site and devices, then add the file to the release values (merge it into the
+bundle's `values.json` under `victoria.collector`, or pass it as a second values file):
+
+```bash
+kubectl --context "$context" -n "$namespace" create secret generic "$site-snmp" \
+  --from-file=SNMP_COMMUNITY=/path/to/private-community-file   # no trailing newline
+python3 deploy/helm/scripts/render-device-telemetry.py --site "$site" \
+  --device edge-fw01=192.0.2.1 --device access-sw01=192.0.2.2 \
+  --snmp access-sw01=192.0.2.2 --snmp-secret "$site-snmp" \
+  --collector-node <node-name> --output device-telemetry.json
+```
+
+- Devices send syslog to the **collector node's address**: UDP 31514 or TCP 31515.
+  The Service keeps the sender's address (`externalTrafficPolicy: Local`), which
+  device naming depends on; traffic to any other node is dropped. With `local-path`
+  storage the collector stays on the node where it first started, so pick that node.
+- Names come from the sender address you list; unlisted senders keep their hostname
+  or address. SNMP polls each `--snmp` device every 60 s (v2c, community from the
+  Secret). The NodePorts expose syslog and OTLP to the LAN, not the stores.
+- Check: `{service_name="device-syslog", device_name="edge-fw01"}` in Loki, and
+  `count by (device_name) ({service_name="device_snmp"})` in VictoriaMetrics.
 
 Continue with [NetClaw integration, telemetry, backup and upgrades](operations.md).

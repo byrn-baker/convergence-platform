@@ -62,7 +62,10 @@ collector:
   extraVolumes: []
   extraVolumeMounts: []
   extraServicePorts: []
-  service: {type: ClusterIP, nodePort: null, grpcNodePort: null}
+  # externalTrafficPolicy: Local preserves syslog senders' addresses (see render-device-telemetry.py).
+  service: {type: ClusterIP, nodePort: null, grpcNodePort: null, externalTrafficPolicy: ''}
+  # Overrides the stack nodeSelector for the collector, e.g. to give devices a fixed node to send to.
+  nodeSelector: {}
   resources:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {cpu: '1', memory: 512Mi}

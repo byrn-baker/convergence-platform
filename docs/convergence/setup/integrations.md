@@ -19,6 +19,13 @@ additional listening ports. Activate only selected services/profiles and protect
 their endpoints according to the intended LAN/proxy access model. Do not assume
 the base bundle's loopback binding applies to newly added services.
 
+## Device syslog and SNMP on K3s
+
+Render the collector values with `deploy/helm/scripts/render-device-telemetry.py` (see
+`docs/convergence/k3s.md`, section 6). Ask which devices send syslog, which to poll by
+SNMP, and which node runs the collector; keep the community in a Secret. Prove one real
+log line and one SNMP sample arrive with the right `device_name` and `site`.
+
 ## Passive IDS and capture coverage
 
 Read `docs/runbooks/convergence-ids.md` for provisioning, ingest authentication,

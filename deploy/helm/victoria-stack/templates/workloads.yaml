@@ -17,6 +17,10 @@ metadata:
 spec:
   {{- if eq $component "collector" }}
   type: {{ $root.Values.collector.service.type }}
+  {{- with $root.Values.collector.service.externalTrafficPolicy }}
+  # Local keeps the sender's address, which device naming depends on.
+  externalTrafficPolicy: {{ . }}
+  {{- end }}
   {{- end }}
   selector: {app.kubernetes.io/instance: {{ $root.Release.Name }}, app.kubernetes.io/component: {{ $component }}}
   ports:
@@ -59,7 +63,7 @@ spec:
       {{- with $root.Values.imagePullSecrets }}
       imagePullSecrets: {{ toYaml . | nindent 8 }}
       {{- end }}
-      {{- with $root.Values.nodeSelector }}
+      {{- with (ternary (merge (dict) ($root.Values.collector.nodeSelector | default dict) $root.Values.nodeSelector) $root.Values.nodeSelector (eq $component "collector")) }}
       nodeSelector: {{ toYaml . | nindent 8 }}
       {{- end }}
       securityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
