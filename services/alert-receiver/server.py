@@ -16,6 +16,7 @@ Alertmanager webhook config (on OBS VM):
 import asyncio
 import contextvars
 from jobs import JobStore, RetryableJobError
+import rag_bridge
 import hashlib
 import hmac
 import json
@@ -1067,12 +1068,7 @@ def _search_prior_investigations(alert: Alert, device_info: dict) -> list:
     if not query:
         return []
     try:
-        rag_path = REPO_ROOT / "mcp-servers" / "rag-mcp"
-        if str(rag_path) not in sys.path:
-            sys.path.insert(0, str(rag_path))
-        from rag_mcp_server import _do_search as _rag_search
-
-        result = _rag_search(query=query, k=RAG_PRIOR_K, collection="investigations")
+        result = rag_bridge.search(query=query, k=RAG_PRIOR_K, collection="investigations")
         if not result.get("success"):
             log.warning(
                 "RAG prior search failed: %s",
@@ -1652,16 +1648,11 @@ async def _snapshot_event_to_rag(event: dict, site: str) -> dict:
     # Keep label filesystem-safe for snapshot collection names
     label = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in label)[:80]
 
-    rag_path = REPO_ROOT / "mcp-servers" / "rag-mcp"
-    if str(rag_path) not in sys.path:
-        sys.path.insert(0, str(rag_path))
-    from rag_mcp_server import _do_snapshot as _rag_snapshot
-
     if event.get('rag_document_id'):
-        from rag_mcp_server import registry
-        registry.set_status(event['rag_document_id'], 'superseded')
+        rag_bridge.supersede(event['rag_document_id'])
     label = f"{label}-{event_id}-{content_hash[:12]}"
-    result = await asyncio.to_thread(_rag_snapshot,
+    result = await asyncio.to_thread(
+        rag_bridge.snapshot,
         label=label,
         content=content,
         source_description=f"Network Guardian investigation: {event.get('alert_name', 'unknown')}",
@@ -1692,8 +1683,7 @@ async def _snapshot_event_to_rag(event: dict, site: str) -> dict:
         if patch_resp.status_code == 200:
             # Preserve historical snapshots, but exclude corrected versions from retrieval.
             if event.get('rag_document_id'):
-                from rag_mcp_server import registry
-                registry.set_status(event['rag_document_id'], 'superseded')
+                rag_bridge.supersede(event['rag_document_id'])
             log.info(f"Guardian event {event_id} linked to RAG snapshot {snapshot_id}")
         else:
             log.warning(f"Failed to PATCH Guardian event: {patch_resp.status_code}")

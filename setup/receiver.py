@@ -12,9 +12,11 @@ both write its environment as receiver.env; this installs the receiver for that 
 The unit runs this checkout's services/alert-receiver from a private virtualenv and
 keeps its job queue under ~/.local/state/convergence/. Pass --netclaw-dir when the
 receiver uses NetClaw pieces: JEV case reviews, RAG priors and snapshots (rag-mcp) and
-skill scoping (scripts/skill-selector) all come from that checkout. A local device
-inventory goes in the env file as ALERT_RECEIVER_INVENTORY=/path/inventory.yaml. A user service runs at boot only with
-lingering enabled (`loginctl enable-linger`); status reports it.
+skill scoping (scripts/skill-selector) all come from that checkout. Pass --rag-python
+(an existing executable, only together with --netclaw-dir) so those RAG calls run in
+NetClaw's RAG runtime: the command of mcp.servers["rag-mcp"] in ~/.openclaw/openclaw.json.
+A local device inventory goes in the env file as ALERT_RECEIVER_INVENTORY=/path/inventory.yaml.
+A user service runs at boot only with lingering enabled (`loginctl enable-linger`); status reports it.
 """
 import argparse
 import getpass
@@ -30,7 +32,7 @@ SERVICE = ROOT/'services/alert-receiver'
 NAME = re.compile(r'[a-z][a-z0-9-]{0,40}')
 
 
-def unit(name, env_file, venv, state, netclaw_dir=None, jev_env=None):
+def unit(name, env_file, venv, state, netclaw_dir=None, jev_env=None, rag_python=None):
     lines = ['[Unit]', 'Description=Convergence alert receiver (Alertmanager -> cases -> NetClaw)',
              'After=network-online.target', 'Wants=network-online.target', '',
              '[Service]', 'Type=simple', f'WorkingDirectory={SERVICE}',
@@ -40,9 +42,11 @@ def unit(name, env_file, venv, state, netclaw_dir=None, jev_env=None):
         lines.append(f'Environment=NETCLAW_DIR={netclaw_dir}')
     if jev_env:
         lines.append(f'Environment=CONVERGENCE_JEV_ENV_FILE={jev_env}')
+    if rag_python:
+        lines.append(f'Environment=RAG_PYTHON={rag_python}')
     lines += ['Restart=on-failure', 'RestartSec=5', 'NoNewPrivileges=true', 'UMask=0077', '',
               '[Install]', 'WantedBy=default.target', '']
-    for value in (env_file, venv, state, netclaw_dir or '', jev_env or ''):
+    for value in (env_file, venv, state, netclaw_dir or '', jev_env or '', rag_python or ''):
         if any(c in str(value) for c in '\n\r%$"\'\\') or ' ' in str(value):
             raise ValueError(f'Unsupported character in path {value}')
     return '\n'.join(lines)
@@ -72,6 +76,7 @@ def install(args):
     netclaw = Path(args.netclaw_dir).expanduser().resolve() if args.netclaw_dir else None
     if netclaw and not (netclaw/'mcp-servers/jev-mcp/core.py').is_file():
         raise ValueError(f'{netclaw} is not a NetClaw checkout with mcp-servers/jev-mcp')
+    rag_python = _rag_python(getattr(args, 'rag_python', None), netclaw)
     unit_path, state = paths(args)
     venv = Path(args.venv).expanduser() if args.venv else state/'venv'
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -82,7 +87,7 @@ def install(args):
     jev_env = Path(args.jev_env_file).expanduser().resolve() if args.jev_env_file else None
     if jev_env and (not netclaw or jev_env.stat().st_mode & 0o077):
         raise ValueError('--jev-env-file needs --netclaw-dir and a private file (chmod 600)')
-    text = unit(args.name, env_file, venv, state, netclaw, jev_env)
+    text = unit(args.name, env_file, venv, state, netclaw, jev_env, rag_python)
     unit_path.parent.mkdir(parents=True, exist_ok=True)
     unit_path.write_text(text)
     systemctl('daemon-reload')
@@ -92,6 +97,17 @@ def install(args):
         systemctl('restart', args.name+'.service')
     return {'status': 'installed', 'unit': str(unit_path), 'state': str(state), 'venv': str(venv),
             'started': bool(args.start), 'linger': linger()}
+
+
+def _rag_python(raw, netclaw):
+    if not raw:
+        return None
+    if not netclaw:
+        raise ValueError('--rag-python needs --netclaw-dir')
+    path = Path(raw).expanduser().resolve()
+    if not path.is_file() or not os.access(path, os.X_OK):
+        raise ValueError(f'{path} is not an executable')
+    return path
 
 
 def linger():
@@ -125,6 +141,8 @@ def main(argv=None):
     parser.add_argument('--python', default=sys.executable)
     parser.add_argument('--netclaw-dir', help='NetClaw checkout, for JEV case reviews')
     parser.add_argument('--jev-env-file', help="file with NetClaw's JEV settings (default: the checkout's .env)")
+    parser.add_argument('--rag-python', help='Python of NetClaw\'s RAG runtime '
+                        '(mcp.servers["rag-mcp"].command in ~/.openclaw/openclaw.json); needs --netclaw-dir')
     parser.add_argument("--start", action="store_true", help="enable and restart the service")
     args = parser.parse_args(argv)
     if not NAME.fullmatch(args.name):

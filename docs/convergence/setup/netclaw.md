@@ -98,6 +98,23 @@ To check the human loop, choose **Need more** on the case in the HUD, or call
 `POST /api/events/<id>/reinvestigate` with feedback: the case reopens and NetClaw
 investigates again with your feedback.
 
+## RAG priors and snapshots
+
+The receiver searches prior investigations and stores resolved cases through NetClaw's
+`rag-mcp`. Those libraries are installed in NetClaw's RAG runtime, not in the
+receiver's virtualenv. Point the receiver at that interpreter when you install it:
+
+```bash
+python3 setup/receiver.py install --env-file "$bundle/receiver.env" \
+  --netclaw-dir /path/to/netclaw \
+  --rag-python /path/to/rag-runtime/bin/python3 --start
+```
+
+`--rag-python` must be an existing executable and requires `--netclaw-dir`. Take the
+path from the `command` of `mcp.servers["rag-mcp"]` in `~/.openclaw/openclaw.json`.
+Without `--rag-python`, the receiver imports `rag-mcp` in-process and those calls
+fail when the runtime's modules are missing.
+
 ## JEV reviews (optional)
 
 For IDS cases, the agent can request an advisory JEV review through

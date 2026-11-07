@@ -55,7 +55,10 @@ Interactive NetClaw keeps its own tools. Run the receiver itself with
 `python3 setup/receiver.py install --env-file <bundle>/receiver.env --start`.
 
 NetClaw-side features (RAG priors and snapshots, skill scoping, JEV) load from the
-NetClaw checkout named by `NETCLAW_DIR` (`--netclaw-dir`). A local device inventory
+NetClaw checkout named by `NETCLAW_DIR` (`--netclaw-dir`). RAG's own libraries are not
+in the receiver virtualenv. Pass `--rag-python` (with `--netclaw-dir`) so priors and
+snapshots run in NetClaw's RAG runtime: the `command` of `mcp.servers["rag-mcp"]` in
+`~/.openclaw/openclaw.json`. A local device inventory
 is read from `ALERT_RECEIVER_INVENTORY` (default: `inventory.yaml` beside `server.py`).
 
 See **`docs/CONVERGENCE-ALERT-SAFETY.md`**. Metrics: `netclaw_investigations_by_tier`,
