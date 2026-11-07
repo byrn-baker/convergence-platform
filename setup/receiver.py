@@ -10,8 +10,10 @@ both write its environment as receiver.env; this installs the receiver for that 
   python3 setup/receiver.py remove
 
 The unit runs this checkout's services/alert-receiver from a private virtualenv and
-keeps its job queue under ~/.local/state/convergence/. Pass --netclaw-dir for JEV case
-reviews, which use NetClaw's JEV client. A user service runs at boot only with
+keeps its job queue under ~/.local/state/convergence/. Pass --netclaw-dir when the
+receiver uses NetClaw pieces: JEV case reviews, RAG priors and snapshots (rag-mcp) and
+skill scoping (scripts/skill-selector) all come from that checkout. A local device
+inventory goes in the env file as ALERT_RECEIVER_INVENTORY=/path/inventory.yaml. A user service runs at boot only with
 lingering enabled (`loginctl enable-linger`); status reports it.
 """
 import argparse

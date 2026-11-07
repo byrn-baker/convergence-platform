@@ -157,7 +157,7 @@ RECONCILE_ALLOWED_ROLES = [
 RECONCILE_CHANNEL_ID = os.getenv("RECONCILE_CHANNEL_ID", os.getenv("DISCORD_ALERT_CHANNEL_ID", ""))
 
 # Local inventory fallback (hostname → device info)
-INVENTORY_FILE = Path(__file__).parent / "inventory.yaml"
+INVENTORY_FILE = Path(os.getenv("ALERT_RECEIVER_INVENTORY") or Path(__file__).parent / "inventory.yaml")
 
 # ---------------------------------------------------------------------------
 # Skill scoping (see docs/architecture/skill-context-scoping.md)
@@ -165,7 +165,9 @@ INVENTORY_FILE = Path(__file__).parent / "inventory.yaml"
 # before triggering investigation, shrinking the injected skill index.
 # ---------------------------------------------------------------------------
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# NetClaw's checkout (skill selector, skill catalog, rag-mcp). The receiver ships with
+# Convergence, so NETCLAW_DIR names it; the fallback is the historical in-tree layout.
+REPO_ROOT = Path(os.getenv("NETCLAW_DIR") or Path(__file__).resolve().parents[2])
 
 SKILL_SCOPING_ENABLED = os.getenv("SKILL_SCOPING_ENABLED", "false").lower() in ("1", "true", "yes")
 SKILL_SELECTOR_SCRIPT = os.getenv(
