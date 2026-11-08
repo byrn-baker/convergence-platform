@@ -21,6 +21,8 @@ VM Security findings can be tried without a hypervisor; see [docs/convergence/vm
 Alerts become cases through the alert receiver on the NetClaw host. Optionally,
 NetClaw investigates admitted cases with a restricted agent and records its findings
 on them: see [docs/convergence/setup/netclaw.md](docs/convergence/setup/netclaw.md).
+NetClaw's token and cost metrics come from an exporter on the same host: see
+[docs/convergence/setup/agent-metrics.md](docs/convergence/setup/agent-metrics.md).
 
 NetClaw's `convergence-setup` skill can do any of these for you, following the
 [setup procedures](docs/convergence/setup/): it discovers what it can, asks for the rest, shows
@@ -30,13 +32,14 @@ the plan before changing anything, and verifies each layer.
 
 ```text
 ui/convergence-api/        API and dashboards
-services/                  IDS ingest, alert receiver, Proxmox observer/mirror/shipper
+services/                  IDS ingest, alert receiver, agent metrics (NetClaw token exporter), Proxmox observer/mirror/shipper
 deploy/convergence/        Docker trial (Compose), adapters, Grafana, flow demo, host agent, IDS sensor
 deploy/helm/               Helm charts (convergence, victoria-stack), tooling and tests
 deploy/cluster/            Proxmox VM provisioning (proxmox.py) and K3s Ansible playbooks
 deploy/argocd/             Argo CD install
-setup/                     Setup helpers (Docker bundle, K3s/Argo CD, receiver, NetClaw, verification, flows)
+setup/                     Setup helpers (Docker bundle, K3s/Argo CD, receiver, NetClaw, agent metrics, verification, flows)
 integrations/netclaw/      The alert-triage skill installed by setup/netclaw.py
+scripts/lib/               Legacy NetClaw-fork installer fragments (install-steps.d, catalog.d)
 docs/  specs/  tests/
 ```
 
@@ -45,6 +48,7 @@ docs/  specs/  tests/
 ```bash
 python3 -m pytest tests/unit deploy/helm/tests
 (cd services/ids-ingest && python3 -m pytest)        # needs services/ids-ingest/requirements.txt
+(cd services/agent-metrics && python3 -m pytest)     # services/agent-metrics/requirements.txt for compressed events
 NETCLAW_DIR=/path/to/netclaw bash tests/convergence-host/run-tests.sh
 ```
 

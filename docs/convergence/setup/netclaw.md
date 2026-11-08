@@ -17,6 +17,10 @@ Convergence view (`convergence-read`), which needs none of this.
 The interactive NetClaw agent is unchanged. The case API key and the hook token are
 kept in `~/.openclaw/.env`; `openclaw.json` refers to them as `${VAR}`.
 
+NetClaw's token and cost metrics (the NetClaw dashboard and the quota alerts) are a
+separate, independent step: [agent-metrics.md](agent-metrics.md) installs their
+exporter on the same host.
+
 ## Before you start
 
 - The receiver runs on the NetClaw host: `setup/receiver.py status` shows it active

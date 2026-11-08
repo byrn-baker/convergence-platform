@@ -1,4 +1,49 @@
-victoria: {}
+victoria:
+  alerting:
+    ruleFiles:
+      # Model-quota early warning from the NetClaw host's agent metrics exporter
+      # (services/agent-metrics, job netclaw-openclaw). Token totals are a proxy for a
+      # provider's usage cap. The budget file is site-specific: replace it with your metered
+      # models and calibrated weekly budget, or set it to {groups: []} to turn the alerts off
+      # (docs/convergence/setup/agent-metrics.md). Without its series the alerts never fire.
+      netclaw-quota-budget.yml:
+        groups:
+          - name: netclaw-quota-budget
+            rules:
+              - record: netclaw:quota_tokens_1d
+                expr: >-
+                  sum(increase({__name__=~"netclaw_model_(input|output)_tokens_total", model=~"deepseek.*"}[1d]))
+              - record: netclaw:quota_tokens_7d
+                expr: >-
+                  sum(increase({__name__=~"netclaw_model_(input|output)_tokens_total", model=~"deepseek.*"}[7d]))
+              - record: netclaw:quota_weekly_token_budget
+                expr: vector(200000000)
+      netclaw-quota.yml:
+        groups:
+          - name: netclaw-quota
+            rules:
+              - record: netclaw:quota_tokens_weekly_projection
+                expr: 7 * netclaw:quota_tokens_1d
+              - alert: NetclawQuotaProjectionHigh
+                expr: netclaw:quota_tokens_weekly_projection > on() (0.8 * netclaw:quota_weekly_token_budget)
+                for: 30m
+                labels: {severity: warning, service: netclaw, investigate: 'false'}
+                annotations:
+                  summary: Metered model tokens projected above 80% of the weekly budget (proxy)
+                  description: >-
+                    At the current daily rate, the metered models' weekly token use exceeds 80% of
+                    the calibrated budget (netclaw-quota-budget.yml). Confirm against the provider's
+                    own usage figure and consider routing routine work to local models.
+              - alert: NetclawQuotaBurn7dCritical
+                expr: netclaw:quota_tokens_7d > on() (0.9 * netclaw:quota_weekly_token_budget)
+                for: 15m
+                labels: {severity: critical, service: netclaw, investigate: 'false'}
+                annotations:
+                  summary: Metered model tokens over the last 7 days above 90% of the weekly budget (proxy)
+                  description: >-
+                    Rolling 7-day token use of the metered models has passed 90% of the calibrated
+                    weekly budget (netclaw-quota-budget.yml). Confirm against the provider's own
+                    usage figure; switch the default model to a local one to protect the cap.
 nodeSelector: {}
 imagePullSecrets: []
 existingSecret: ''

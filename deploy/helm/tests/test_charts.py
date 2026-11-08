@@ -178,3 +178,85 @@ def test_device_telemetry_refuses_snmp_without_a_secret_and_bad_names(tmp_path):
     for args in (['--snmp','sw=192.0.2.2'],['--device','Bad_Name=192.0.2.1'],['--device','fw=not-an-ip']):
         result=subprocess.run([sys.executable,script,'--site','lab',*args,'--output',str(tmp_path/'x.json')],capture_output=True)
         assert result.returncode==2
+
+
+def quota_rules(*args):
+    objects=render('convergence','quota','quota','--set','existingSecret=x','--set','api.image.tag=t',*args)
+    rules=next(o for o in objects if o['kind']=='ConfigMap' and o['metadata']['name']=='quota-victoria-rules')
+    return {name:yaml.safe_load(text) for name,text in rules['data'].items()}
+
+
+def rule_list(rule_file):
+    return [r for g in rule_file['groups'] for r in g['rules']]
+
+
+def test_quota_rules_ship_beside_the_stack_rules_and_read_the_exporter_metrics():
+    rules=quota_rules()
+    assert {'stack.yml','netclaw-quota.yml','netclaw-quota-budget.yml'}<=set(rules)
+    budget,quota=rule_list(rules['netclaw-quota-budget.yml']),rule_list(rules['netclaw-quota.yml'])
+    alerts={r['alert']:r for r in quota if 'alert' in r}
+    assert set(alerts)=={'NetclawQuotaProjectionHigh','NetclawQuotaBurn7dCritical'}
+    assert all(a['labels']['investigate']=='false' and a['labels']['service']=='netclaw' for a in alerts.values())
+    recorded={r['record'] for r in budget+quota if 'record' in r}
+    import re
+    used={name for r in quota for name in re.findall(r'netclaw:[a-z0-9_]+',r['expr'])}
+    assert used<=recorded and {'netclaw:quota_tokens_1d','netclaw:quota_tokens_7d','netclaw:quota_weekly_token_budget'}<={r['record'] for r in budget}
+    usage=' '.join(r['expr'] for r in budget)
+    assert 'netclaw_model_(input|output)_tokens_total' in usage
+    # Alerts compare only with the budget file's series: without it, nothing fires.
+    assert all('on()' in a['expr'] and 'netclaw:quota_weekly_token_budget' in a['expr'] for a in alerts.values())
+
+
+def test_quota_budget_is_replaced_or_removed_through_values(tmp_path):
+    custom=tmp_path/'budget.json'
+    custom.write_text(json.dumps({'victoria':{'alerting':{'ruleFiles':{'netclaw-quota-budget.yml':{'groups':[{
+        'name':'netclaw-quota-budget','rules':[
+            {'record':'netclaw:quota_tokens_1d','expr':'sum(increase(netclaw_model_input_tokens_total{provider="metered"}[1d]))'},
+            {'record':'netclaw:quota_tokens_7d','expr':'sum(increase(netclaw_model_input_tokens_total{provider="metered"}[7d]))'},
+            {'record':'netclaw:quota_weekly_token_budget','expr':'vector(50000000)'}]}]}}}}}))
+    replaced=quota_rules('-f',str(custom))
+    assert 'vector(50000000)' in json.dumps(replaced['netclaw-quota-budget.yml'])
+    assert 'deepseek' not in json.dumps(replaced) and 'netclaw-quota.yml' in replaced and 'stack.yml' in replaced
+    # Off: an empty budget file (Helm keeps a null subchart value as a literal "null" file).
+    off=tmp_path/'off.json'
+    off.write_text(json.dumps({'victoria':{'alerting':{'ruleFiles':{'netclaw-quota-budget.yml':{'groups':[]}}}}}))
+    rules=quota_rules('-f',str(off))
+    assert rules['netclaw-quota-budget.yml']=={'groups':[]} and rule_list(rules['netclaw-quota.yml'])
+
+
+def test_k3s_bundle_with_a_receiver_keeps_the_quota_rules(tmp_path):
+    import sys
+    sys.path.insert(0,str(ROOT/'setup'))
+    spec=importlib.util.spec_from_file_location('quota_k3s',ROOT/'setup/k3s.py')
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    bundle=tmp_path/'bundle'
+    module.prepare(ROOT,bundle,{'context':'test','namespace':'quota','release':'quota','site':'lab',
+        'storage_class':'local-path','image':'api:test','grafana':False,'receiver_url':'http://192.0.2.10:8099'})
+    rules=quota_rules('-f',str(bundle/'values.json'))
+    assert {'stack.yml','netclaw-quota.yml','netclaw-quota-budget.yml'}<=set(rules)
+
+
+@pytest.mark.skipif(not os.environ.get('PROMTOOL_BIN'),reason='set PROMTOOL_BIN to evaluate the rules with promtool')
+def test_quota_alerts_fire_on_metered_burn_only(tmp_path):
+    rules=quota_rules()
+    for name in ('netclaw-quota.yml','netclaw-quota-budget.yml'):
+        (tmp_path/name).write_text(yaml.safe_dump(rules[name]))
+    alerts={r['alert']:r for r in rule_list(rules['netclaw-quota.yml']) if 'alert' in r}
+    def expected(name):
+        return {'exp_labels':alerts[name]['labels'],'exp_annotations':alerts[name]['annotations']}
+    # 500k tokens per 10 minutes: 72M a day (504M projected a week), 300M over 100 hours; budget 200M.
+    metered='netclaw_model_input_tokens_total{model="deepseek-v3.1:671b",provider="ollama",agent="main"}'
+    local='netclaw_model_output_tokens_total{model="qwen3:32b",provider="ollama",agent="main"}'
+    tests={'evaluation_interval':'1m','rule_files':['netclaw-quota-budget.yml','netclaw-quota.yml'],'tests':[
+        {'interval':'10m','input_series':[{'series':metered,'values':'0+500000x600'},{'series':local,'values':'0+9000000x600'}],
+         'alert_rule_test':[
+            # 3M an hour: the 1-day increase passes 160M/7 after ~7.6 hours, then 30 minutes pending.
+            {'alertname':'NetclawQuotaProjectionHigh','eval_time':'2h','exp_alerts':[]},
+            {'alertname':'NetclawQuotaProjectionHigh','eval_time':'9h','exp_alerts':[expected('NetclawQuotaProjectionHigh')]},
+            {'alertname':'NetclawQuotaBurn7dCritical','eval_time':'24h','exp_alerts':[]},
+            {'alertname':'NetclawQuotaBurn7dCritical','eval_time':'100h','exp_alerts':[expected('NetclawQuotaBurn7dCritical')]}]},
+        {'interval':'10m','input_series':[{'series':local,'values':'0+9000000x600'}],
+         'alert_rule_test':[{'alertname':n,'eval_time':'100h','exp_alerts':[]} for n in alerts]}]}
+    (tmp_path/'tests.yml').write_text(yaml.safe_dump(tests))
+    result=subprocess.run([*os.environ['PROMTOOL_BIN'].split(),'test','rules','tests.yml'],cwd=tmp_path,capture_output=True,text=True)
+    assert result.returncode==0,result.stdout+result.stderr

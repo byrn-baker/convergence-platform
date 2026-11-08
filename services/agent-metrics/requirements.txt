@@ -1,0 +1,2 @@
+# Reads OpenClaw's compressed canonical transcript events (event_zstd).
+zstandard==0.25.0

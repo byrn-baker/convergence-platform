@@ -1,0 +1,1 @@
+{"message":{"role":"assistant","provider":"ollama","model":"deepseek-v3.1:671b","timestamp":2500,"usage":{"input":100000,"output":20000}}}

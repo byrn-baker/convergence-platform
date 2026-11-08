@@ -1,0 +1,9 @@
+{"type":"session","id":"s1"}
+{"message":{"role":"user","timestamp":1000}}
+{"message":{"role":"assistant","provider":"ollama","model":"deepseek-v3.1:671b","timestamp":2500,"usage":{"input":100,"output":20,"cacheRead":5,"cacheWrite":1,"cost":{"total":0.25}}}}
+{"message":{"role":"user","timestamp":3000}}
+{"message":{"role":"assistant","provider":"ollama","model":"deepseek-v3.1:671b","timestamp":3400,"usage":{"input":50,"output":10,"cost":{"total":0.125}}}}
+{"message":{"role":"assistant","provider":"ollama","model":"qwen3:32b","timestamp":3600,"usage":{"input":7,"output":3}}}
+{"message":{"role":"assistant","provider":"openclaw","model":"delivery-mirror","timestamp":3700,"usage":{"input":999}}}
+not json at all
+{"message":{"role":"assistant","provider":"ollama","model":"qwen3:32b","usage":"broken"}}
