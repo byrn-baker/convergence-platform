@@ -89,6 +89,9 @@ spec:
             - -remoteRead.url=http://{{ $root.Release.Name }}-metrics:8428
             - -notifier.url=http://{{ $root.Release.Name }}-alertmanager:9093
             - -httpListenAddr=:8880
+            {{- if $root.Values.alerting.extraRuleConfigMaps }}
+            - -configCheckInterval=1m
+            {{- end }}
           {{- else }}
             - --config=/config/collector.yml
           {{- end }}
@@ -125,7 +128,16 @@ spec:
           configMap: {name: {{ $root.Release.Name }}-victoria-config}
         {{- if not $stateful }}
         - name: rules
+          {{- if $root.Values.alerting.extraRuleConfigMaps }}
+          projected:
+            sources:
+              - configMap: {name: {{ $root.Release.Name }}-victoria-rules}
+              {{- range $root.Values.alerting.extraRuleConfigMaps }}
+              - configMap: {name: {{ tpl . $root | quote }}, optional: true}
+              {{- end }}
+          {{- else }}
           configMap: {name: {{ $root.Release.Name }}-victoria-rules}
+          {{- end }}
         {{- end }}
         {{- if eq $component "collector" }}
         {{- with $root.Values.collector.extraVolumes }}{{ toYaml . | nindent 8 }}{{- end }}

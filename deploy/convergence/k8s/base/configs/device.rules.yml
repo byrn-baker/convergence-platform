@@ -122,8 +122,9 @@ groups:
         annotations:
           summary: "NetClaw agent metrics exporter not scraping"
           description: >-
-            Job netclaw-openclaw is down. Enable openclaw-token-exporter on the host
-            (scripts/openclaw-metrics) or ignore if agent observability is disabled.
+            Job netclaw-openclaw is down. Check convergence-agent-metrics on the NetClaw
+            host (`python3 setup/agent_metrics.py status`; installs that have not switched
+            run openclaw-token-exporter) or ignore if agent observability is disabled.
 
       # --- Log ship health (T141 / FR-035) ---------------------------------
       # Devices send vendor-default RFC3164 to syslog-gateway, which re-emits

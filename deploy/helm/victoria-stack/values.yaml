@@ -38,6 +38,10 @@ alerting:
   alertmanagerImage: prom/alertmanager:v0.28.1
   extraVolumes: []
   extraVolumeMounts: []
+  # More rule ConfigMaps for vmalert, by name (templated, e.g. '{{ .Release.Name }}-more-rules').
+  # Each is optional: a missing one is skipped. With any listed, vmalert re-reads its rules every
+  # minute, since their changes do not restart it.
+  extraRuleConfigMaps: []
   # Empty receiver: parallel releases never notify the live agent plane.
   alertmanagerConfig:
     route: {receiver: quiet, group_by: [alertname, site], group_wait: 30s, group_interval: 5m, repeat_interval: 4h}

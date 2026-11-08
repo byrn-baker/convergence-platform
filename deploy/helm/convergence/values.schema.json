@@ -45,6 +45,45 @@
           }
         }
       }
+    },
+    "agentMetrics": {
+      "type": "object",
+      "properties": {
+        "quota": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "modelRegex": {
+              "type": "string"
+            },
+            "weeklyTokenBudget": {
+              "type": [
+                "number",
+                "string"
+              ],
+              "minimum": 0
+            },
+            "projectionWarnRatio": {
+              "type": [
+                "number",
+                "string"
+              ],
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            },
+            "burnCriticalRatio": {
+              "type": [
+                "number",
+                "string"
+              ],
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      }
     }
   }
 }

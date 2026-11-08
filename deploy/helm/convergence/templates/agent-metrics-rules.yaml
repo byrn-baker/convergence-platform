@@ -1,0 +1,46 @@
+{{- /* NetClaw model-quota alerts (agentMetrics.quota); vmalert mounts this through victoria.alerting.extraRuleConfigMaps. */ -}}
+{{- with .Values.agentMetrics.quota }}
+{{- if .enabled }}
+{{- if not .modelRegex }}
+{{- fail "agentMetrics.quota.enabled needs agentMetrics.quota.modelRegex: a PromQL regex for the metered models, e.g. deepseek.*" }}
+{{- end }}
+{{- $budget := float64 (.weeklyTokenBudget | default 0) }}
+{{- if le $budget 0.0 }}
+{{- fail "agentMetrics.quota.enabled needs agentMetrics.quota.weeklyTokenBudget: the calibrated input+output tokens per week (a positive number)" }}
+{{- end }}
+{{- $warn := float64 .projectionWarnRatio }}
+{{- $critical := float64 .burnCriticalRatio }}
+{{- if or (le $warn 0.0) (gt $warn 1.0) (le $critical 0.0) (gt $critical 1.0) }}
+{{- fail "agentMetrics.quota.projectionWarnRatio and burnCriticalRatio must be between 0 and 1" }}
+{{- end }}
+{{- $selector := printf "{__name__=~\"netclaw_model_(input|output)_tokens_total\", model=~%s}" (toJson (toString .modelRegex)) }}
+{{- $labels := dict "service" "netclaw" "investigate" "false" }}
+{{- $rules := list
+  (dict "record" "netclaw:quota_tokens_1d" "expr" (printf "sum(increase(%s[1d]))" $selector))
+  (dict "record" "netclaw:quota_tokens_7d" "expr" (printf "sum(increase(%s[7d]))" $selector))
+  (dict "record" "netclaw:quota_weekly_token_budget" "expr" (printf "vector(%.0f)" $budget))
+  (dict "record" "netclaw:quota_tokens_weekly_projection" "expr" "7 * netclaw:quota_tokens_1d")
+  (dict "alert" "NetclawQuotaProjectionHigh" "for" "30m"
+    "expr" (printf "netclaw:quota_tokens_weekly_projection > on() (%g * netclaw:quota_weekly_token_budget)" $warn)
+    "labels" (merge (dict "severity" "warning") $labels)
+    "annotations" (dict
+      "summary" (printf "Metered model tokens projected above %.0f%% of the weekly budget (proxy)" (mulf $warn 100))
+      "description" (printf "At the current daily rate, the weekly token use of the metered models (%s) exceeds %.0f%% of the calibrated budget (agentMetrics.quota). Confirm against the provider's own usage figure and consider routing routine work to local models." .modelRegex (mulf $warn 100))))
+  (dict "alert" "NetclawQuotaBurn7dCritical" "for" "15m"
+    "expr" (printf "netclaw:quota_tokens_7d > on() (%g * netclaw:quota_weekly_token_budget)" $critical)
+    "labels" (merge (dict "severity" "critical") $labels)
+    "annotations" (dict
+      "summary" (printf "Metered model tokens over the last 7 days above %.0f%% of the weekly budget (proxy)" (mulf $critical 100))
+      "description" (printf "Rolling 7-day token use of the metered models (%s) has passed %.0f%% of the calibrated weekly budget (agentMetrics.quota). Confirm against the provider's own usage figure; switch the default model to a local one to protect the cap." .modelRegex (mulf $critical 100))))
+}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $.Release.Name }}-agent-metrics-rules
+  labels: {{ include "convergence.labels" $ | nindent 4 }}
+data:
+  netclaw-quota.yml: |
+    {{- toYaml (dict "groups" (list (dict "name" "netclaw-quota" "rules" $rules))) | nindent 4 }}
+{{- end }}
+{{- end }}

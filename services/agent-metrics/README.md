@@ -60,8 +60,8 @@ Endpoints: `/metrics`, `/health` (always `ok`).
 
 ## Quota alerts
 
-The Helm chart ships `netclaw-quota.yml` rules (weekly token budget for metered
-models); see the setup doc for calibrating them.
+The Helm chart has optional weekly token-budget alerts for metered models, off by
+default (`agentMetrics.quota`); see the setup doc for enabling and calibrating them.
 
 ## Tests
 

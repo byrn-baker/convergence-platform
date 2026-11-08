@@ -1,6 +1,6 @@
 dependencies:
 - name: victoria-stack
   repository: file://../victoria-stack
-  version: 0.3.1
-digest: sha256:99c8307647303eccfb7e71cee823df0f279997463f6813782f9af9939b7083fd
-generated: "2026-10-30T17:13:11.325660076Z"
+  version: 0.3.2
+digest: sha256:b7250613b6627b53a7fb8456946e8c807af94ccb22ceb3e263ec2bab23a812f3
+generated: "2026-11-08T21:25:55.079193909Z"

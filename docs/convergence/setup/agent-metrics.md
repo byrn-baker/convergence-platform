@@ -102,40 +102,44 @@ every interface. If you bind one address now, make sure it is the one in the scr
 job. To go back, run `remove`, then
 `systemctl --user enable --now openclaw-token-exporter.service`.
 
-## Quota alerts
+## Quota alerts (optional)
 
-The Helm chart ships two rule files with the stack's rules:
+The Helm chart can warn before a metered model provider's weekly cap runs out. The
+rules are off by default: nothing is rendered until you enable them in your values
+(the bundle's `values.json`, or your profile):
 
-| File | Holds |
+```yaml
+agentMetrics:
+  quota:
+    enabled: true
+    modelRegex: 'deepseek.*'        # PromQL regex of the metered models
+    weeklyTokenBudget: 200000000    # calibrated input+output tokens per week
+    # projectionWarnRatio: 0.8      # optional, defaults shown
+    # burnCriticalRatio: 0.9
+```
+
+`modelRegex` and `weeklyTokenBudget` are required once `enabled` is true; the render
+fails and names the missing setting otherwise. The chart then renders the ConfigMap
+`<release>-agent-metrics-rules` with `netclaw-quota.yml`, which vmalert loads beside
+the stack's rules (it re-reads rules every minute, so enabling or changing them does
+not restart it):
+
+| Rule | Fires when |
 |---|---|
-| `netclaw-quota-budget.yml` | Site-specific: the metered models' 1-day and 7-day token use (`netclaw:quota_tokens_1d`, `netclaw:quota_tokens_7d`) and the weekly budget (`netclaw:quota_weekly_token_budget`). Default: models matching `deepseek.*`, 200M tokens. |
-| `netclaw-quota.yml` | Generic: `NetclawQuotaProjectionHigh` (warning, the projected week above 80% of the budget for 30m) and `NetclawQuotaBurn7dCritical` (critical, the last 7 days above 90% for 15m). Both have `investigate: "false"`. |
+| `NetclawQuotaProjectionHigh` (warning) | the week projected from the last day's tokens passes `projectionWarnRatio` of the budget for 30m |
+| `NetclawQuotaBurn7dCritical` (critical) | the last 7 days' tokens pass `burnCriticalRatio` of the budget for 15m |
 
-Token totals are a proxy for a provider cap that may be measured differently (GPU
+Both carry `service: netclaw` and `investigate: "false"`. The recording rules
+`netclaw:quota_tokens_1d`, `netclaw:quota_tokens_7d`,
+`netclaw:quota_tokens_weekly_projection` and `netclaw:quota_weekly_token_budget` are
+available for dashboards.
+
+Token totals are a proxy for a cap that the provider may measure differently (GPU
 time, requests). Calibrate once: read the metered models' 7-day tokens,
 `sum(increase({__name__=~"netclaw_model_(input|output)_tokens_total", model=~"deepseek.*"}[7d]))`,
 and the matching weekly percentage from the provider; the budget is
-`tokens / (percent / 100)`. Then replace the budget file in your values:
-
-```yaml
-victoria:
-  alerting:
-    ruleFiles:
-      netclaw-quota-budget.yml:
-        groups:
-          - name: netclaw-quota-budget
-            rules:
-              - record: netclaw:quota_tokens_1d
-                expr: sum(increase({__name__=~"netclaw_model_(input|output)_tokens_total", model=~"my-metered.*"}[1d]))
-              - record: netclaw:quota_tokens_7d
-                expr: sum(increase({__name__=~"netclaw_model_(input|output)_tokens_total", model=~"my-metered.*"}[7d]))
-              - record: netclaw:quota_weekly_token_budget
-                expr: vector(150000000)
-```
-
-To turn the alerts off, set `netclaw-quota-budget.yml: {groups: []}`: without its
-series, the alerts never fire. (Do not set it to `null`: Helm then renders a file that
-contains `null`.) The Docker trial does not load these rules.
+`tokens / (percent / 100)`. To turn the alerts off again, set `enabled: false`.
+The Docker trial does not load these rules.
 
 ## Undo
 

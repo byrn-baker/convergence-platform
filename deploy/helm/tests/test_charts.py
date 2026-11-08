@@ -180,51 +180,87 @@ def test_device_telemetry_refuses_snmp_without_a_secret_and_bad_names(tmp_path):
         assert result.returncode==2
 
 
-def quota_rules(*args):
-    objects=render('convergence','quota','quota','--set','existingSecret=x','--set','api.image.tag=t',*args)
-    rules=next(o for o in objects if o['kind']=='ConfigMap' and o['metadata']['name']=='quota-victoria-rules')
-    return {name:yaml.safe_load(text) for name,text in rules['data'].items()}
+QUOTA=['--set','agentMetrics.quota.enabled=true','--set','agentMetrics.quota.modelRegex=deepseek.*',
+       '--set','agentMetrics.quota.weeklyTokenBudget=200000000']
+
+
+def quota_objects(*args,release='quota'):
+    return render('convergence',release,'quota','--set','existingSecret=x','--set','api.image.tag=t',*args)
+
+
+def quota_rules(objects):
+    """Every rule file vmalert loads: the stack's own ConfigMap plus the agent metrics one, if rendered."""
+    files={}
+    for o in objects:
+        if o['kind']=='ConfigMap' and o['metadata']['name'] in ('quota-victoria-rules','quota-agent-metrics-rules'):
+            files.update({name:yaml.safe_load(text) for name,text in o['data'].items()})
+    return files
 
 
 def rule_list(rule_file):
     return [r for g in rule_file['groups'] for r in g['rules']]
 
 
-def test_quota_rules_ship_beside_the_stack_rules_and_read_the_exporter_metrics():
-    rules=quota_rules()
-    assert {'stack.yml','netclaw-quota.yml','netclaw-quota-budget.yml'}<=set(rules)
-    budget,quota=rule_list(rules['netclaw-quota-budget.yml']),rule_list(rules['netclaw-quota.yml'])
+def test_quota_rules_are_off_by_default_and_vmalert_mounts_them_optionally():
+    objects=quota_objects()
+    assert set(quota_rules(objects))=={'stack.yml'}
+    assert 'netclaw:quota' not in json.dumps(objects)
+    vmalert=next(o for o in objects if o['kind']=='Deployment' and o['metadata']['name']=='quota-vmalert')
+    pod=vmalert['spec']['template']['spec']
+    sources=next(v for v in pod['volumes'] if v['name']=='rules')['projected']['sources']
+    assert sources==[{'configMap':{'name':'quota-victoria-rules'}},
+                     {'configMap':{'name':'quota-agent-metrics-rules','optional':True}}]
+    assert '-configCheckInterval=1m' in pod['containers'][0]['args']
+
+
+def test_a_plain_victoria_stack_keeps_its_single_rules_configmap():
+    objects=render('victoria-stack','plain','plain')
+    pod=next(o for o in objects if o['kind']=='Deployment' and o['metadata']['name']=='plain-vmalert')['spec']['template']['spec']
+    assert next(v for v in pod['volumes'] if v['name']=='rules')=={'name':'rules','configMap':{'name':'plain-victoria-rules'}}
+    assert not any(a.startswith('-configCheckInterval') for a in pod['containers'][0]['args'])
+
+
+@pytest.mark.parametrize('settings,message',[
+    ([],'agentMetrics.quota.modelRegex'),
+    (['--set','agentMetrics.quota.modelRegex=deepseek.*'],'agentMetrics.quota.weeklyTokenBudget'),
+    (['--set','agentMetrics.quota.modelRegex=deepseek.*','--set','agentMetrics.quota.weeklyTokenBudget=1',
+      '--set','agentMetrics.quota.burnCriticalRatio=1.5'],'burnCriticalRatio'),
+    (['--set','agentMetrics.quota.modelRegex=deepseek.*','--set','agentMetrics.quota.weeklyTokenBudget=lots'],
+     'agentMetrics.quota.weeklyTokenBudget'),
+])
+def test_enabling_quota_without_its_settings_fails_the_render(settings,message):
+    p=subprocess.run([HELM,'template','quota',str(CHART/'convergence'),'--set','existingSecret=x','--set','api.image.tag=t',
+                      '--set','agentMetrics.quota.enabled=true',*settings],capture_output=True,text=True)
+    assert p.returncode and message in p.stderr
+
+
+def test_enabled_quota_rules_read_the_exporter_metrics_with_the_operator_settings():
+    rules=quota_rules(quota_objects(*QUOTA,'--set','agentMetrics.quota.projectionWarnRatio=0.75'))
+    assert set(rules)=={'stack.yml','netclaw-quota.yml'}
+    quota=rule_list(rules['netclaw-quota.yml'])
     alerts={r['alert']:r for r in quota if 'alert' in r}
     assert set(alerts)=={'NetclawQuotaProjectionHigh','NetclawQuotaBurn7dCritical'}
     assert all(a['labels']['investigate']=='false' and a['labels']['service']=='netclaw' for a in alerts.values())
-    recorded={r['record'] for r in budget+quota if 'record' in r}
+    records={r['record']:r['expr'] for r in quota if 'record' in r}
     import re
-    used={name for r in quota for name in re.findall(r'netclaw:[a-z0-9_]+',r['expr'])}
-    assert used<=recorded and {'netclaw:quota_tokens_1d','netclaw:quota_tokens_7d','netclaw:quota_weekly_token_budget'}<={r['record'] for r in budget}
-    usage=' '.join(r['expr'] for r in budget)
-    assert 'netclaw_model_(input|output)_tokens_total' in usage
-    # Alerts compare only with the budget file's series: without it, nothing fires.
-    assert all('on()' in a['expr'] and 'netclaw:quota_weekly_token_budget' in a['expr'] for a in alerts.values())
+    used={name for r in alerts.values() for name in re.findall(r'netclaw:[a-z0-9_]+',r['expr'])}
+    assert used<=set(records)
+    assert records['netclaw:quota_tokens_7d']=='sum(increase({__name__=~"netclaw_model_(input|output)_tokens_total", model=~"deepseek.*"}[7d]))'
+    assert records['netclaw:quota_weekly_token_budget']=='vector(200000000)'
+    assert '0.75 * netclaw:quota_weekly_token_budget' in alerts['NetclawQuotaProjectionHigh']['expr']
+    assert '75%' in alerts['NetclawQuotaProjectionHigh']['annotations']['summary']
+    assert all('on()' in a['expr'] for a in alerts.values())
 
 
-def test_quota_budget_is_replaced_or_removed_through_values(tmp_path):
-    custom=tmp_path/'budget.json'
-    custom.write_text(json.dumps({'victoria':{'alerting':{'ruleFiles':{'netclaw-quota-budget.yml':{'groups':[{
-        'name':'netclaw-quota-budget','rules':[
-            {'record':'netclaw:quota_tokens_1d','expr':'sum(increase(netclaw_model_input_tokens_total{provider="metered"}[1d]))'},
-            {'record':'netclaw:quota_tokens_7d','expr':'sum(increase(netclaw_model_input_tokens_total{provider="metered"}[7d]))'},
-            {'record':'netclaw:quota_weekly_token_budget','expr':'vector(50000000)'}]}]}}}}}))
-    replaced=quota_rules('-f',str(custom))
-    assert 'vector(50000000)' in json.dumps(replaced['netclaw-quota-budget.yml'])
-    assert 'deepseek' not in json.dumps(replaced) and 'netclaw-quota.yml' in replaced and 'stack.yml' in replaced
-    # Off: an empty budget file (Helm keeps a null subchart value as a literal "null" file).
-    off=tmp_path/'off.json'
-    off.write_text(json.dumps({'victoria':{'alerting':{'ruleFiles':{'netclaw-quota-budget.yml':{'groups':[]}}}}}))
-    rules=quota_rules('-f',str(off))
-    assert rules['netclaw-quota-budget.yml']=={'groups':[]} and rule_list(rules['netclaw-quota.yml'])
+def test_quota_model_regex_is_quoted_for_promql(tmp_path):
+    values=tmp_path/'regex.json'
+    values.write_text(json.dumps({'agentMetrics':{'quota':{'enabled':True,'modelRegex':'a"b\\.c','weeklyTokenBudget':5}}}))
+    rules=quota_rules(quota_objects('-f',str(values)))
+    expr={r.get('record'):r['expr'] for r in rule_list(rules['netclaw-quota.yml'])}['netclaw:quota_tokens_1d']
+    assert 'model=~"a\\"b\\\\.c"' in expr
 
 
-def test_k3s_bundle_with_a_receiver_keeps_the_quota_rules(tmp_path):
+def test_k3s_bundle_with_a_receiver_mounts_and_enables_quota_rules(tmp_path):
     import sys
     sys.path.insert(0,str(ROOT/'setup'))
     spec=importlib.util.spec_from_file_location('quota_k3s',ROOT/'setup/k3s.py')
@@ -232,22 +268,24 @@ def test_k3s_bundle_with_a_receiver_keeps_the_quota_rules(tmp_path):
     bundle=tmp_path/'bundle'
     module.prepare(ROOT,bundle,{'context':'test','namespace':'quota','release':'quota','site':'lab',
         'storage_class':'local-path','image':'api:test','grafana':False,'receiver_url':'http://192.0.2.10:8099'})
-    rules=quota_rules('-f',str(bundle/'values.json'))
-    assert {'stack.yml','netclaw-quota.yml','netclaw-quota-budget.yml'}<=set(rules)
+    objects=quota_objects('-f',str(bundle/'values.json'))
+    assert set(quota_rules(objects))=={'stack.yml'}
+    vmalert=next(o for o in objects if o['kind']=='Deployment' and o['metadata']['name']=='quota-vmalert')
+    assert 'quota-agent-metrics-rules' in json.dumps(vmalert)
+    assert 'netclaw-quota.yml' in quota_rules(quota_objects('-f',str(bundle/'values.json'),*QUOTA))
 
 
 @pytest.mark.skipif(not os.environ.get('PROMTOOL_BIN'),reason='set PROMTOOL_BIN to evaluate the rules with promtool')
 def test_quota_alerts_fire_on_metered_burn_only(tmp_path):
-    rules=quota_rules()
-    for name in ('netclaw-quota.yml','netclaw-quota-budget.yml'):
-        (tmp_path/name).write_text(yaml.safe_dump(rules[name]))
+    rules=quota_rules(quota_objects(*QUOTA))
+    (tmp_path/'netclaw-quota.yml').write_text(yaml.safe_dump(rules['netclaw-quota.yml']))
     alerts={r['alert']:r for r in rule_list(rules['netclaw-quota.yml']) if 'alert' in r}
     def expected(name):
         return {'exp_labels':alerts[name]['labels'],'exp_annotations':alerts[name]['annotations']}
     # 500k tokens per 10 minutes: 72M a day (504M projected a week), 300M over 100 hours; budget 200M.
     metered='netclaw_model_input_tokens_total{model="deepseek-v3.1:671b",provider="ollama",agent="main"}'
     local='netclaw_model_output_tokens_total{model="qwen3:32b",provider="ollama",agent="main"}'
-    tests={'evaluation_interval':'1m','rule_files':['netclaw-quota-budget.yml','netclaw-quota.yml'],'tests':[
+    tests={'evaluation_interval':'1m','rule_files':['netclaw-quota.yml'],'tests':[
         {'interval':'10m','input_series':[{'series':metered,'values':'0+500000x600'},{'series':local,'values':'0+9000000x600'}],
          'alert_rule_test':[
             # 3M an hour: the 1-day increase passes 160M/7 after ~7.6 hours, then 30 minutes pending.

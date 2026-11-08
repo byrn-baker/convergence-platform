@@ -2,7 +2,7 @@ apiVersion: v2
 name: victoria-stack
 description: Isolated project metrics, logs, collection and alerting with shared Grafana
   registration
-version: 0.3.1
+version: 0.3.2
 type: application
 kubeVersion: '>=1.29.0-0'
 dependencies:

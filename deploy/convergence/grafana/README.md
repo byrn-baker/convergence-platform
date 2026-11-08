@@ -66,7 +66,7 @@ Agent plane end-to-end:
 
 | Source | How |
 |--------|-----|
-| Token/cost metrics | `openclaw-token-exporter` → Prom job `netclaw-openclaw` (:9110) |
+| Token/cost metrics | host `convergence-agent-metrics` (`setup/agent_metrics.py`; formerly `openclaw-token-exporter`) → Prom job `netclaw-openclaw` (:9110) |
 | Investigation metrics | host `alert-receiver` → Prom job `netclaw-alert-receiver` (:8099) |
 | Gateway logs | host `/tmp/openclaw/*.log` mounted into promtail |
 | Mesh / N2N / members | promtail journal scrape of systemd *user units* (`job=netclaw-mesh`, `job=netclaw-member`) |

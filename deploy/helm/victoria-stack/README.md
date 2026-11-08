@@ -24,4 +24,9 @@ Tune `metrics.server.retentionPeriod`, `logs.server.retentionPeriod`, their
 configure notification delivery. Each release has independent stores and queues;
 StatefulSet claims survive uninstall. Share the UI, not the project stores.
 
+A parent chart can add rules it renders itself through `alerting.extraRuleConfigMaps`:
+ConfigMap names (templated, e.g. `'{{ .Release.Name }}-more-rules'`) that vmalert loads
+beside `alerting.ruleFiles` when they exist. vmalert then re-reads its rules every
+minute, because changes to those ConfigMaps do not restart it.
+
 [Full usage, lifecycle and home deployment documentation](https://github.com/byrn-baker/netclaw-convergence/tree/main/deploy/helm).
