@@ -16,7 +16,7 @@ class Host:
     """Fake systemd and pip, recording calls; real files under tmp XDG directories."""
 
     def __init__(self, monkeypatch, tmp_path):
-        self.calls, self.active = [], set()
+        self.calls, self.active, self.enabled = [], set(), set()
         monkeypatch.setenv('XDG_CONFIG_HOME', str(tmp_path/'config'))
         monkeypatch.setenv('XDG_STATE_HOME', str(tmp_path/'state'))
         monkeypatch.setattr(agent_metrics, 'systemctl', self.systemctl)
@@ -29,6 +29,8 @@ class Host:
         self.calls.append(('systemctl', *args))
         if args[0] == 'is-active':
             return 'active' if args[1] in self.active else 'inactive'
+        if args[0] == 'is-enabled':
+            return 'enabled' if args[1] in self.enabled else 'disabled'
         return ''
 
     def run(self, command, check=False, **_kwargs):
@@ -36,6 +38,7 @@ class Host:
         if command[1:3] == ['-m', 'venv']:
             (Path(command[3])/'bin').mkdir(parents=True)
             (Path(command[3])/'bin/python').write_text('')
+            (Path(command[3])/'pyvenv.cfg').write_text('home = /usr/bin\n')
 
     def args(self, command='install', **overrides):
         values = dict(command=command, name='convergence-agent-metrics', bind='127.0.0.1', port=free_port(),
@@ -76,7 +79,7 @@ def test_plan_changes_nothing_and_explains_the_scrape_address(host):
     assert result['conflicts'] == []
     assert any('Convergence cannot scrape it' in note for note in result['notes'])
     assert not Path(result['unit']).exists() and not Path(result['state']).exists()
-    assert all(call[0] == 'systemctl' and call[1] == 'is-active' for call in host.calls)
+    assert all(call[0] == 'systemctl' and call[1] in ('is-active', 'is-enabled') for call in host.calls)
     lan = agent_metrics.plan(host.args('plan', bind='0.0.0.0'))
     assert any('every interface' in note for note in lan['notes'])
     assert 'Environment=EXPORTER_BIND=0.0.0.0' in lan['unit_text']
@@ -156,7 +159,8 @@ def test_remove_undoes_only_what_install_created(host, tmp_path):
     assert not unit_path.exists() and not state.exists()
     assert own_venv.exists() and any('existed before install' in k for k in result['kept'])
     assert ('systemctl', 'disable', '--now', 'convergence-agent-metrics.service') in host.calls
-    assert not any('openclaw-token-exporter' in ' '.join(call) for call in host.calls if call[1] != 'is-active')
+    assert not any('openclaw-token-exporter' in ' '.join(call) for call in host.calls
+                   if call[1] not in ('is-active', 'is-enabled'))
 
 
 def test_remove_deletes_the_venv_it_created_and_keeps_a_foreign_unit(host):
@@ -181,3 +185,50 @@ def test_status_probes_the_installed_exporter(host, monkeypatch):
 def test_probe_reports_an_unreachable_exporter():
     result = agent_metrics.probe({'EXPORTER_BIND': '0.0.0.0', 'EXPORTER_PORT': str(free_port())})
     assert result['ok'] is False and result['url'].startswith('http://127.0.0.1:')
+
+
+def test_install_refuses_while_the_old_exporter_is_enabled_even_if_stopped(host):
+    host.enabled.add('openclaw-token-exporter.service')
+    with pytest.raises(ValueError, match='is enabled .*disable --now openclaw-token-exporter'):
+        agent_metrics.install(host.args())
+
+
+def test_bind_with_an_ipv6_scope_id_is_refused(host):
+    with pytest.raises(ValueError, match='scope ID'):
+        agent_metrics.plan(host.args('plan', bind='fe80::1%eth0'))
+    with pytest.raises(ValueError):   # systemd would read % as a specifier
+        agent_metrics.unit(Path('/v'), Path('/h'), 'fe80::1%eth0', 9110, 'netclaw')
+
+
+def test_install_refuses_a_unit_file_it_did_not_create(host):
+    args = host.args()
+    unit_path, state = agent_metrics.paths(args)
+    unit_path.parent.mkdir(parents=True)
+    unit_path.write_text('[Unit]\nDescription=someone else\n')
+    with pytest.raises(ValueError, match='was not created by this helper'):
+        agent_metrics.install(args)
+    assert unit_path.read_text() == '[Unit]\nDescription=someone else\n' and not state.exists()
+
+
+def test_reinstall_with_another_venv_never_removes_that_venv(host, tmp_path):
+    args = host.args()
+    agent_metrics.install(args)
+    _, state = agent_metrics.paths(args)
+    own = tmp_path/'own-venv'
+    (own/'bin').mkdir(parents=True)
+    (own/'bin/python').write_text('')
+    (own/'pyvenv.cfg').write_text('home = /usr/bin\n')
+    agent_metrics.install(host.args(port=args.port, venv=str(own)))
+    record = agent_metrics.read_manifest(state)
+    assert record['venv'] == str(own) and record['created_venvs'] == [str(state/'venv')]
+    result = agent_metrics.remove(args)
+    assert own.is_dir() and f'{own} (existed before install)' in result['kept']
+    assert str(state/'venv') in result['removed'] and not (state/'venv').exists()
+
+
+def test_reinstall_reuses_the_venv_it_created_and_records_it_once(host):
+    args = host.args()
+    agent_metrics.install(args)
+    agent_metrics.install(args)
+    _, state = agent_metrics.paths(args)
+    assert agent_metrics.read_manifest(state)['created_venvs'] == [str(state/'venv')]

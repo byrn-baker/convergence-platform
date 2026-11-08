@@ -57,9 +57,11 @@ python3 setup/agent_metrics.py plan --bind 192.0.2.10
 ```
 
 `plan` changes nothing. It shows the unit, the scrape target, notes about the address,
-and conflicts: NetClaw's old `openclaw-token-exporter` unit still running, another
-program on the port, or a missing `--openclaw-home`. It exits 1 when there are
-conflicts. Show the plan to the user and wait for approval. Then:
+and conflicts: NetClaw's old `openclaw-token-exporter` unit still running or enabled,
+another program on the port, an address this host does not have, a unit file of that
+name that `install` did not create, or a missing `--openclaw-home`. It exits 1 when
+there are conflicts. `--bind` takes a plain IP address; IPv6 link-local addresses with
+a scope ID (`fe80::1%eth0`) are refused. Show the plan to the user and wait for approval. Then:
 
 ```bash
 python3 setup/agent_metrics.py install --bind 192.0.2.10 --start
@@ -78,15 +80,22 @@ Check that it works, not only that it runs:
 
 - `curl -s http://192.0.2.10:9110/metrics | grep netclaw_model_calls_total` shows your agents and models.
 - In Convergence, `up{job="netclaw-openclaw"}` is 1 and the NetClaw dashboard shows recent tokens.
-- Logs: `journalctl --user -u convergence-agent-metrics`. A database it cannot read
-  (for example, locked) is logged; the exporter then serves the last good read, or
-  fails the scrape if it has none, instead of reporting zero usage.
+- Logs: `journalctl --user -u convergence-agent-metrics`. A database or session log
+  it cannot read (for example, locked or unreadable) is logged; the exporter then
+  serves the last good read, or fails the scrape if it has none, instead of reporting
+  zero usage.
+
+Convergence's log shipping (promtail, Docker and host relay) keeps journal lines of
+units named `convergence-agent-metrics*.service` and of the old
+`openclaw-token-exporter.service`. A unit installed with another `--name` runs and is
+scraped normally, but its logs are not shipped.
 
 ## Switch from NetClaw's old exporter
 
 Older NetClaw installs run `openclaw-token-exporter` (from `scripts/openclaw-metrics`
 in the NetClaw checkout) on the same port with the same metrics. `install` refuses
-while it runs and never stops it for you. To switch, at a time a short scrape gap is
+while it runs or is enabled (it would take the port back at the next login or boot)
+and never stops or disables it for you. To switch, at a time a short scrape gap is
 acceptable:
 
 ```bash
@@ -101,6 +110,13 @@ continue; counters continue from OpenClaw's totals. The old exporter listened on
 every interface. If you bind one address now, make sure it is the one in the scrape
 job. To go back, run `remove`, then
 `systemctl --user enable --now openclaw-token-exporter.service`.
+
+One difference: the old exporter wrote the metrics without an `agent` label
+(`netclaw_model_cache_read_tokens_total`, `netclaw_model_cache_write_tokens_total`,
+`netclaw_model_call_duration_ms`) once per agent, with identical labels, so with
+several agents on one model the scrape held duplicate series and one value won. The
+new exporter sums the cache counters over agents and reports the most recent call's
+duration, so those panels can step up once after the switch.
 
 ## Quota alerts (optional)
 
@@ -121,8 +137,11 @@ agentMetrics:
 `modelRegex` and `weeklyTokenBudget` are required once `enabled` is true; the render
 fails and names the missing setting otherwise. The chart then renders the ConfigMap
 `<release>-agent-metrics-rules` with `netclaw-quota.yml`, which vmalert loads beside
-the stack's rules (it re-reads rules every minute, so enabling or changing them does
-not restart it):
+the stack's rules. The release always mounts that ConfigMap as optional and runs
+vmalert with `-configCheckInterval=1m`, whether or not quota is enabled: vmalert
+re-reads its rules every minute, so enabling, changing or disabling the quota takes
+effect within about two minutes (the kubelet's ConfigMap sync plus that check),
+without a restart. Changes to the stack's own rules still restart vmalert as before.
 
 | Rule | Fires when |
 |---|---|
@@ -148,5 +167,6 @@ python3 setup/agent_metrics.py remove
 ```
 
 It stops and removes only what `install` recorded in its state directory: the unit,
-and the virtualenv if `install` created it. It never touches OpenClaw's state or the
+and each virtualenv `install` created. A virtualenv passed with `--venv` that existed
+before is kept, even after re-installing with another `--venv`. It never touches OpenClaw's state or the
 old `openclaw-token-exporter` unit.

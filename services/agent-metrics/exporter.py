@@ -22,12 +22,14 @@ Metrics (labels as listed; Prometheus adds `instance` from the scrape target):
   netclaw_model_call_duration_ms          gauge    model, provider (most recent call)
   netclaw_token_exporter_sessions         gauge    (sessions scanned)
 
-OpenClaw state is only read: databases are opened with SQLite's mode=ro and
-nothing under OPENCLAW_HOME is written. Aggregates are cached by file timestamps
+OpenClaw state is only read: databases are opened with SQLite's mode=ro, so their
+contents never change. (Like any SQLite reader, opening a WAL database while its
+writer is stopped creates empty -shm/-wal files beside it; in a read-only directory,
+a database without a WAL is read as immutable instead.) Aggregates are cached by file timestamps
 and sizes, including the SQLite WAL so newly committed turns invalidate the cache.
 Checkpoint / reset / deleted session files are skipped so turns are never counted
-twice. A missing agents directory reports no usage. A database that cannot be read
-(locked, corrupt, unreadable) serves its last good aggregate; with none, the scrape
+twice. A missing agents directory reports no usage. A database or session log that
+cannot be read (locked, corrupt, unreadable) serves its last good aggregate; with none, the scrape
 fails with HTTP 500 rather than reporting zero usage, which would look like a
 counter reset.
 
@@ -48,7 +50,7 @@ from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME") or os.path.expanduser("~/.openclaw"))
+OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME") or "~/.openclaw").expanduser().absolute()
 INSTANCE = os.environ.get("NETCLAW_INSTANCE", "netclaw")
 PORT = int(os.environ.get("EXPORTER_PORT", "9110"))
 BIND = os.environ.get("EXPORTER_BIND", "127.0.0.1")
@@ -136,11 +138,9 @@ def _float(value) -> float:
 
 
 def _parse_file(path: Path):
-    try:
-        with path.open("r", encoding="utf-8", errors="replace") as stream:
-            return _parse_events((None, line) for line in stream if line.strip())
-    except OSError:
-        return {}, {}
+    """Aggregate one JSONL session log. Raises OSError when it cannot be read."""
+    with path.open("r", encoding="utf-8", errors="replace") as stream:
+        return _parse_events((None, line) for line in stream if line.strip())
 
 
 def _signature(path: Path):
@@ -154,6 +154,23 @@ def _signature(path: Path):
         else:
             signature.append((st.st_mtime_ns, st.st_size))
     return tuple(signature)
+
+
+def _connect(path: Path):
+    """Open read-only. SQLite creates empty -shm/-wal files beside a WAL database whose
+    writer is not running, as any reader does; where it cannot (a read-only directory)
+    and there is no WAL to miss, read the file as immutable instead."""
+    uri = path.absolute().as_uri()
+    db = sqlite3.connect(uri + "?mode=ro", uri=True, timeout=SQLITE_TIMEOUT)
+    try:
+        db.execute("PRAGMA schema_version").fetchone()   # opening is lazy; surface errors here
+        return db
+    except sqlite3.OperationalError as exc:
+        db.close()
+        wal = path.with_name(path.name + "-wal")
+        if getattr(exc, "sqlite_errorname", "") != "SQLITE_READONLY_DIRECTORY" or wal.exists():
+            raise
+    return sqlite3.connect(uri + "?mode=ro&immutable=1", uri=True, timeout=SQLITE_TIMEOUT)
 
 
 def _parse_sqlite(path: Path):
@@ -170,7 +187,7 @@ def _parse_sqlite(path: Path):
         result = ({}, {}, 0)   # a database OpenClaw created but has not written yet
         _sqlite_cache[str(path)] = (signature, result)
         return result
-    with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=SQLITE_TIMEOUT)) as db:
+    with closing(_connect(path)) as db:
         db.execute("BEGIN")
         columns = {row[1] for row in db.execute("PRAGMA table_info(transcript_events)")}
         if not {"session_id", "event_json"} <= columns:
@@ -213,27 +230,42 @@ def _read_database(path: Path):
         raise RuntimeError(f"cannot read {path}: {exc}") from exc
 
 
+def _read_session_file(f: Path):
+    """(aggregate, durations) of one log; None if it is gone. A log that cannot be read
+    serves its last good read, or fails the scrape rather than counting as zero."""
+    cached = _cache.get(str(f))
+    try:
+        st = f.stat()
+        if cached and cached[0] == st.st_mtime_ns and cached[1] == st.st_size:
+            return cached[2], cached[3]
+        agg, last_dur = _parse_file(f)
+    except FileNotFoundError:   # rotated away since the directory was listed
+        return None
+    except OSError as exc:
+        if cached:
+            print(f"agent-metrics: {f}: {exc}; serving the last good read", file=sys.stderr, flush=True)
+            return cached[2], cached[3]
+        raise RuntimeError(f"cannot read {f}: {exc}") from exc
+    _cache[str(f)] = (st.st_mtime_ns, st.st_size, agg, last_dur)
+    return agg, last_dur
+
+
 def _read_sessions(agent_dir: Path):
     sources, count = [], 0
     try:
-        files = sorted((agent_dir / "sessions").glob("*.jsonl"))
-    except OSError:
+        names = sorted(entry.name for entry in os.scandir(agent_dir / "sessions"))
+    except (FileNotFoundError, NotADirectoryError):
         return sources, count
-    for f in files:
+    except OSError as exc:
+        raise RuntimeError(f"cannot list {agent_dir / 'sessions'}: {exc}") from exc
+    for name in names:
+        f = agent_dir / "sessions" / name
         if not _is_session_file(f):
             continue
-        try:
-            st = f.stat()
-        except OSError:
-            continue
-        count += 1
-        cached = _cache.get(str(f))
-        if cached and cached[0] == st.st_mtime_ns and cached[1] == st.st_size:
-            agg, last_dur = cached[2], cached[3]
-        else:
-            agg, last_dur = _parse_file(f)
-            _cache[str(f)] = (st.st_mtime_ns, st.st_size, agg, last_dur)
-        sources.append((agg, last_dur))
+        result = _read_session_file(f)
+        if result is not None:
+            count += 1
+            sources.append(result)
     return sources, count
 
 
@@ -245,8 +277,10 @@ def collect(home: Path | None = None) -> dict:
     root = agents_dir(home)
     try:
         agent_dirs = sorted(p for p in root.iterdir() if p.is_dir())
-    except OSError:   # no agents yet, or OPENCLAW_HOME missing
+    except (FileNotFoundError, NotADirectoryError):   # no agents yet, or OPENCLAW_HOME missing
         return {"totals": totals, "durations": durations, "sessions": 0}
+    except OSError as exc:   # present but unreadable: fail rather than report zero
+        raise RuntimeError(f"cannot list {root}: {exc}") from exc
 
     for agent_dir in agent_dirs:
         agent = agent_dir.name
@@ -307,18 +341,31 @@ def render(home: Path | None = None) -> str:
         out.append(f"# TYPE {name} {mtype}")
         out.extend(rows)
 
+    # Metrics without an agent label are summed over agents (the fork's exporter wrote one
+    # series per agent with identical labels, so several agents on a model collided).
+    per_model: dict[tuple, dict] = {}
+    for (_agent, provider, model), a in totals.items():
+        total = per_model.setdefault((provider, model), _empty())
+        for field in FIELDS:
+            total[field] += a[field]
+
     for name, field, help_text, with_agent in COUNTERS:
         rows = []
-        for (agent, provider, model), a in sorted(totals.items()):
+        series = sorted(totals.items()) if with_agent else sorted(((None, *k), a) for k, a in per_model.items())
+        for (agent, provider, model), a in series:
             val = a[field]
             val = f"{val:.6f}" if field == "cost" else str(int(val))
             rows.append(f"{name}{_labels(agent, provider, model, with_agent)} {val}")
         emit(name, "counter", help_text, rows)
 
-    # Duration gauge (most recent call per model).
+    # Duration gauge: the most recent call per model, whichever agent made it.
+    latest: dict[tuple, tuple] = {}
+    for (_agent, provider, model), (ts, dur) in durations.items():
+        if (provider, model) not in latest or ts > latest[(provider, model)][0]:
+            latest[(provider, model)] = (ts, dur)
     drows = []
-    for (agent, provider, model), (_ts, dur) in sorted(durations.items()):
-        drows.append(f"netclaw_model_call_duration_ms{_labels(agent, provider, model, False)} {int(dur)}")
+    for (provider, model), (_ts, dur) in sorted(latest.items()):
+        drows.append(f"netclaw_model_call_duration_ms{_labels('', provider, model, False)} {int(dur)}")
     emit("netclaw_model_call_duration_ms", "gauge",
          "Duration of the most recent model call in milliseconds.", drows)
 

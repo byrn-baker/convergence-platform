@@ -260,6 +260,28 @@ def test_quota_model_regex_is_quoted_for_promql(tmp_path):
     assert 'model=~"a\\"b\\\\.c"' in expr
 
 
+def test_quota_regex_braces_are_literal_in_annotations_but_not_in_promql(tmp_path):
+    values=tmp_path/'braces.json'
+    values.write_text(json.dumps({'agentMetrics':{'quota':{'enabled':True,'modelRegex':'deepseek.*|z{{x}}','weeklyTokenBudget':5}}}))
+    rules=rule_list(quota_rules(quota_objects('-f',str(values)))['netclaw-quota.yml'])
+    assert 'model=~"deepseek.*|z{{x}}"' in next(r['expr'] for r in rules if r.get('record')=='netclaw:quota_tokens_1d')
+    for alert in (r for r in rules if 'alert' in r):
+        assert '(deepseek.*|z{{ "{{" }}x{{ "}}" }})' in alert['annotations']['description']
+
+
+@pytest.mark.parametrize('value,ok',[('0.75',True),('1',True),('lots',False),('0',False)])
+def test_quota_ratios_given_with_set_string(value,ok):
+    p=subprocess.run([HELM,'template','quota',str(CHART/'convergence'),'--set','existingSecret=x','--set','api.image.tag=t',
+                      *QUOTA,'--set-string','agentMetrics.quota.projectionWarnRatio='+value,
+                      '--set-string','agentMetrics.quota.weeklyTokenBudget=200000000'],capture_output=True,text=True)
+    if ok:
+        rules=quota_rules([d for d in yaml.safe_load_all(p.stdout) if d])
+        alert=next(r for r in rule_list(rules['netclaw-quota.yml']) if r.get('alert')=='NetclawQuotaProjectionHigh')
+        assert f'({float(value):g} * netclaw:quota_weekly_token_budget)' in alert['expr']
+    else:
+        assert p.returncode and 'between 0 and 1' in p.stderr
+
+
 def test_k3s_bundle_with_a_receiver_mounts_and_enables_quota_rules(tmp_path):
     import sys
     sys.path.insert(0,str(ROOT/'setup'))
@@ -277,11 +299,16 @@ def test_k3s_bundle_with_a_receiver_mounts_and_enables_quota_rules(tmp_path):
 
 @pytest.mark.skipif(not os.environ.get('PROMTOOL_BIN'),reason='set PROMTOOL_BIN to evaluate the rules with promtool')
 def test_quota_alerts_fire_on_metered_burn_only(tmp_path):
-    rules=quota_rules(quota_objects(*QUOTA))
+    # Braces in the regex also check that the annotations expand to the literal regex.
+    values=tmp_path/'quota.json'
+    values.write_text(json.dumps({'agentMetrics':{'quota':{'enabled':True,'modelRegex':'deepseek.*|z{{x}}','weeklyTokenBudget':200000000}}}))
+    rules=quota_rules(quota_objects('-f',str(values)))
     (tmp_path/'netclaw-quota.yml').write_text(yaml.safe_dump(rules['netclaw-quota.yml']))
     alerts={r['alert']:r for r in rule_list(rules['netclaw-quota.yml']) if 'alert' in r}
     def expected(name):
-        return {'exp_labels':alerts[name]['labels'],'exp_annotations':alerts[name]['annotations']}
+        shown={k:v.replace('{{ "{{" }}','{{').replace('{{ "}}" }}','}}') for k,v in alerts[name]['annotations'].items()}
+        assert '(deepseek.*|z{{x}})' in shown['description']
+        return {'exp_labels':alerts[name]['labels'],'exp_annotations':shown}
     # 500k tokens per 10 minutes: 72M a day (504M projected a week), 300M over 100 hours; budget 200M.
     metered='netclaw_model_input_tokens_total{model="deepseek-v3.1:671b",provider="ollama",agent="main"}'
     local='netclaw_model_output_tokens_total{model="qwen3:32b",provider="ollama",agent="main"}'

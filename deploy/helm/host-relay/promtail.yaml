@@ -40,7 +40,7 @@ scrape_configs:
     target_label: unit
   - source_labels:
     - unit
-    regex: (netclaw-mesh\.service|netclaw-member-.*\.service|openclaw-gateway\.service|netclaw-hud\.service|openclaw-token-exporter\.service|convergence-agent-metrics\.service)
+    regex: (netclaw-mesh\.service|netclaw-member-.*\.service|openclaw-gateway\.service|netclaw-hud\.service|openclaw-token-exporter\.service|convergence-agent-metrics.*\.service)
     action: keep
   - source_labels:
     - unit

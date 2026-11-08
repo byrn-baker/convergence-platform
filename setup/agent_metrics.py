@@ -38,6 +38,7 @@ SERVICE = ROOT/'services/agent-metrics'
 NAME = re.compile(r'[a-z][a-z0-9-]{0,40}')
 INSTANCE = re.compile(r'[A-Za-z0-9._-]{1,64}')
 OLD_UNIT = 'openclaw-token-exporter.service'
+ENABLED = {'enabled', 'enabled-runtime', 'linked', 'linked-runtime'}
 MANIFEST = 'install.json'
 SWITCH = (f'Stop it first: systemctl --user disable --now {OLD_UNIT} (this ends its scrape until the new '
           'service starts; its unit file and NetClaw checkout can stay). Then run install again; the job, '
@@ -45,9 +46,9 @@ SWITCH = (f'Stop it first: systemctl --user disable --now {OLD_UNIT} (this ends 
 
 
 def unit(venv, openclaw_home, bind, port, instance):
-    for value in (SERVICE, venv, openclaw_home):
+    for value in (SERVICE, venv, openclaw_home, bind):
         if any(c in str(value) for c in '\n\r%$"\'\\') or ' ' in str(value):
-            raise ValueError(f'Unsupported character in path {value}')
+            raise ValueError(f'Unsupported character in {value}')
     lines = ['[Unit]', 'Description=Convergence agent metrics (OpenClaw token and cost exporter)',
              'After=network-online.target', 'Wants=network-online.target', '',
              '[Service]', 'Type=simple', f'WorkingDirectory={SERVICE}',
@@ -107,9 +108,12 @@ def unit_settings(unit_path):
 
 def options(args):
     try:
-        bind = str(ipaddress.ip_address(args.bind))
+        address = ipaddress.ip_address(args.bind)
     except ValueError:
         raise ValueError(f'--bind must be an IP address, not {args.bind!r}') from None
+    if getattr(address, 'scope_id', None):
+        raise ValueError('--bind cannot carry an IPv6 scope ID (%...): bind a global address, or 0.0.0.0 / ::')
+    bind = str(address)
     if not 0 < args.port < 65536:
         raise ValueError('--port must be 1-65535')
     if not INSTANCE.fullmatch(args.instance):
@@ -128,8 +132,13 @@ def plan(args):
         conflicts.append(f'OPENCLAW_HOME {home} is not a directory (--openclaw-home)')
     elif not (home/'agents').is_dir():
         notes.append(f'{home}/agents does not exist yet; the exporter reports no usage until OpenClaw creates it')
-    if systemctl('is-active', OLD_UNIT, check=False) == 'active':
-        conflicts.append(f'NetClaw\'s old exporter {OLD_UNIT} is running. {SWITCH}')
+    old_active = systemctl('is-active', OLD_UNIT, check=False) == 'active'
+    old_enabled = systemctl('is-enabled', OLD_UNIT, check=False) in ENABLED
+    if old_active or old_enabled:
+        state_text = 'is running' if old_active else 'is enabled (it starts again at login or boot)'
+        conflicts.append(f'NetClaw\'s old exporter {OLD_UNIT} {state_text}. {SWITCH}')
+    if unit_path.exists() and not read_manifest(state).get('unit_created'):
+        conflicts.append(f'{unit_path} exists and was not created by this helper; move it aside or choose --name')
     ours = (systemctl('is-active', args.name+'.service', check=False) == 'active'
             and unit_settings(unit_path) == {'EXPORTER_BIND': bind, 'EXPORTER_PORT': str(args.port)})
     problem = None if ours else bind_problem(bind, args.port)
@@ -168,9 +177,11 @@ def install(args):
     if not state.exists():
         record['state_created'] = True
     state.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # Ownership is per path: a later install with another --venv never inherits it.
+    created = record.setdefault('created_venvs', [])
     if not (venv/'bin/python').exists():
-        if not venv.exists():
-            record['venv_created'] = True
+        if not venv.exists() and str(venv) not in created:
+            created.append(str(venv))
         subprocess.run([args.python, '-m', 'venv', str(venv)], check=True)
     record['venv'] = str(venv)
     (state/MANIFEST).write_text(json.dumps(record, indent=2)+'\n')
@@ -230,12 +241,14 @@ def remove(args):
         removed.append(str(unit_path))
     elif unit_path.exists():
         kept.append(f'{unit_path} (not created by this helper)')
-    venv = Path(record['venv']) if record.get('venv') else None
-    if venv and record.get('venv_created') and venv.is_dir():
-        shutil.rmtree(venv)
-        removed.append(str(venv))
-    elif venv and venv.exists():
-        kept.append(f'{venv} (existed before install)')
+    created = record.get('created_venvs', [])
+    for path in map(Path, created):
+        if (path/'pyvenv.cfg').is_file():
+            shutil.rmtree(path)
+            removed.append(str(path))
+    current = record.get('venv')
+    if current and current not in created and Path(current).exists():
+        kept.append(f'{current} (existed before install)')
     (state/MANIFEST).unlink(missing_ok=True)
     if record.get('state_created') and state.is_dir() and not any(state.iterdir()):
         state.rmdir()

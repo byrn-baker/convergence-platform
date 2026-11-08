@@ -15,6 +15,8 @@
 {{- end }}
 {{- $selector := printf "{__name__=~\"netclaw_model_(input|output)_tokens_total\", model=~%s}" (toJson (toString .modelRegex)) }}
 {{- $labels := dict "service" "netclaw" "investigate" "false" }}
+{{- /* Annotations are Go templates in vmalert: show the regex's braces literally. */}}
+{{- $shown := toString .modelRegex | replace "{{" "\x00L" | replace "}}" "\x00R" | replace "\x00L" "{{ \"{{\" }}" | replace "\x00R" "{{ \"}}\" }}" }}
 {{- $rules := list
   (dict "record" "netclaw:quota_tokens_1d" "expr" (printf "sum(increase(%s[1d]))" $selector))
   (dict "record" "netclaw:quota_tokens_7d" "expr" (printf "sum(increase(%s[7d]))" $selector))
@@ -25,13 +27,13 @@
     "labels" (merge (dict "severity" "warning") $labels)
     "annotations" (dict
       "summary" (printf "Metered model tokens projected above %.0f%% of the weekly budget (proxy)" (mulf $warn 100))
-      "description" (printf "At the current daily rate, the weekly token use of the metered models (%s) exceeds %.0f%% of the calibrated budget (agentMetrics.quota). Confirm against the provider's own usage figure and consider routing routine work to local models." .modelRegex (mulf $warn 100))))
+      "description" (printf "At the current daily rate, the weekly token use of the metered models (%s) exceeds %.0f%% of the calibrated budget (agentMetrics.quota). Confirm against the provider's own usage figure and consider routing routine work to local models." $shown (mulf $warn 100))))
   (dict "alert" "NetclawQuotaBurn7dCritical" "for" "15m"
     "expr" (printf "netclaw:quota_tokens_7d > on() (%g * netclaw:quota_weekly_token_budget)" $critical)
     "labels" (merge (dict "severity" "critical") $labels)
     "annotations" (dict
       "summary" (printf "Metered model tokens over the last 7 days above %.0f%% of the weekly budget (proxy)" (mulf $critical 100))
-      "description" (printf "Rolling 7-day token use of the metered models (%s) has passed %.0f%% of the calibrated weekly budget (agentMetrics.quota). Confirm against the provider's own usage figure; switch the default model to a local one to protect the cap." .modelRegex (mulf $critical 100))))
+      "description" (printf "Rolling 7-day token use of the metered models (%s) has passed %.0f%% of the calibrated weekly budget (agentMetrics.quota). Confirm against the provider's own usage figure; switch the default model to a local one to protect the cap." $shown (mulf $critical 100))))
 }}
 ---
 apiVersion: v1

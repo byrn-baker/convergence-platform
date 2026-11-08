@@ -17,21 +17,31 @@ canonical database `agent/openclaw-agent.sqlite`, including compressed
 that database is read from its older `sessions/*.jsonl` logs; with it, the logs are
 ignored so retained migration originals are not counted twice.
 
-- The database is opened with SQLite `mode=ro`; nothing under `OPENCLAW_HOME` is written.
+- The database is opened with SQLite `mode=ro`, so its contents never change. Like any
+  SQLite reader, opening a WAL database while OpenClaw is stopped creates empty
+  `-shm`/`-wal` files beside it; in a read-only directory, a database without a WAL is
+  read as immutable instead. Nothing else under `OPENCLAW_HOME` is written.
 - Checkpoint, reset and deleted JSONL files are skipped. So are OpenClaw's own
   `provider="openclaw"` delivery mirrors.
 - Results are cached by file timestamps and sizes (database and WAL).
 - A missing `OPENCLAW_HOME` or `agents` directory, an agent without data and an
   empty database report no usage.
-- A database that cannot be read (locked past 5 s, corrupt, unreadable) serves its
-  last good read. With no earlier read, `/metrics` returns HTTP 500, so Prometheus
-  marks the target down, instead of reporting zero usage that would look like a
-  counter reset. The reason goes to the service log.
+- A database or session log that cannot be read (locked past 5 s, corrupt,
+  unreadable) serves its last good read. With no earlier read, and whenever an
+  existing agents or sessions directory cannot be listed, `/metrics` returns HTTP 500,
+  so Prometheus marks the target down, instead of reporting zero usage that would look
+  like a counter reset. The reason goes to the service log. A session log removed
+  while being read is skipped.
 
 ## Metrics
 
 Prometheus adds `instance` from the scrape target (`instance: netclaw` in the job);
 the exporter does not emit it.
+
+Metrics without an `agent` label are summed over agents (the duration gauge reports the
+most recent call of any agent). The NetClaw fork's exporter, which this replaces,
+wrote them once per agent with identical labels, so several agents on one model
+produced duplicate series.
 
 | Metric | Type | Labels |
 |--------|------|--------|
