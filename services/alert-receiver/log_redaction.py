@@ -20,7 +20,7 @@ _SLACK_WEBHOOK = re.compile(
     r"([^\s\"'<>]+)",
     re.IGNORECASE,
 )
-_USERINFO = re.compile(r"([a-zA-Z][a-zA-Z0-9+.\-]*://)[^\s/@]*@")
+_USERINFO = re.compile(r"([a-zA-Z][a-zA-Z0-9+.\-]*://)[^\s/?#@]*@")
 _QUERY_PARAM = re.compile(r"([?&#])([^=&#\s]+)=([^&#\s]*)")
 # A parameter is secret when one of its name parts (split on _ - . and case changes) is one of these.
 _SECRET_PARTS = {
@@ -90,7 +90,11 @@ class RedactingFilter(logging.Filter):
                 record.args = tuple(_redact_arg(a) for a in record.args)
             elif isinstance(record.args, dict):
                 record.args = {k: _redact_arg(v) for k, v in record.args.items()}
-            record.getMessage()
+            message = record.getMessage()
+            clean = redact(message)
+            if clean != message:
+                # A secret split across the format string and its arguments, or a non-string message.
+                record.msg, record.args = clean, None
         except Exception:
             # The record cannot be formatted; logging would print msg and args raw to stderr.
             try:

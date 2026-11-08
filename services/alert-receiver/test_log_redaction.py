@@ -210,3 +210,17 @@ def test_uvicorn_access_formatter_still_works():
     log.info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:1", "GET", "/cb?token=abc&site=home", "1.1", 200)
     out = buf.getvalue()
     assert "GET /cb?token=[redacted]&site=home" in out and "200" in out and "abc" not in out
+
+
+def test_secret_split_across_message_and_args():
+    log, buf = _logger("test-log-redaction-split")
+    log.info("POST https://discord.com/api/webhooks/%s/%s", 42, "TOK")
+    log.info("%s?token=%s", "https://h/cb", "TOK2")
+    log.error(RuntimeError(_DISCORD))
+    out = buf.getvalue()
+    assert "TOK" not in out and "SuperSecretTokenValue" not in out
+    assert out.count("[redacted]") == 3
+
+
+def test_at_sign_in_query_keeps_host():
+    assert redact("https://example.com/cb?email=a@b.com") == "https://example.com/cb?email=a@b.com"
