@@ -132,7 +132,7 @@ def test_getmessage_failure_does_not_break_logging():
     log, buf = _logger("test-log-redaction-boom")
     record = log.makeRecord(log.name, logging.INFO, __file__, 1, "bad %s", (Boom(),), None)
     assert RedactingFilter().filter(record) is True
-    assert record.args is None and record.msg.startswith("'bad %s' args=")
+    assert record.args is None and record.msg.startswith("'bad %s'") and "withheld" in record.msg
     log.info("bad %s", Boom())
     log.info("after ok")
     assert "after ok" in buf.getvalue()
@@ -163,7 +163,7 @@ def test_unformattable_record_does_not_leak_args_to_stderr(capsys):
     log.info("post %s %s", _DISCORD)  # one argument short: formatting fails
     out = buf.getvalue() + capsys.readouterr().err
     assert "SuperSecretTokenValue" not in out
-    assert "[redacted]" in out
+    assert "log arguments withheld" in out
 
 
 def test_more_credential_forms():
@@ -224,3 +224,13 @@ def test_secret_split_across_message_and_args():
 
 def test_at_sign_in_query_keeps_host():
     assert redact("https://example.com/cb?email=a@b.com") == "https://example.com/cb?email=a@b.com"
+
+
+def test_redact_is_idempotent():
+    samples = [
+        _DISCORD, "https://u:p@h/x?token=a&site=home", "https://hooks.slack.com/services/T/B/X",
+        '"GET /cb?token=abc&site=home HTTP/1.1" 200',
+    ]
+    for text in samples:
+        once = redact(text)
+        assert redact(once) == once

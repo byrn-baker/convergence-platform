@@ -36,9 +36,12 @@ def _split_trailing(segment: str) -> tuple[str, str]:
     return segment[:end], segment[end:]
 
 
+_MARK = "[redacted]"
+
+
 def _redact_tail(match: re.Match[str]) -> str:
     body, tail = _split_trailing(match.group(2))
-    if not body:
+    if not body or body.startswith(_MARK[:-1]):
         return match.group(0)
     return match.group(1) + "[redacted]" + tail
 
@@ -49,7 +52,7 @@ def _secret_name(name: str) -> bool:
 
 
 def _redact_query(match: re.Match[str]) -> str:
-    if not _secret_name(match.group(2)):
+    if not _secret_name(match.group(2)) or match.group(3).startswith(_MARK):
         return match.group(0)
     _body, tail = _split_trailing(match.group(3))
     return f"{match.group(1)}{match.group(2)}=[redacted]{tail}"
@@ -84,8 +87,6 @@ class RedactingFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            if isinstance(record.msg, str):
-                record.msg = redact(record.msg)
             if isinstance(record.args, tuple):
                 record.args = tuple(_redact_arg(a) for a in record.args)
             elif isinstance(record.args, dict):
@@ -96,9 +97,10 @@ class RedactingFilter(logging.Filter):
                 # A secret split across the format string and its arguments, or a non-string message.
                 record.msg, record.args = clean, None
         except Exception:
-            # The record cannot be formatted; logging would print msg and args raw to stderr.
+            # The record cannot be formatted, and logging's fallback would print msg and args raw
+            # to stderr. A secret may be split across arguments, so withhold them.
             try:
-                record.msg = redact(f"{record.msg!r} args={record.args!r}")
+                record.msg = redact(f"{record.msg!r} (log arguments withheld: message could not be formatted)")
             except Exception:
                 record.msg = "[unformattable log record]"
             record.args = None
