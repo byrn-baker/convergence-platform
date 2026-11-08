@@ -26,7 +26,7 @@ See the [qualification record](verification.md) for executed tests and their lim
 ## Try retained flow evidence without changing your network
 
 Follow the prerequisites in [Try with Docker](docker.md), then run these commands
-from the maintained fork checkout. Choose unused service ports if you already have
+from your convergence-platform checkout. Choose unused service ports if you already have
 an installation. The selected flow port must be free for both UDP collection and loopback TCP
 health/metrics, and must differ from the core service ports.
 

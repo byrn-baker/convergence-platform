@@ -132,7 +132,7 @@ def test_getmessage_failure_does_not_break_logging():
     log, buf = _logger("test-log-redaction-boom")
     record = log.makeRecord(log.name, logging.INFO, __file__, 1, "bad %s", (Boom(),), None)
     assert RedactingFilter().filter(record) is True
-    assert record.msg == "bad %s"
+    assert record.args is None and record.msg.startswith("'bad %s' args=")
     log.info("bad %s", Boom())
     log.info("after ok")
     assert "after ok" in buf.getvalue()
@@ -156,3 +156,57 @@ def test_query_names_match_by_part_not_substring():
         "&apiKey=[redacted]&api_key=[redacted]"
         "&design=keep&monkey=keep&signal=keep&keyword=keep&site=home"
     )
+
+
+def test_unformattable_record_does_not_leak_args_to_stderr(capsys):
+    log, buf = _logger("test-log-redaction-badargs")
+    log.info("post %s %s", _DISCORD)  # one argument short: formatting fails
+    out = buf.getvalue() + capsys.readouterr().err
+    assert "SuperSecretTokenValue" not in out
+    assert "[redacted]" in out
+
+
+def test_more_credential_forms():
+    assert redact("https://ghp_abc@github.com/x") == "https://[redacted]@github.com/x"
+    assert redact("https://:pw@host/") == "https://[redacted]@host/"
+    assert redact("https://discord.com:443/api/webhooks/1/TOK") == "https://discord.com:443/api/webhooks/1/[redacted]"
+    assert redact("https://hooks.slack-gov.com/services/T/B/X") == "https://hooks.slack-gov.com/services/[redacted]"
+    assert redact("https://h/cb#access_token=abc&state=ok") == "https://h/cb#access_token=[redacted]&state=ok"
+    assert redact("https://h/?APIToken=a&auth=b&pwd=c&X-Amz-Credential=d") == (
+        "https://h/?APIToken=[redacted]&auth=[redacted]&pwd=[redacted]&X-Amz-Credential=[redacted]")
+    assert redact('{"url":"https://hooks.slack.com/services/T/B/X","ok":true}') == (
+        '{"url":"https://hooks.slack.com/services/[redacted]","ok":true}')
+
+
+def test_prefilled_exc_text_is_redacted():
+    log, _buf = _logger("test-log-redaction-exctext")
+    try:
+        raise RuntimeError(_DISCORD)
+    except RuntimeError:
+        import sys
+        record = log.makeRecord(log.name, logging.ERROR, __file__, 1, "x", (), sys.exc_info())
+    record.exc_text = logging.Formatter().formatException(record.exc_info)
+    RedactingFilter().filter(record)
+    assert "SuperSecretTokenValue" not in record.exc_text
+
+
+def test_args_keep_their_types_for_formatters():
+    log, buf = _logger("test-log-redaction-types")
+    log.info("%s %d %.1f", "ok", 7, 1.5)
+    assert buf.getvalue().strip() == "ok 7 1.5"
+
+
+def test_uvicorn_access_formatter_still_works():
+    from uvicorn.logging import AccessFormatter
+    log = logging.getLogger("test-log-redaction-access")
+    log.setLevel(logging.INFO)
+    log.propagate = False
+    log.handlers.clear()
+    buf = io.StringIO()
+    handler = logging.StreamHandler(buf)
+    handler.setFormatter(AccessFormatter('%(client_addr)s - "%(request_line)s" %(status_code)s', use_colors=False))
+    log.addHandler(handler)
+    install(log)
+    log.info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:1", "GET", "/cb?token=abc&site=home", "1.1", 200)
+    out = buf.getvalue()
+    assert "GET /cb?token=[redacted]&site=home" in out and "200" in out and "abc" not in out

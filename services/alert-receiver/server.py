@@ -1497,6 +1497,7 @@ app = FastAPI(
 @app.on_event("startup")
 async def start_jobs():
     global job_store
+    log_redaction.install_uvicorn()
     job_store = JobStore(os.getenv("ALERT_JOBS_PATH", str(Path(__file__).parent / "state" / "jobs.sqlite")))
     workers.extend(asyncio.create_task(job_worker()) for _ in range(MAX_CONCURRENT_INVESTIGATIONS))
     workers.append(asyncio.create_task(job_worker(lane='ingest')))
