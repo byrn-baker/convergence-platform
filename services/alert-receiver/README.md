@@ -2,6 +2,8 @@
 
 Lightweight webhook server that accepts Prometheus Alertmanager notifications, enriches them with device context from your source of truth, and triggers NetClaw investigation.
 
+The receiver redacts webhook tokens and URL credentials from its log output.
+
 ## Architecture
 
 ```

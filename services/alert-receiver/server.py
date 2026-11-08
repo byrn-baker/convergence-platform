@@ -21,6 +21,7 @@ import hashlib
 import hmac
 import json
 import logging
+import log_redaction
 import os
 import sqlite3
 import sys
@@ -210,6 +211,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
     datefmt="%H:%M:%S",
 )
+log_redaction.install()
 log = logging.getLogger("alert-receiver")
 
 # ---------------------------------------------------------------------------
