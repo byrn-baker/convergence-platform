@@ -83,7 +83,9 @@ Check that it works, not only that it runs:
 - Logs: `journalctl --user -u convergence-agent-metrics`. A database or session log
   it cannot read (for example, locked or unreadable) is logged; the exporter then
   serves the last good read, or fails the scrape if it has none, instead of reporting
-  zero usage.
+  zero usage. Removing an agent or resetting its sessions does lower the totals, which
+  `increase()` counts as a counter reset (a one-off spike on the token and quota
+  panels); see the [exporter README](../../../services/agent-metrics/README.md#metrics).
 
 Convergence's log shipping (promtail, Docker and host relay) keeps journal lines of
 units named `convergence-agent-metrics*.service` and of the old
@@ -137,8 +139,10 @@ agentMetrics:
 `modelRegex` and `weeklyTokenBudget` are required once `enabled` is true; the render
 fails and names the missing setting otherwise. The chart then renders the ConfigMap
 `<release>-agent-metrics-rules` with `netclaw-quota.yml`, which vmalert loads beside
-the stack's rules. The release always mounts that ConfigMap as optional and runs
-vmalert with `-configCheckInterval=1m`, whether or not quota is enabled: vmalert
+the stack's rules. The release always mounts that ConfigMap as optional, and vmalert
+runs with `-configCheckInterval=1m` whenever `victoria.alerting.extraRuleConfigMaps`
+is non-empty, which the convergence chart's values always make it (they list this
+ConfigMap), whether or not quota is enabled: vmalert
 re-reads its rules every minute, so enabling, changing or disabling the quota takes
 effect within about two minutes (the kubelet's ConfigMap sync plus that check),
 without a restart. Changes to the stack's own rules still restart vmalert as before.
@@ -168,5 +172,9 @@ python3 setup/agent_metrics.py remove
 
 It stops and removes only what `install` recorded in its state directory: the unit,
 and each virtualenv `install` created. A virtualenv passed with `--venv` that existed
-before is kept, even after re-installing with another `--venv`. It never touches OpenClaw's state or the
+before is kept, even after re-installing with another `--venv`. `install` records the
+virtualenv's resolved path (symlinks and `..` resolved) and refuses one that is, or
+contains, your home directory, `/`, `OPENCLAW_HOME` or the state directory and its
+parent. `remove` deletes a recorded virtualenv only if it still resolves to the same
+path and passes the same check; otherwise it lists it under `kept`. It never touches OpenClaw's state or the
 old `openclaw-token-exporter` unit.

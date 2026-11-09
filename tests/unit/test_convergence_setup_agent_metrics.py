@@ -232,3 +232,62 @@ def test_reinstall_reuses_the_venv_it_created_and_records_it_once(host):
     agent_metrics.install(args)
     _, state = agent_metrics.paths(args)
     assert agent_metrics.read_manifest(state)['created_venvs'] == [str(state/'venv')]
+
+
+def test_install_refuses_a_venv_that_resolves_to_home(host, monkeypatch, tmp_path):
+    home = tmp_path/'home'
+    home.mkdir()
+    monkeypatch.setenv('HOME', str(home))
+    for venv in ('~/new/..', '~', str(host.home), str(tmp_path/'state/convergence')):   # ~/new does not exist
+        with pytest.raises(ValueError, match='is or contains'):
+            agent_metrics.install(host.args(venv=venv))
+    assert not (home/'pyvenv.cfg').exists() and not (tmp_path/'state').exists()
+
+
+def test_remove_never_deletes_home_through_a_recorded_dotdot_path(host, monkeypatch, tmp_path):
+    # A manifest from before paths were resolved: install --venv ~/new/.. built the venv in ~.
+    home = tmp_path/'home'
+    monkeypatch.setenv('HOME', str(home))
+    args = host.args()
+    _, state = agent_metrics.paths(args)
+    state.mkdir(parents=True)
+    (home/'new').mkdir(parents=True)
+    (home/'pyvenv.cfg').write_text('home = /usr/bin\n')
+    raw = str(home/'new/..')
+    (state/'install.json').write_text(json.dumps({'created_venvs': [raw], 'venv': raw}))
+    result = agent_metrics.remove(args)
+    assert (home/'pyvenv.cfg').is_file() and (home/'new').is_dir()
+    assert result['removed'] == [] and any(k.startswith(f'{raw} (not removed: ') for k in result['kept'])
+
+
+def test_venv_under_a_symlinked_parent_is_recorded_resolved_and_kept_if_the_link_moves(host, tmp_path):
+    first, second = tmp_path/'first', tmp_path/'second'
+    first.mkdir()
+    link = tmp_path/'link'
+    link.symlink_to(first)
+    args = host.args(venv=str(link/'venv'))
+    result = agent_metrics.install(args)
+    _, state = agent_metrics.paths(args)
+    assert result['venv'] == str(first/'venv')
+    assert agent_metrics.read_manifest(state)['created_venvs'] == [str(first/'venv')]
+    assert f'ExecStart={first}/venv/bin/python' in agent_metrics.paths(args)[0].read_text()
+    # The recorded directory is replaced by a symlink to another venv: remove leaves both alone.
+    (second/'venv').mkdir(parents=True)
+    (second/'venv/pyvenv.cfg').write_text('home = /usr/bin\n')
+    (first/'venv/bin/python').unlink()
+    (first/'venv/bin').rmdir()
+    (first/'venv/pyvenv.cfg').unlink()
+    (first/'venv').rmdir()
+    (first/'venv').symlink_to(second/'venv')
+    result = agent_metrics.remove(args)
+    assert (second/'venv/pyvenv.cfg').is_file() and str(first/'venv') not in result['removed']
+    assert any('now resolves to' in k for k in result['kept'])
+
+
+def test_remove_deletes_the_resolved_venv_it_created(host, tmp_path):
+    (tmp_path/'real').mkdir()
+    (tmp_path/'link').symlink_to(tmp_path/'real')
+    args = host.args(venv=str(tmp_path/'link/venv'))
+    agent_metrics.install(args)
+    assert agent_metrics.remove(args)['removed'][1] == str(tmp_path/'real/venv')
+    assert not (tmp_path/'real/venv').exists() and (tmp_path/'link').is_symlink()

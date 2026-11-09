@@ -26,7 +26,9 @@ StatefulSet claims survive uninstall. Share the UI, not the project stores.
 
 A parent chart can add rules it renders itself through `alerting.extraRuleConfigMaps`:
 ConfigMap names (templated, e.g. `'{{ .Release.Name }}-more-rules'`) that vmalert loads
-beside `alerting.ruleFiles` when they exist. vmalert then re-reads its rules every
-minute, because changes to those ConfigMaps do not restart it.
+beside `alerting.ruleFiles` when they exist. Whenever that list is non-empty, vmalert
+runs with `-configCheckInterval=1m` and re-reads its rules every minute, because
+changes to those ConfigMaps do not restart it. The convergence chart always sets it
+(to its agent metrics rules ConfigMap), so its vmalert always has the flag.
 
 [Full usage, lifecycle and home deployment documentation](https://github.com/byrn-baker/netclaw-convergence/tree/main/deploy/helm).

@@ -122,12 +122,28 @@ def options(args):
     return bind, home
 
 
+def real(path):
+    return Path(os.path.realpath(Path(path).expanduser()))
+
+
+def venv_problem(venv, state, openclaw_homes):
+    """Why venv must not be created or deleted: it is, or contains, a directory remove must never delete."""
+    for keep in {real(p) for p in (Path('/'), Path.home(), state.parent, state, *openclaw_homes)}:
+        if venv == keep or venv in keep.parents:
+            return f'the virtualenv {venv} is or contains {keep}; choose a dedicated directory (--venv)'
+    return None
+
+
 def plan(args):
     bind, home = options(args)
     unit_path, state = paths(args)
-    venv = Path(args.venv).expanduser().absolute() if args.venv else state/'venv'
+    # Resolved now, so the recorded path cannot later name another directory (`new/..`, symlinks).
+    venv = real(args.venv if args.venv else state/'venv')
     text = unit(venv, home, bind, args.port, args.instance)
     conflicts, notes = [], []
+    problem = venv_problem(venv, state, [home])
+    if problem:
+        conflicts.append(problem)
     if not home.is_dir():
         conflicts.append(f'OPENCLAW_HOME {home} is not a directory (--openclaw-home)')
     elif not (home/'agents').is_dir():
@@ -184,6 +200,7 @@ def install(args):
             created.append(str(venv))
         subprocess.run([args.python, '-m', 'venv', str(venv)], check=True)
     record['venv'] = str(venv)
+    record['openclaw_home'] = result['openclaw_home']
     (state/MANIFEST).write_text(json.dumps(record, indent=2)+'\n')
     subprocess.run([str(venv/'bin/python'), '-m', 'pip', 'install', '--quiet', '--disable-pip-version-check',
                     '-r', str(SERVICE/'requirements.txt')], check=True)
@@ -242,8 +259,16 @@ def remove(args):
     elif unit_path.exists():
         kept.append(f'{unit_path} (not created by this helper)')
     created = record.get('created_venvs', [])
+    homes = [Path(args.openclaw_home).expanduser().absolute()]
+    if record.get('openclaw_home'):
+        homes.append(Path(record['openclaw_home']))
     for path in map(Path, created):
-        if (path/'pyvenv.cfg').is_file():
+        # Delete only the directory install created: the recorded real path, resolved again now.
+        problem = (f'{path} now resolves to {real(path)}' if real(path) != path
+                   else venv_problem(path, state, homes))
+        if problem:
+            kept.append(f'{path} (not removed: {problem})')
+        elif (path/'pyvenv.cfg').is_file():
             shutil.rmtree(path)
             removed.append(str(path))
     current = record.get('venv')

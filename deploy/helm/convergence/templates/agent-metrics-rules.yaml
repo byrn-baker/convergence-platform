@@ -15,8 +15,9 @@
 {{- end }}
 {{- $selector := printf "{__name__=~\"netclaw_model_(input|output)_tokens_total\", model=~%s}" (toJson (toString .modelRegex)) }}
 {{- $labels := dict "service" "netclaw" "investigate" "false" }}
-{{- /* Annotations are Go templates in vmalert: show the regex's braces literally. */}}
-{{- $shown := toString .modelRegex | replace "{{" "\x00L" | replace "}}" "\x00R" | replace "\x00L" "{{ \"{{\" }}" | replace "\x00R" "{{ \"}}\" }}" }}
+{{- /* Annotations are Go templates in vmalert: print the regex as one quoted string
+       literal (JSON string syntax is valid Go), so no brace in it can open or close an action. */}}
+{{- $shown := printf "{{ %s }}" (toJson (toString .modelRegex)) }}
 {{- $rules := list
   (dict "record" "netclaw:quota_tokens_1d" "expr" (printf "sum(increase(%s[1d]))" $selector))
   (dict "record" "netclaw:quota_tokens_7d" "expr" (printf "sum(increase(%s[7d]))" $selector))

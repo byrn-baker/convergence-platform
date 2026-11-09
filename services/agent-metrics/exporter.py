@@ -7,7 +7,8 @@ and the "exporter down" alert for it.
 
 Source of truth: each agent's canonical SQLite database
 (`agents/<id>/agent/openclaw-agent.sqlite`), with the older `sessions/*.jsonl`
-logs as a fallback for agents that have no database yet. Assistant transcript
+logs as a fallback for agents whose database does not exist or holds no transcript
+events yet. Assistant transcript
 events carry a `usage` block ({input, output, cacheRead, cacheWrite, cost}) plus
 the model and provider. They are summed per (agent, provider, model) and exposed
 as cumulative counters.
@@ -25,10 +26,13 @@ Metrics (labels as listed; Prometheus adds `instance` from the scrape target):
 OpenClaw state is only read: databases are opened with SQLite's mode=ro, so their
 contents never change. (Like any SQLite reader, opening a WAL database while its
 writer is stopped creates empty -shm/-wal files beside it; in a read-only directory,
-a database without a WAL is read as immutable instead.) Aggregates are cached by file timestamps
+a database without a WAL is read as immutable instead, and the read is discarded if
+a WAL appears or the file changes meanwhile.) Aggregates are cached by file timestamps
 and sizes, including the SQLite WAL so newly committed turns invalidate the cache.
 Checkpoint / reset / deleted session files are skipped so turns are never counted
-twice. A missing agents directory reports no usage. A database or session log that
+twice. Removing an agent or resetting its sessions lowers its totals and
+the per-model sums (series without an agent label) with them; Prometheus' increase()
+reads such a drop as a counter reset, not as negative usage. A missing agents directory reports no usage. A database or session log that
 cannot be read (locked, corrupt, unreadable) serves its last good aggregate; with none, the scrape
 fails with HTTP 500 rather than reporting zero usage, which would look like a
 counter reset.
@@ -143,10 +147,13 @@ def _parse_file(path: Path):
         return _parse_events((None, line) for line in stream if line.strip())
 
 
+def _wal(path: Path) -> Path:
+    return path.with_name(path.name + "-wal")
+
+
 def _signature(path: Path):
-    wal = path.with_name(path.name + "-wal")
     signature = []
-    for f in (path, wal):
+    for f in (path, _wal(path)):
         try:
             st = f.stat()
         except OSError:
@@ -156,42 +163,65 @@ def _signature(path: Path):
     return tuple(signature)
 
 
+SQLITE_READONLY_DIRECTORY = 1544   # SQLITE_READONLY | (6 << 8)
+
+
+def _readonly_directory(exc: sqlite3.Error, path: Path) -> bool:
+    """Whether opening failed only because SQLite cannot create -shm/-wal beside the file."""
+    code = getattr(exc, "sqlite_errorcode", None)   # Python >= 3.11
+    if code is not None:
+        return code == SQLITE_READONLY_DIRECTORY
+    # Python 3.10 has only the message, which is shared by other read-only errors.
+    return "readonly database" in str(exc) and not os.access(path.parent, os.W_OK)
+
+
+def _identity(path: Path):
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (st.st_size, st.st_mtime_ns, st.st_ino)
+
+
 def _connect(path: Path):
-    """Open read-only. SQLite creates empty -shm/-wal files beside a WAL database whose
-    writer is not running, as any reader does; where it cannot (a read-only directory)
-    and there is no WAL to miss, read the file as immutable instead."""
+    """Open read-only; returns (connection, identity). SQLite creates empty -shm/-wal files
+    beside a WAL database whose writer is not running, as any reader does; where it cannot
+    (a read-only directory) and there is no WAL to miss, read the file as immutable instead.
+    identity is then the file's (size, mtime_ns, inode) before the read, else None."""
     uri = path.absolute().as_uri()
     db = sqlite3.connect(uri + "?mode=ro", uri=True, timeout=SQLITE_TIMEOUT)
     try:
         db.execute("PRAGMA schema_version").fetchone()   # opening is lazy; surface errors here
-        return db
+        return db, None
     except sqlite3.OperationalError as exc:
         db.close()
-        wal = path.with_name(path.name + "-wal")
-        if getattr(exc, "sqlite_errorname", "") != "SQLITE_READONLY_DIRECTORY" or wal.exists():
+        if not _readonly_directory(exc, path) or _wal(path).exists():
             raise
-    return sqlite3.connect(uri + "?mode=ro&immutable=1", uri=True, timeout=SQLITE_TIMEOUT)
+    identity = _identity(path)
+    return sqlite3.connect(uri + "?mode=ro&immutable=1", uri=True, timeout=SQLITE_TIMEOUT), identity
 
 
 def _parse_sqlite(path: Path):
     """Read canonical events without writing the DB; include live WAL changes.
 
-    Returns (aggregates, durations, sessions). Raises sqlite3.Error when the database
-    cannot be read; the caller decides whether a cached result may stand in.
+    Returns (aggregates, durations, sessions), or None while the database holds no
+    transcript events (empty file, no transcript_events table, or no rows: not migrated
+    yet). Raises sqlite3.Error when the database cannot be read; the caller decides
+    whether a cached result may stand in.
     """
     signature = _signature(path)
     cached = _sqlite_cache.get(str(path))
     if cached and cached[0] == signature:
         return cached[1]
     if signature[0] is not None and signature[0][1] == 0:
-        result = ({}, {}, 0)   # a database OpenClaw created but has not written yet
-        _sqlite_cache[str(path)] = (signature, result)
-        return result
-    with closing(_connect(path)) as db:
+        _sqlite_cache[str(path)] = (signature, None)   # created but not written yet
+        return None
+    db, identity = _connect(path)
+    with closing(db):
         db.execute("BEGIN")
         columns = {row[1] for row in db.execute("PRAGMA table_info(transcript_events)")}
         if not {"session_id", "event_json"} <= columns:
-            result = ({}, {}, 0)
+            result = None
         else:
             compressed = "event_zstd" if "event_zstd" in columns else "NULL"
             order = "session_id, seq" if "seq" in columns else "session_id, rowid"
@@ -212,14 +242,17 @@ def _parse_sqlite(path: Path):
                     if raw is not None:
                         yield session_id, raw
 
-            aggregates, durations = _parse_events(events())
-            result = (aggregates, durations, count)
+            aggregates, durations = _parse_events(events()) if count else ({}, {})
+            result = (aggregates, durations, count) if count else None
+    if identity is not None and (_wal(path).exists() or _identity(path) != identity):
+        # Immutable reads assume nothing writes the file; something did, so discard this read.
+        raise sqlite3.OperationalError(f"{path} changed while read as immutable")
     _sqlite_cache[str(path)] = (signature, result)
     return result
 
 
 def _read_database(path: Path):
-    """The database's aggregate, or its last good one if it cannot be read now."""
+    """The database's aggregate (None: no events yet), or its last good one if it cannot be read now."""
     try:
         return _parse_sqlite(path)
     except sqlite3.Error as exc:
@@ -285,9 +318,12 @@ def collect(home: Path | None = None) -> dict:
     for agent_dir in agent_dirs:
         agent = agent_dir.name
         database = agent_dir / "agent" / "openclaw-agent.sqlite"
-        if database.is_file():
-            # Canonical SQLite supersedes retained JSONL migration originals.
-            agg, last_dur, count = _read_database(database)
+        # Canonical SQLite supersedes retained JSONL migration originals once it holds
+        # events. Until then (empty or not migrated) the logs are read, so the agent's
+        # totals do not fall to zero when OpenClaw creates the database.
+        result = _read_database(database) if database.is_file() else None
+        if result is not None:
+            agg, last_dur, count = result
             sources = [(agg, last_dur)]
         else:
             sources, count = _read_sessions(agent_dir)

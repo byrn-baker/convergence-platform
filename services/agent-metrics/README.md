@@ -14,18 +14,25 @@ NetClaw. Install it on the NetClaw host with `setup/agent_metrics.py`
 For each agent under `$OPENCLAW_HOME/agents/<agent>/` the exporter reads the
 canonical database `agent/openclaw-agent.sqlite`, including compressed
 (`event_zstd`) transcript events and changes still in the WAL. An agent without
-that database is read from its older `sessions/*.jsonl` logs; with it, the logs are
-ignored so retained migration originals are not counted twice.
+that database, or whose database holds no transcript events yet (an empty file, no
+`transcript_events` table, or no rows: not migrated), is read from its older
+`sessions/*.jsonl` logs, so its totals do not drop to zero when OpenClaw creates the
+database. Once the database holds events, the logs are ignored so retained migration
+originals are not counted twice.
 
 - The database is opened with SQLite `mode=ro`, so its contents never change. Like any
   SQLite reader, opening a WAL database while OpenClaw is stopped creates empty
   `-shm`/`-wal` files beside it; in a read-only directory, a database without a WAL is
-  read as immutable instead. Nothing else under `OPENCLAW_HOME` is written.
+  read as immutable instead; if a WAL appears or the file's size, modification time
+  or inode changes during that read, the read is discarded like a locked one. Nothing
+  else under `OPENCLAW_HOME` is written. Python 3.10 or newer; 3.10 recognises the
+  read-only directory by its error message and the directory's permissions, 3.11+ by
+  SQLite's error code.
 - Checkpoint, reset and deleted JSONL files are skipped. So are OpenClaw's own
   `provider="openclaw"` delivery mirrors.
 - Results are cached by file timestamps and sizes (database and WAL).
-- A missing `OPENCLAW_HOME` or `agents` directory, an agent without data and an
-  empty database report no usage.
+- A missing `OPENCLAW_HOME` or `agents` directory and an agent without data report
+  no usage.
 - A database or session log that cannot be read (locked past 5 s, corrupt,
   unreadable) serves its last good read. With no earlier read, and whenever an
   existing agents or sessions directory cannot be listed, `/metrics` returns HTTP 500,
@@ -42,6 +49,12 @@ Metrics without an `agent` label are summed over agents (the duration gauge repo
 most recent call of any agent). The NetClaw fork's exporter, which this replaces,
 wrote them once per agent with identical labels, so several agents on one model
 produced duplicate series.
+
+Totals are recomputed from what OpenClaw keeps. Removing an agent, or resetting or
+deleting its sessions, lowers its series and the per-model sums with them. Prometheus'
+`increase()` and `rate()` treat such a drop as a counter reset: the window that spans
+it counts the remaining total again, once, as new usage. Expect a spike on the token
+and quota panels (and possibly the quota alerts) after such a cleanup.
 
 | Metric | Type | Labels |
 |--------|------|--------|

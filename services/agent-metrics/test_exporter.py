@@ -377,3 +377,104 @@ def test_wal_database_with_its_writer_stopped_is_read_without_changing_it(tmp_pa
     assert database.read_bytes() == before
     wal = database.with_name(database.name + "-wal")
     assert not wal.exists() or wal.stat().st_size == 0   # at most SQLite's empty reader files
+
+
+def jsonl_and_database(tmp_path, agent="main"):
+    home = jsonl_home(tmp_path, agent)
+    database = home / "agents" / agent / "agent" / "openclaw-agent.sqlite"
+    database.parent.mkdir(parents=True)
+    return home, database
+
+
+@pytest.mark.parametrize("state", ["empty_file", "no_events_table", "no_rows"])
+def test_database_without_events_falls_back_to_the_agents_logs(tmp_path, state):
+    home, database = jsonl_and_database(tmp_path)
+    before = exporter.render(home)
+    if state == "empty_file":
+        database.touch()
+    elif state == "no_events_table":
+        with closing(sqlite3.connect(database)) as db, db:
+            db.execute("CREATE TABLE something_else (x)")
+    else:
+        make_db(database, {})
+    assert exporter.render(home) == before   # totals do not fall to zero
+    make_db(database.with_name("migrated.sqlite"), {"s1": fixture_events()})
+    database.unlink()
+    database.with_name("migrated.sqlite").rename(database)
+    data = exporter.collect(home)
+    assert data["sessions"] == 1 and data["totals"][("main", *DEEPSEEK)]["calls"] == 2   # migrated: the DB wins
+
+
+def test_an_empty_database_of_one_agent_keeps_the_summed_per_model_series(tmp_path):
+    home, database = jsonl_and_database(tmp_path, "b")
+    for f in FIXTURES.glob("*.jsonl"):
+        (home / "agents" / "a" / "sessions").mkdir(parents=True, exist_ok=True)
+        shutil.copy(f, home / "agents" / "a" / "sessions" / f.name)
+    cache_read = [l for l in exporter.render(home).splitlines()
+                  if l.startswith("netclaw_model_cache_read_tokens_total{") and "deepseek" in l]
+    database.touch()
+    assert [l for l in exporter.render(home).splitlines() if l in cache_read] == cache_read
+
+
+def readonly_wal_home(tmp_path):
+    home, database = wal_home(tmp_path)
+    database.parent.chmod(0o555)
+    return home, database
+
+
+@needs_permissions
+def test_immutable_fallback_refuses_a_directory_with_a_wal(tmp_path, monkeypatch):
+    home, database = wal_home(tmp_path)
+    database.with_name(database.name + "-wal").write_bytes(b"")
+    uris = []
+    real_connect = sqlite3.connect
+    monkeypatch.setattr(exporter.sqlite3, "connect", lambda target, **kw: uris.append(target) or real_connect(target, **kw))
+    database.parent.chmod(0o555)
+    try:
+        with pytest.raises(RuntimeError, match="cannot read"):
+            exporter.collect(home)
+    finally:
+        database.parent.chmod(0o755)
+    assert uris and not any("immutable=1" in u for u in uris)
+
+
+@needs_permissions
+@pytest.mark.parametrize("change", ["wal_appears", "file_rewritten"])
+def test_immutable_read_is_discarded_if_the_database_changes_meanwhile(tmp_path, monkeypatch, change):
+    home, database = readonly_wal_home(tmp_path)
+    parse = exporter._parse_events
+
+    def parse_while_writing(events):
+        result = parse(events)
+        database.parent.chmod(0o755)
+        if change == "wal_appears":
+            database.with_name(database.name + "-wal").write_bytes(b"")
+        else:
+            st = database.stat()
+            __import__("os").utime(database, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+        database.parent.chmod(0o555)
+        return result
+
+    monkeypatch.setattr(exporter, "_parse_events", parse_while_writing)
+    try:
+        with pytest.raises(RuntimeError, match="changed while read as immutable"):
+            exporter.collect(home)
+        assert exporter._sqlite_cache == {}
+        monkeypatch.setattr(exporter, "_parse_events", parse)
+        if change == "file_rewritten":
+            assert exporter.collect(home)["sessions"] == 2   # unchanged since: the next read stands
+    finally:
+        database.parent.chmod(0o755)
+
+
+@pytest.mark.parametrize("message,writable,expected", [
+    ("attempt to write a readonly database", False, True),
+    ("attempt to write a readonly database", True, False),
+    ("database is locked", False, False),
+])
+def test_readonly_directory_is_recognised_without_error_codes_as_on_python_3_10(tmp_path, monkeypatch,
+                                                                              message, writable, expected):
+    exc = sqlite3.OperationalError(message)   # built by hand: no sqlite_errorcode, as on 3.10
+    assert getattr(exc, "sqlite_errorcode", None) is None
+    monkeypatch.setattr(exporter.os, "access", lambda path, mode: writable)
+    assert exporter._readonly_directory(exc, tmp_path / "db.sqlite") is expected
