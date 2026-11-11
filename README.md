@@ -40,8 +40,8 @@ deploy/helm/               Helm charts (convergence, victoria-stack), tooling an
 deploy/cluster/            Proxmox VM provisioning (proxmox.py) and K3s Ansible playbooks
 deploy/argocd/             Argo CD install
 setup/                     Setup helpers (Docker bundle, K3s/Argo CD, receiver, NetClaw, investigator member, agent metrics, verification, flows)
-integrations/netclaw/      The alert-triage skill installed by setup/netclaw.py; investigator.json, the investigator member spec
-scripts/lib/               Legacy NetClaw-fork installer fragments (install-steps.d, catalog.d)
+integrations/netclaw/      Skills installed by setup/netclaw.py (alert-triage, convergence-isp-report); investigator.json, the investigator member spec
+scripts/                   Telemetry inventory setup and rendering (scripts/lib: inventory import)
 docs/  specs/  tests/
 ```
 
