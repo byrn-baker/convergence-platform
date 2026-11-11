@@ -30,7 +30,7 @@ explicitly labeled; neither establishes whole-network coverage.
 **Start here:** clone a release of this repository, then follow one guide:
 
 ```bash
-git clone --branch v0.1.5 https://github.com/byrn-baker/convergence-platform.git convergence
+git clone --branch v0.1.6 https://github.com/byrn-baker/convergence-platform.git convergence
 cd convergence
 ```
 
