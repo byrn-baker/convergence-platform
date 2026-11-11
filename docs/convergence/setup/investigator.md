@@ -65,16 +65,19 @@ netclaw risk members        # alert-investigator: active after its first task
 
 ## Let the alert agent delegate
 
-The `alert` agent from [netclaw.md](netclaw.md) delegates to the member only when it has
-NetClaw's federation tools. Re-run that step with them allowed:
+The `alert` agent from [netclaw.md](netclaw.md) delegates to the member when it has
+NetClaw's federation tools. Give it those and no evidence tools, so every investigation
+runs in the member with the member's narrower tools:
 
 ```bash
-python3 setup/netclaw.py apply ...same options... \
+python3 setup/netclaw.py apply ...same options, without evidence --allow-tool... \
   --allow-tool n2n-mcp__n2n_route --allow-tool n2n-mcp__n2n_task_wait --restart
 ```
 
-The `alert-triage` skill then routes the case with `target_hint="alert-triage"`, waits
-for the member's task and returns its findings; the member records them on the case.
+With `n2n_route`, the `alert-triage` skill (1.1.0) makes the agent a dispatcher: it routes
+the case with `target_hint="alert-triage"`, waits for the member's task and reads back
+the case the member recorded. An agent that also has evidence tools may still be tempted
+to investigate itself; the skill tells it not to.
 Prove the loop as in [netclaw.md](netclaw.md#admit-an-alert-and-prove-the-loop): the
 member's gateway log, not the Border's, shows the `case_get` and `case_update` calls.
 
