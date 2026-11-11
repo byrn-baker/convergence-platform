@@ -141,6 +141,13 @@ def test_effective_spec_drops_servers_the_border_lacks_with_their_tools_and_skil
     assert SHIPPED['servers'][1] == 'prometheus-mcp' and len(SHIPPED['tools']['allow']) == 29  # input unchanged
 
 
+def test_effective_spec_drops_base_server_tools_when_the_border_lacks_that_server():
+    spec, dropped, _ = investigator.effective_spec(SHIPPED, {'convergence-case-mcp', 'prometheus-mcp'})
+    assert not any(e.startswith(('memory-mcp__', 'gait-mcp__')) for e in spec['tools']['allow'])
+    assert 'memory-mcp' not in dropped  # not a spec server: NetClaw adds it when the Border has it
+    assert spec['tools']['allow'][:2] == ['session_status', 'read']
+
+
 def test_plan_validates_with_netclaw_against_this_border_and_changes_nothing(monkeypatch, tmp_path, capsys):
     host = Host(monkeypatch, tmp_path, servers=['convergence-case-mcp', 'prometheus-mcp', 'memory-mcp'])
     code, out = host.main('plan', capsys=capsys)

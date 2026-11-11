@@ -87,7 +87,8 @@ def effective_spec(spec, border, name=None, model=None):
     spec = json.loads(json.dumps(spec))
     keep = [s for s in spec['servers'] if s in border]
     dropped = [s for s in spec['servers'] if s not in border]
-    usable = set(keep) | set(BASE_SERVERS)
+    # NetClaw keeps a base server (memory-mcp, gait-mcp) only when the Border has it.
+    usable = set(keep) | (set(BASE_SERVERS) & set(border))
     spec['servers'] = keep
     spec['tools']['allow'] = [entry for entry in spec['tools']['allow']
                               if '__' not in entry or entry.split('__', 1)[0] in usable]
