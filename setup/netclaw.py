@@ -447,6 +447,10 @@ def main(argv=None):
     parser.add_argument('--restart', action='store_true', help='restart openclaw-gateway.service (user unit)')
     args = parser.parse_args(argv)
     home = Path(os.path.expanduser(args.openclaw_dir))
+    # Every openclaw CLI call below must act on --openclaw-dir, not on whatever OpenClaw
+    # install the caller's environment selects. (OPENCLAW_HOME is a home directory, not
+    # the state directory, so it is left alone.)
+    os.environ.update(OPENCLAW_STATE_DIR=str(home), OPENCLAW_CONFIG_PATH=str(home/'openclaw.json'))
     try:
         if args.command in ('plan', 'apply'):
             missing = [f for f in ('api_url', 'site', 'case_token_file') if not getattr(args, f)]

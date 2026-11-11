@@ -217,3 +217,15 @@ def test_remove_deletes_created_skills_only(tmp_path, monkeypatch):
     assert adopted.exists() and changed.exists()
     kept = ' | '.join(json.loads(printed[-1])['kept'])
     assert 'adopted, not created' in kept and 'changed since install' in kept
+
+
+def test_openclaw_cli_acts_on_the_given_openclaw_dir(tmp_path, monkeypatch):
+    home = tmp_path/'oc'
+    home.mkdir()
+    (home/'openclaw.json').write_text('{}')
+    monkeypatch.setenv('OPENCLAW_CONFIG_PATH', '/somewhere/else/openclaw.json')
+    monkeypatch.setenv('OPENCLAW_STATE_DIR', '/somewhere/else')
+    monkeypatch.setattr('builtins.print', lambda *a, **k: None)
+    assert netclaw.main(['status', '--openclaw-dir', str(home)]) == 1
+    assert netclaw.os.environ['OPENCLAW_CONFIG_PATH'] == str(home/'openclaw.json')
+    assert netclaw.os.environ['OPENCLAW_STATE_DIR'] == str(home)
