@@ -181,7 +181,12 @@ def test_plan_refuses_an_existing_member_home_and_bad_options(monkeypatch, tmp_p
     host.member_home.mkdir()
     code, out = host.main('plan', capsys=capsys)
     assert code == 1 and any('already exists and was not created' in c for c in json.loads(out.out)['conflicts'])
-    assert host.main('plan', '--model', 'openai/gpt-6', capsys=capsys)[0] == 2
+    assert host.main('plan', '--model', 'bad model!', capsys=capsys)[0] == 2
+    assert host.main('plan', '--auth', 'subscription', capsys=capsys)[0] == 2
+    code, out = host.main('plan', '--model', 'ollama-cloud/minimax-m3', capsys=capsys)
+    assert json.loads(out.out)['spec']['model'] == 'ollama-cloud/minimax-m3'
+    code, out = host.main('plan', '--model', 'openai/gpt-6.1-sol', '--auth', 'subscription', capsys=capsys)
+    assert json.loads(out.out)['spec']['auth'] == 'subscription'
     assert host.main('plan', '--name', '../x', capsys=capsys)[0] == 2
 
 
@@ -190,7 +195,7 @@ def test_netclaw_refusal_is_a_conflict(monkeypatch, tmp_path, capsys):
     spec_file = tmp_path/'bad.json'
     spec_file.write_text(json.dumps({**SHIPPED, 'servers': SHIPPED['servers'] + ['not-on-border']}))
     # effective_spec drops unknown servers, so force a NetClaw-side refusal through a stricter Border check.
-    monkeypatch.setattr(investigator, 'effective_spec', lambda s, b, n=None, m=None: (s, [], []))
+    monkeypatch.setattr(investigator, 'effective_spec', lambda s, b, n=None, m=None, a=None: (s, [], []))
     code, out = host.main('plan', '--spec', str(spec_file), capsys=capsys)
     assert code == 1 and any('NetClaw refused the spec' in c and 'not-on-border' in c
                              for c in json.loads(out.out)['conflicts'])

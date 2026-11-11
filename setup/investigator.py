@@ -43,7 +43,7 @@ SKILL_SERVERS = {'prometheus-monitoring': 'prometheus-mcp', 'grafana-observabili
                  'pyats-network': 'pyats-mcp', 'pyats-troubleshoot': 'pyats-mcp',
                  'pfsense-threat-intel': 'pfsense-mcp', 'alert-triage': 'convergence-case-mcp'}
 NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}')
-MODEL = re.compile(r'(anthropic/)?claude-[A-Za-z0-9.-]{1,80}')
+MODEL = re.compile(r'([A-Za-z0-9][A-Za-z0-9_.-]{0,63}/)?[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}')
 STATE = 'investigator.json'
 ROUTE_HINT = 'alert-triage'
 
@@ -82,7 +82,7 @@ def api(base, path, body=None, timeout=30):
         raise RuntimeError(f'mesh daemon not reachable at {base} ({exc}); start it, then retry') from None
 
 
-def effective_spec(spec, border, name=None, model=None):
+def effective_spec(spec, border, name=None, model=None, auth=None):
     """The spec cut to the servers the Border has: (spec, dropped servers, dropped skills)."""
     spec = json.loads(json.dumps(spec))
     keep = [s for s in spec['servers'] if s in border]
@@ -99,6 +99,8 @@ def effective_spec(spec, border, name=None, model=None):
         spec['name'] = name
     if model:
         spec['model'] = model
+    if auth:
+        spec['auth'] = auth
     return spec, dropped, dropped_skills
 
 
@@ -125,8 +127,10 @@ def options(args):
     if args.name is not None and not NAME.fullmatch(args.name):
         raise ValueError(f'invalid --name {args.name!r}')
     if args.model is not None and not MODEL.fullmatch(args.model):
-        raise ValueError('--model must be an Anthropic model id (claude-..., optionally anthropic/claude-...): '
-                         'NetClaw registers only the Anthropic provider for spec members')
+        raise ValueError('--model must be an Anthropic model id or <provider>/<model> for a provider the '
+                         'Border configures (NetClaw 1.22.0+; NetClaw validates it)')
+    if args.auth == 'subscription' and not args.model:
+        raise ValueError("--auth subscription needs --model anthropic/<id> or openai/<id>")
     return netclaw, openclaw_dir
 
 
@@ -150,7 +154,7 @@ def plan(args):
         if server not in border:
             conflicts.append(f'the Border has no {server}: run `python3 setup/netclaw.py apply` first')
     spec, dropped, dropped_skills = effective_spec(json.loads(Path(args.spec).read_text()), border,
-                                                   args.name, args.model)
+                                                   args.name, args.model, args.auth)
     name = spec['name']
     if dropped:
         notes.append('left out (not on the Border): ' + ', '.join(dropped)
@@ -242,9 +246,11 @@ def apply(args):
     record['home'] = str(home)
     record['home_created'] = record.get('home_created') or not home.exists()
     write_state(state, record)
-    run([sys.executable, str(netclaw/'scripts/in2n-member-home.py'), '--runtime', 'openclaw', '--risk', risk,
-         '--spec', str(spec_path), '--member-env', str(member_env),
-         '--border-config', str(openclaw_dir/'openclaw.json')], env)
+    home_out = run([sys.executable, str(netclaw/'scripts/in2n-member-home.py'), '--runtime', 'openclaw',
+                    '--risk', risk, '--spec', str(spec_path), '--member-env', str(member_env),
+                    '--border-config', str(openclaw_dir/'openclaw.json')], env).stdout
+    # A subscription member signs in once on its own home; NetClaw prints the exact command.
+    login = [line.strip().rstrip(')') for line in home_out.splitlines() if 'openclaw models auth login' in line]
     added = api(args.api, '/n2n/members/add', {
         'name': name, 'profile': 'custom', 'specialty': result['scope'],
         'launch_cmd': 'bash ' + shlex.quote(str(launcher)), 'on_demand': True})
@@ -257,7 +263,8 @@ def apply(args):
     write_state(state, record)
     return {'status': 'applied', 'member_id': result['member_id'], 'home': str(home),
             'staged_env': str(member_env), 'launch': str(launcher), 'mode': 'on-demand',
-            'servers': result['servers'], 'skills': result['skills'], 'notes': result['notes'] + [
+            'servers': result['servers'], 'skills': result['skills'], 'model': spec.get('model'),
+            'notes': result['notes'] + [f'Sign the member in before its first task: {line}' for line in login] + [
                 f'Test it: netclaw risk route "<an alert case question>" {ROUTE_HINT} (the Border starts the member)',
                 'The Border\'s alert agent delegates only when it has the n2n tools; see '
                 'docs/convergence/setup/investigator.md.']}
@@ -338,7 +345,11 @@ def main(argv=None):
     parser.add_argument('command', choices=('plan', 'apply', 'status', 'remove'))
     parser.add_argument('--spec', default=str(SPEC), help='member spec file (default: the Convergence investigator)')
     parser.add_argument('--name', help='member name (default: the spec name, alert-investigator)')
-    parser.add_argument('--model', help='Anthropic model id for the member (default: NetClaw\'s member tier)')
+    parser.add_argument('--model', help='the member\'s model: an Anthropic model id, or <provider>/<model> for a '
+                        'provider the Border configures (default: NetClaw\'s member tier)')
+    parser.add_argument('--auth', choices=('api-key', 'subscription'),
+                        help='subscription: the member signs in with its own Claude or ChatGPT login '
+                             '(anthropic/<id> or openai/<id>); apply prints the login command')
     parser.add_argument('--netclaw-dir', default=os.environ.get('NETCLAW_DIR') or '~/netclaw')
     parser.add_argument('--openclaw-dir', default=os.environ.get('OPENCLAW_HOME') or '~/.openclaw',
                         help='the Border\'s OpenClaw home')
