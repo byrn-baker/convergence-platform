@@ -10,6 +10,7 @@ Convergence view (`convergence-read`), which needs none of this.
 | Piece | What it does |
 |---|---|
 | `alert-triage` skill | The investigation procedure (`integrations/netclaw/alert-triage`) |
+| `convergence-isp-report` skill | For your own agents, not the alert agent: drafts an ISP support message or service-credit request from a recorded WAN case (`integrations/netclaw/convergence-isp-report`). Already installed with the same content, it is adopted and `remove` leaves it |
 | `convergence-case-mcp` | Tools to read the assigned case and site flows, request a JEV review and record findings |
 | Agent `alert` | Runs hook investigations with only that skill, `read`, the case tools and the read-only tools you add |
 | Hook `POST /hooks/alert` | Routes the receiver's hand-off to that agent, without chat delivery |

@@ -3,6 +3,8 @@
 
 Adds, as one reversible unit:
   - the alert-triage skill (integrations/netclaw/alert-triage);
+  - the convergence-isp-report skill (integrations/netclaw/convergence-isp-report), for
+    the operator's own agents: draft an ISP support message from a recorded WAN case;
   - the convergence-case-mcp server (read a case, read flows, record findings);
   - a restricted agent (default id "alert") allowed only that skill, `read`, the case
     the case tools and any read-only tools passed with --allow-tool;
@@ -35,6 +37,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT/'integrations/netclaw/alert-triage/SKILL.md'
+# Skills for the operator's agents (any agent without a skills allowlist), not the alert agent.
+WORKSPACE_SKILLS = {'convergence-isp-report': ROOT/'integrations/netclaw/convergence-isp-report/SKILL.md'}
 MCP_DIR = ROOT/'mcp-servers/convergence-case-mcp'
 MCP_NAME = 'convergence-case-mcp'
 STATE = 'convergence-netclaw.json'
@@ -166,12 +170,26 @@ def plan(config, env, opts, home, skill_text):
             and digest(target.read_bytes()) != opts.get('state', {}).get('skill_sha256') \
             and not opts.get('replace_skill'):
         conflicts.append(f'{target} exists with different content; re-run with --replace-skill to back it up and replace it')
+    skills = {}
+    for name, source in WORKSPACE_SKILLS.items():
+        skill_target = ws/'skills'/name/'SKILL.md'
+        recorded = (opts.get('state', {}).get('skills') or {}).get(name) or {}
+        same = skill_target.exists() and skill_target.read_bytes() == source.read_bytes()
+        if skill_target.exists() and not same and digest(skill_target.read_bytes()) != recorded.get('sha256') \
+                and not opts.get('replace_skill'):
+            conflicts.append(f'{skill_target} exists with different content; re-run with --replace-skill to back it up and replace it')
+        # A skill already installed with this content (by hand or another installer) is adopted, not
+        # created: remove leaves it in place.
+        skills[name] = {'target': str(skill_target),
+                        'created': recorded.get('created', not skill_target.exists())}
+        actions.append(f'install skill {name} into {skill_target.parent}'
+                       + (' (already installed with this content; adopted)' if same and not recorded else ''))
     actions += [f'{"create" if agent not in entries else "update"} agent "{agent}" (tools: {", ".join(entry["tools"]["allow"])})',
                 f'install skill alert-triage into {target.parent}',
                 f'register MCP server {MCP_NAME} for {opts["api_url"]} site {opts["site"]} (venv {runtime})',
                 'route POST /hooks/alert to that agent with chat delivery off']
     return {'conflicts': conflicts, 'actions': actions, 'patch': patch, 'env': new_env,
-            'hook_token': hook_token, 'skill_target': str(target), 'runtime': str(runtime),
+            'hook_token': hook_token, 'skill_target': str(target), 'runtime': str(runtime), 'skills': skills,
             'gateway_url': opts.get('gateway_url') or gateway_url(config), 'agent_new': agent not in entries}
 
 
@@ -267,7 +285,15 @@ def apply(args, home):
         shutil.copy2(target, backup/'alert-triage.SKILL.md')
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(SKILL, target)
-    state = {**state, 'agent_id': args.agent_id, 'skill_target': str(target),
+    skills = {}
+    for name, info in result['skills'].items():
+        skill_target = Path(info['target'])
+        if skill_target.exists() and skill_target.read_bytes() != WORKSPACE_SKILLS[name].read_bytes():
+            shutil.copy2(skill_target, backup/f'{name}.SKILL.md')
+        skill_target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(WORKSPACE_SKILLS[name], skill_target)
+        skills[name] = {**info, 'sha256': digest(skill_target.read_bytes())}
+    state = {**state, 'agent_id': args.agent_id, 'skill_target': str(target), 'skills': skills,
              'skill_sha256': digest(target.read_bytes()), 'mcp_created': True,
              'env_keys': sorted(set(state.get('env_keys', [])) | set(result['env'])),
              'hooks_enabled_by_us': state.get('hooks_enabled_by_us', not (config.get('hooks') or {}).get('enabled')),
@@ -341,6 +367,18 @@ def remove(args, home):
             target.parent.rmdir()
     elif target.exists():
         kept.append(f'{target} (changed since install)')
+    for name, info in (state.get('skills') or {}).items():
+        skill_target = Path(info['target'])
+        if not skill_target.exists():
+            continue
+        if digest(skill_target.read_bytes()) != info.get('sha256'):
+            kept.append(f'{skill_target} (changed since install)')
+        elif not info.get('created'):
+            kept.append(f'{skill_target} (was installed before; adopted, not created)')
+        else:
+            skill_target.unlink()
+            if not any(skill_target.parent.iterdir()):
+                skill_target.parent.rmdir()
     drop = [k for k in state.get('env_keys', []) if k != HOOK_ENV or patch['hooks'] is None]
     if HOOK_ENV in state.get('env_keys', []) and HOOK_ENV not in drop:
         kept.append(f'{HOOK_ENV} in .env (other hook mappings still use it)')
@@ -361,6 +399,10 @@ def status(args, home):
     checks = {
         'agent': bool(entry) and 'alert-triage' in (entry.get('skills') or []),
         'skill': target.exists() and target.read_text() == SKILL.read_text(),
+        'workspace_skills': all(t.exists() and t.read_bytes() == source.read_bytes() for t, source in (
+            (Path(((state.get('skills') or {}).get(name) or {}).get('target')
+                  or Path(os.path.expanduser(workspace(config, home)))/'skills'/name/'SKILL.md'), source)
+            for name, source in WORKSPACE_SKILLS.items())),
         'mcp_server': MCP_NAME in ((config.get('mcp') or {}).get('servers') or {}),
         'hook_mapping': bool(hooks.get('enabled')) and any(isinstance(m, dict) and m.get('id') == MAPPING_ID
                                                              and m.get('agentId') == agent for m in hooks.get('mappings') or []),

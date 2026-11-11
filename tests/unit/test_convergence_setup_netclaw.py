@@ -147,3 +147,73 @@ def test_remove_undoes_only_recorded_changes(tmp_path, monkeypatch):
     assert not skill.exists() and not (home/netclaw.STATE).exists()
     # Another mapping still uses hooks, so the hook token stays.
     assert netclaw.read_env(home/'.env') == {'KEEP': '1', 'CONVERGENCE_HOOK_TOKEN': 'b'}
+
+
+ISP = netclaw.WORKSPACE_SKILLS['convergence-isp-report']
+
+
+def test_isp_report_skill_is_text_only_and_names_its_case_tools():
+    assert [p.name for p in ISP.parent.iterdir()] == ['SKILL.md']
+    text = ISP.read_text()
+    assert text.startswith('---\nname: convergence-isp-report\n')
+    for tool in ('case_get', 'isp_provider_catalog', 'case_isp_report'):
+        assert tool in text
+    server = (ROOT/'mcp-servers/convergence-case-mcp/server.py').read_text()
+    assert 'async def isp_provider_catalog(' in server and 'async def case_isp_report(' in server
+
+
+def test_plan_installs_the_isp_report_skill_for_the_operator(tmp_path):
+    config = fleet()
+    config['agents']['entries']['main']['workspace'] = str(tmp_path/'ws')
+    result = netclaw.plan(config, {}, opts(), tmp_path, SKILL)
+    assert result['conflicts'] == []
+    target = tmp_path/'ws/skills/convergence-isp-report/SKILL.md'
+    assert result['skills'] == {'convergence-isp-report': {'target': str(target), 'created': True}}
+    # Only the alert agent has a skills allowlist; it does not get the ISP report skill.
+    assert result['patch']['agents']['entries']['alert']['skills'] == ['alert-triage']
+
+
+def test_plan_adopts_an_identical_isp_report_skill_and_protects_a_changed_one(tmp_path):
+    config = fleet()
+    config['agents']['entries']['main']['workspace'] = str(tmp_path/'ws')
+    target = tmp_path/'ws/skills/convergence-isp-report/SKILL.md'
+    target.parent.mkdir(parents=True)
+    target.write_bytes(ISP.read_bytes())
+    result = netclaw.plan(config, {}, opts(), tmp_path, SKILL)
+    assert result['conflicts'] == [] and result['skills']['convergence-isp-report']['created'] is False
+    assert any('adopted' in a for a in result['actions'])
+    target.write_text('local edits')
+    assert 'different content' in netclaw.plan(config, {}, opts(), tmp_path, SKILL)['conflicts'][0]
+    assert netclaw.plan(config, {}, opts(replace_skill=True), tmp_path, SKILL)['conflicts'] == []
+    # A skill this tool installed and recorded may be replaced without --replace-skill.
+    state = {'skills': {'convergence-isp-report': {'target': str(target), 'created': True,
+                                                   'sha256': netclaw.digest(target.read_bytes())}}}
+    assert netclaw.plan(config, {}, opts(state=state), tmp_path, SKILL)['conflicts'] == []
+
+
+def test_remove_deletes_created_skills_only(tmp_path, monkeypatch):
+    home, ws = tmp_path/'oc', tmp_path/'ws'
+    home.mkdir()
+    created = ws/'skills/convergence-isp-report/SKILL.md'
+    adopted = ws/'skills/adopted/SKILL.md'
+    changed = ws/'skills/changed/SKILL.md'
+    for path in (created, adopted, changed):
+        path.parent.mkdir(parents=True)
+        path.write_text('skill')
+    sha = netclaw.digest(b'skill')
+    config = fleet(hooks={'enabled': True, 'token': '${CONVERGENCE_HOOK_TOKEN}', 'mappings': []})
+    (home/'openclaw.json').write_text(json.dumps(config))
+    (home/'.env').write_text('')
+    (home/netclaw.STATE).write_text(json.dumps({
+        'agent_id': 'alert', 'skill_target': str(ws/'skills/alert-triage/SKILL.md'), 'skill_sha256': '0',
+        'skills': {'convergence-isp-report': {'target': str(created), 'created': True, 'sha256': sha},
+                   'adopted': {'target': str(adopted), 'created': False, 'sha256': sha},
+                   'changed': {'target': str(changed), 'created': True, 'sha256': '0'}}}))
+    monkeypatch.setattr(netclaw, 'openclaw_patch', lambda cli, patch: None)
+    printed = []
+    monkeypatch.setattr('builtins.print', lambda text, **kw: printed.append(text))
+    assert netclaw.remove(netclaw.argparse.Namespace(openclaw='openclaw'), home) == 0
+    assert not created.exists() and not created.parent.exists()
+    assert adopted.exists() and changed.exists()
+    kept = ' | '.join(json.loads(printed[-1])['kept'])
+    assert 'adopted, not created' in kept and 'changed since install' in kept
