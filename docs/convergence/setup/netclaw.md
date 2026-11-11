@@ -17,6 +17,9 @@ Convergence view (`convergence-read`), which needs none of this.
 The interactive NetClaw agent is unchanged. The case API key and the hook token are
 kept in `~/.openclaw/.env`; `openclaw.json` refers to them as `${VAR}`.
 
+On a NetClaw Border (iN2N Risk), the investigation can also run in its own scoped,
+on-demand member: [investigator.md](investigator.md) adds it after this step.
+
 NetClaw's token and cost metrics (the NetClaw dashboard and the quota alerts) are a
 separate, independent step: [agent-metrics.md](agent-metrics.md) installs their
 exporter on the same host.
