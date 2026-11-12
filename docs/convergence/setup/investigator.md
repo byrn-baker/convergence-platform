@@ -75,7 +75,7 @@ python3 setup/netclaw.py apply ...same options, without evidence --allow-tool...
   --allow-tool n2n-mcp__n2n_route --allow-tool n2n-mcp__n2n_task_wait --restart
 ```
 
-With `n2n_route`, the `alert-triage` skill (1.1.0) makes the agent a dispatcher: it routes
+With `n2n_route`, the `alert-triage` skill (1.1.1) makes the agent a dispatcher: it routes
 the case with `target_hint="alert-triage"`, waits for the member's task and reads back
 the case the member recorded. An agent that also has evidence tools may still be tempted
 to investigate itself; the skill tells it not to.

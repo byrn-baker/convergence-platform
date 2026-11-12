@@ -358,3 +358,13 @@ def test_alert_hook_selects_dispatcher_or_local_investigation(tmp_path):
         assert ('First use n2n_route' in message) == dispatch
         assert ('investigate with your read-only tools' in message) != dispatch
         assert message.endswith('{{alerts[0].annotations.investigation_prompt}}')
+
+
+def test_dispatcher_uses_granted_task_tracking_tools(tmp_path):
+    for tracking, expected in (([], 'status cannot be confirmed'),
+                               (['n2n_task_status'], 'Poll n2n_task_status'),
+                               (['n2n_task_wait'], 'resume its run ID')):
+        tools = ['n2n-mcp__' + name for name in ['n2n_route', *tracking]]
+        result = netclaw.plan(fleet(), {}, opts(allow_tools=tools), tmp_path, SKILL)
+        message = result['patch']['hooks']['mappings'][0]['messageTemplate']
+        assert expected.lower() in message.lower()
