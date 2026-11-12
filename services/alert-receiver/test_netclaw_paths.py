@@ -1,4 +1,4 @@
-"""The receiver ships with Convergence; NetClaw's skill selector and RAG come from NETCLAW_DIR."""
+"""The receiver and its skill selector ship with Convergence; NetClaw's skill catalog and RAG come from NETCLAW_DIR."""
 import importlib.util
 from pathlib import Path
 
@@ -17,7 +17,8 @@ def load(monkeypatch, **env):
 def test_netclaw_paths_follow_netclaw_dir(monkeypatch, tmp_path):
     module = load(monkeypatch, NETCLAW_DIR=str(tmp_path/'netclaw'), ALERT_RECEIVER_INVENTORY=str(tmp_path/'inv.yaml'))
     assert module.REPO_ROOT == tmp_path/'netclaw'
-    assert module.SKILL_SELECTOR_SCRIPT == str(tmp_path/'netclaw/scripts/skill-selector/select_skills.py')
+    assert module.SKILL_SELECTOR_SCRIPT == str(Path(__file__).resolve().parent/'select_skills.py')
+    assert Path(module.SKILL_SELECTOR_SCRIPT).is_file()
     assert module.SKILL_CATALOG_DIR == str(tmp_path/'netclaw/workspace/skills')
     assert module.INVENTORY_FILE == tmp_path/'inv.yaml'
 

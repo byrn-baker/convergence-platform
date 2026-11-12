@@ -162,19 +162,20 @@ RECONCILE_CHANNEL_ID = os.getenv("RECONCILE_CHANNEL_ID", os.getenv("DISCORD_ALER
 INVENTORY_FILE = Path(os.getenv("ALERT_RECEIVER_INVENTORY") or Path(__file__).parent / "inventory.yaml")
 
 # ---------------------------------------------------------------------------
-# Skill scoping (see docs/architecture/skill-context-scoping.md)
+# Skill scoping (select_skills.py beside this file)
 # Opt-in: scopes the runtime skills directory to the alert-relevant subset
 # before triggering investigation, shrinking the injected skill index.
 # ---------------------------------------------------------------------------
 
-# NetClaw's checkout (skill selector, skill catalog, rag-mcp). The receiver ships with
-# Convergence, so NETCLAW_DIR names it; the fallback is the historical in-tree layout.
+# NetClaw's checkout (skill catalog, rag-mcp). The receiver ships with Convergence, so
+# NETCLAW_DIR names it; the fallback is the historical in-tree layout. The skill selector
+# ships with the receiver.
 REPO_ROOT = Path(os.getenv("NETCLAW_DIR") or Path(__file__).resolve().parents[2])
 
 SKILL_SCOPING_ENABLED = os.getenv("SKILL_SCOPING_ENABLED", "false").lower() in ("1", "true", "yes")
 SKILL_SELECTOR_SCRIPT = os.getenv(
     "SKILL_SELECTOR_SCRIPT",
-    str(REPO_ROOT / "scripts" / "skill-selector" / "select_skills.py"),
+    str(Path(__file__).resolve().parent / "select_skills.py"),
 )
 SKILL_SELECTOR_PYTHON = os.getenv("SKILL_SELECTOR_PYTHON", sys.executable)
 SKILL_CATALOG_DIR = os.getenv("SKILL_CATALOG_DIR", str(REPO_ROOT / "workspace" / "skills"))
@@ -818,7 +819,7 @@ async def lookup_device(hostname: str) -> dict:
 async def scope_skills_for_alert(alert: Alert, device_info: dict) -> Optional[int]:
     """Scope the runtime skills directory to the alert-relevant subset.
 
-    Runs the skill selector (scripts/skill-selector/select_skills.py) as a
+    Runs the skill selector (select_skills.py beside this file) as a
     subprocess with --apply. Fail-open: any error leaves the existing catalog in
     place so the investigation still has its skills. Serialized via a lock so
     concurrent alerts don't corrupt the shared directory.
