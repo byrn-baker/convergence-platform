@@ -55,7 +55,12 @@ python3 setup/network_mcps.py status --probe
   NetClaw fork, is replaced only with `--replace-existing`. The replacement is exact:
   keys of the old entry are removed, not merged.
 - `--server pfsense` or `--server unifi` limits a run to one server.
-- `--pfsense-read-write` drops `MCP_READ_ONLY`. Investigations do not need it.
+- `--pfsense-read-write` sets `MCP_READ_ONLY=false` (all 331 tools). Investigations do not
+  need it; keep it when an operator-confirmed workflow writes to the firewall, such as
+  adding an address to a block alias. Each agent's tool allowlist still decides who may
+  call the write tools. Run `apply` with the same flags each time: without it, a re-apply
+  switches the server back to read-only.
+- `status --probe` probes the entry as registered, so its tool count shows the mode.
 - `--restart` restarts `openclaw-gateway.service` so the gateway loads the servers.
 
 ## Remove

@@ -143,6 +143,15 @@ def test_probe_times_out_on_a_silent_server(tmp_path):
         mcps.probe(sys.executable, [str(server)], None, {}, timeout=1)
 
 
+def test_probe_server_uses_the_registered_entry(monkeypatch, tmp_path):
+    seen = []
+    monkeypatch.setattr(mcps, 'probe', lambda command, args, cwd, env, timeout=60: seen.append(env) or ['t'])
+    registered = mcps.entry('pfsense', tmp_path, ENV, opts(pfsense_read_write=True))
+    mcps.probe_server('pfsense', tmp_path, opts(), registered)
+    mcps.probe_server('pfsense', tmp_path, opts())
+    assert [e['MCP_READ_ONLY'] for e in seen] == ['false', 'true']
+    assert all(not v.startswith('${') for e in seen for v in e.values())
+
 def git(*args, cwd):
     return subprocess.run(['git', *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
 

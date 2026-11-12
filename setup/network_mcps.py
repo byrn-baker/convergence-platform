@@ -262,10 +262,13 @@ def probe(command, args, cwd, env, timeout=60):
         proc.wait()
 
 
-def probe_server(key, root, opts):
-    """Probe with placeholder credentials: listing tools contacts no device."""
+def probe_server(key, root, opts, server=None):
+    """Probe with placeholder credentials: listing tools contacts no device.
+
+    `server` is a registered entry to probe as configured (its literal env values, such as
+    MCP_READ_ONLY, apply); by default the entry apply would write."""
     spec = SERVERS[key]
-    server = entry(key, root, {}, opts)
+    server = server or entry(key, root, {}, opts)
     env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'HOME': os.environ.get('HOME', '/'),
            **spec['probe_env'], **{k: v for k, v in server['env'].items() if not v.startswith('${')}}
     tools = probe(server['command'], server['args'], server.get('cwd'), env)
@@ -418,7 +421,8 @@ def status(args, home, root):
         }
         if args.probe and checks['venv']:
             try:
-                checks['probe_tools'] = len(probe_server(key, root, opts))
+                checks['probe_tools'] = len(probe_server(key, root, opts,
+                                                         configured if checks['registered'] else None))
             except (OSError, RuntimeError) as exc:
                 checks['probe_tools'] = 0
                 checks['probe_error'] = str(exc)[:300]
