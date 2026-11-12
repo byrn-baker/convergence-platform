@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "name": "alert-investigator",
+  "description": "Convergence alert investigator: reads alert cases and read-only network evidence, records findings on the case",
+  "servers": [
+    "convergence-case-mcp",
+    "prometheus-mcp",
+    "grafana-mcp",
+    "pyats-mcp",
+    "pfsense-mcp",
+    "unifi-network",
+    "greynoise-community-mcp",
+    "rag-mcp"
+  ],
+  "skills": [
+    "alert-triage",
+    "prometheus-monitoring",
+    "grafana-observability",
+    "pyats-network",
+    "pyats-troubleshoot",
+    "pfsense-threat-intel"
+  ],
+  "tools": {
+    "allow": [
+      "session_status",
+      "read",
+      "convergence-case-mcp__*",
+      "prometheus-mcp__*",
+      "grafana-mcp__query_*",
+      "grafana-mcp__list_*",
+      "grafana-mcp__get_*",
+      "grafana-mcp__search_*",
+      "pyats-mcp__pyats_list_devices",
+      "pyats-mcp__pyats_search_devices",
+      "pyats-mcp__pyats_run_show_command",
+      "pyats-mcp__pyats_run_show_command_multi",
+      "pyats-mcp__pyats_device_health",
+      "pyats-mcp__pyats_get_neighbors",
+      "pyats-mcp__pyats_show_logging",
+      "pfsense-mcp__get_*",
+      "pfsense-mcp__list_*",
+      "pfsense-mcp__search_*",
+      "unifi-network__integration_get_*",
+      "unifi-network__integration_list_*",
+      "greynoise-community-mcp__*",
+      "rag-mcp__rag_search",
+      "rag-mcp__rag_list",
+      "rag-mcp__rag_stats",
+      "memory-mcp__memory_get_facts",
+      "memory-mcp__memory_timeline",
+      "memory-mcp__memory_recall",
+      "memory-mcp__memory_get_decisions",
+      "memory-mcp__memory_query_graph"
+    ]
+  },
+  "model": null
+}

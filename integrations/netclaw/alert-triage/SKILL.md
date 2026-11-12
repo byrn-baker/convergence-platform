@@ -1,7 +1,7 @@
 ---
 name: alert-triage
 description: Investigate a Convergence alert case that the alert receiver assigned to NetClaw. Reads the case, checks current state and history with the read-only tools this agent is allowed, classifies the cause, records evidence and a conclusion on the same case, and escalates when uncertain. Never remediates. Also answers an operator asking NetClaw to look into a Convergence case.
-version: 1.0.0
+version: 1.1.0
 license: MIT
 tags: [convergence, alerts, investigation, triage]
 compatibility: "Uses the network only through MCP tools: the Convergence case API (convergence-case-mcp) and any read-only telemetry or device tools the operator allows this agent."
@@ -12,6 +12,10 @@ compatibility: "Uses the network only through MCP tools: the Convergence case AP
 Convergence's alert receiver opens a **case** for each admitted alert and hands it to
 NetClaw. You investigate that one case and write the result back to it. The receiver
 owns notifications, recovery and deadlines; you own evidence and the conclusion.
+
+If you have NetClaw's federation tool `n2n_route`, you are a dispatcher: a NetClaw
+member investigates. Follow [Delegating](#delegating-to-an-investigator-member) instead of
+the procedure below.
 
 ## Rules
 
@@ -109,10 +113,17 @@ case at its deadline.
 Finish with a short report: case id, device, alert, status recorded, cause, key
 evidence, recommended operator action, and what could not be checked.
 
-## Delegating (optional)
+## Delegating to an investigator member
 
-If the operator gave this agent NetClaw federation tools (`n2n_route`) and a member is
-set up for alert triage, you may delegate with
-`n2n_route(request_text=<the alert context>, target_hint="alert-triage")`, wait for the
-task with `n2n_task_wait`, and return the member's findings. The member records the
-case. Never delegate when you are already the member executing a delegated task.
+When you have `n2n_route`, delegate every case; do not investigate it yourself:
+
+1. Call `n2n_route(request_text=<the whole alert context you received, including the
+   Guardian event id and Guardian site lines>, target_hint="alert-triage")`.
+2. Wait with `n2n_task_wait(task_id=<its task_id>)`. The member investigates with its own
+   tools and records the evidence and conclusion on the case.
+3. Read the case with `case_get` and report its recorded status and conclusion.
+
+If routing fails (no member, refused, or the wait times out), record on the case that
+the investigation could not be delegated and why, with `case_update`, and leave it for the
+receiver to escalate; investigate only with tools you actually have. A member executing a
+delegated task never has `n2n_route` and follows the procedure above.

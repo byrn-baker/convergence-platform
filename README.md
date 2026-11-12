@@ -20,7 +20,9 @@ VM Security findings can be tried without a hypervisor; see [docs/convergence/vm
 
 Alerts become cases through the alert receiver on the NetClaw host. Optionally,
 NetClaw investigates admitted cases with a restricted agent and records its findings
-on them: see [docs/convergence/setup/netclaw.md](docs/convergence/setup/netclaw.md).
+on them: see [docs/convergence/setup/netclaw.md](docs/convergence/setup/netclaw.md). On a NetClaw
+Border, the investigation can run in its own scoped member: see
+[docs/convergence/setup/investigator.md](docs/convergence/setup/investigator.md).
 NetClaw's token and cost metrics come from an exporter on the same host: see
 [docs/convergence/setup/agent-metrics.md](docs/convergence/setup/agent-metrics.md).
 
@@ -37,8 +39,8 @@ deploy/convergence/        Docker trial (Compose), adapters, Grafana, flow demo,
 deploy/helm/               Helm charts (convergence, victoria-stack), tooling and tests
 deploy/cluster/            Proxmox VM provisioning (proxmox.py) and K3s Ansible playbooks
 deploy/argocd/             Argo CD install
-setup/                     Setup helpers (Docker bundle, K3s/Argo CD, receiver, NetClaw, agent metrics, verification, flows)
-integrations/netclaw/      The alert-triage skill installed by setup/netclaw.py
+setup/                     Setup helpers (Docker bundle, K3s/Argo CD, receiver, NetClaw, investigator member, agent metrics, verification, flows)
+integrations/netclaw/      The alert-triage skill installed by setup/netclaw.py; investigator.json, the investigator member spec
 scripts/lib/               Legacy NetClaw-fork installer fragments (install-steps.d, catalog.d)
 docs/  specs/  tests/
 ```
