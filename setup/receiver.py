@@ -12,7 +12,7 @@ both write its environment as receiver.env; this installs the receiver for that 
 The unit runs this checkout's services/alert-receiver from a private virtualenv and
 keeps its job queue under ~/.local/state/convergence/. Pass --netclaw-dir when the
 receiver uses NetClaw pieces: JEV case reviews, RAG priors and snapshots (rag-mcp) and
-skill scoping (scripts/skill-selector) all come from that checkout. Pass --rag-python
+the skill catalog for skill scoping come from that checkout (the selector ships here). Pass --rag-python
 (an existing executable, only together with --netclaw-dir) so those RAG calls run in
 NetClaw's RAG runtime: the command of mcp.servers["rag-mcp"] in ~/.openclaw/openclaw.json.
 A local device inventory goes in the env file as ALERT_RECEIVER_INVENTORY=/path/inventory.yaml.

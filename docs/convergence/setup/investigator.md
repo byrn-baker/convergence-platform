@@ -27,6 +27,7 @@ The member is defined by a NetClaw **member spec**,
   and the `alert-triage` skill. The member uses the same case API key.
 - The Border has the evidence servers you want the member to use. A spec server the
   Border does not have is left out, with its tools and skills; `plan` lists them.
+  [network-mcps.md](network-mcps.md) installs `pfsense-mcp` and `unifi-network`.
 - An Anthropic API key in the Border's `.env` (`ANTHROPIC_API_KEY`): spec members use
   the Anthropic provider.
 

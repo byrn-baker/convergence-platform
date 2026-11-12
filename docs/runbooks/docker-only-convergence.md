@@ -37,7 +37,7 @@ docker ps --format '{{.Names}}' | grep netclaw-convergence
 curl -sf http://127.0.0.1:3080/healthz
 curl -sf http://127.0.0.1:9090/-/ready
 curl -sf http://127.0.0.1:3001/api/home/status   # dualRun should be false
-./scripts/netclaw-apply-models.sh show
+python3 setup/netclaw.py status
 ./deploy/convergence/smoke-device-snmp.sh
 ```
 

@@ -23,7 +23,7 @@
 1. **Dual-run** — HUD `HOME_API_URL` may still point at pilot Guardian.
 2. **Docker or K3s Convergence** — stand up `netclaw-convergence` / compose; smoke.
 3. **Point HUD** — `HOME_API_URL` + `HOME_API_TOKEN` to product convergence-api.
-4. **Ensure guardian-claw** — `python3 scripts/ensure-guardian-claw.py` (idempotent).
+4. **Alert agent and investigator** — `setup/netclaw.py` ([netclaw.md](../../docs/convergence/setup/netclaw.md)), then the investigator member ([investigator.md](../../docs/convergence/setup/investigator.md)). The NetClaw fork's `ensure-guardian-claw.py` is retired.
 5. **Alertmanager** — webhook stays on host alert-receiver (`:8099`).
 6. **Decommission pilot Guardian Deployment only** after diary + HOME tab parity.
 7. **Pilot Prometheus scrapes** can remain until Home metrics replace WAN/UniFi jobs.
@@ -37,7 +37,7 @@ Skills under `workspace/skills/` may still mention pilot hostnames as **examples
 - `PROMETHEUS_URL`, `HOME_API_URL` / `NETWORK_GUARDIAN_URL`, `ALERTMANAGER_URL`
 - `DISCORD_ALERT_CHANNEL_ID` (not hard-coded channel ids in new docs)
 
-`ensure-guardian-claw.py` and install profile `convergence` are the supported enrollment path; external-stack-only install is legacy dual-run.
+`setup/netclaw.py` and the investigator member spec are the supported enrollment path; external-stack-only install is legacy dual-run.
 
 ## 2026-07-26 — local pilot scaled down
 

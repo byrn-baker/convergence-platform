@@ -10,8 +10,9 @@ Convergence view (`convergence-read`), which needs none of this.
 | Piece | What it does |
 |---|---|
 | `alert-triage` skill | The investigation procedure (`integrations/netclaw/alert-triage`) |
+| `convergence-isp-report` skill | For your own agents, not the alert agent: drafts an ISP support message or service-credit request from a recorded WAN case (`integrations/netclaw/convergence-isp-report`). Already installed with the same content, it is adopted and `remove` leaves it |
 | `convergence-case-mcp` | Tools to read the assigned case and site flows, request a JEV review and record findings |
-| Agent `alert` | Runs hook investigations with only that skill, `read`, the case tools and the read-only tools you add |
+| Agent `alert` | Runs hook investigations with only that skill (plus any `--agent-skill`), `read` confined to its workspace, the case tools and the read-only tools you add; `--model` pins its model |
 | Hook `POST /hooks/alert` | Routes the receiver's hand-off to that agent, without chat delivery |
 
 The interactive NetClaw agent is unchanged. The case API key and the hook token are
@@ -47,15 +48,31 @@ python3 setup/netclaw.py plan --api-url "$api_url" --site "$site" \
 ```
 
 `plan` changes nothing. It lists the actions and the exact config patch, and stops on
-conflicts: an existing `alert` agent or `alert` hook mapping it did not create, a hook
-path other than `/hooks`, or a locally changed `alert-triage` skill. Show the plan to
-the user and wait for approval. Then:
+conflicts: an existing `alert` agent, `alert` hook mapping or `convergence-case-mcp`
+server it did not create, a hook path other than `/hooks`, or a locally changed
+`alert-triage` skill. Show the plan to the user and wait for approval. Then:
 
 ```bash
 python3 setup/netclaw.py apply ...same options... --restart
 python3 setup/receiver.py install --env-file "$bundle/receiver.env" --start
 python3 setup/netclaw.py status
 ```
+
+Options for an existing or customised install:
+
+- `--replace-existing` takes over an alert agent, `/hooks/alert` mapping and
+  `convergence-case-mcp` entry that were set up some other way (for example by the
+  NetClaw fork's `netclaw-alert-agent-profile.sh`). The replacement is exact: keys the
+  old entries had and the new ones lack are removed, except the agent's `workspace`.
+  `remove` restores all three exactly, and with `--replace-skill` it also puts back the
+  `alert-triage` skill it replaced.
+- `--model provider/model` sets the alert agent's model and the hook's model; without it
+  the agent uses the fleet default.
+- `--agent-skill name` lets the alert agent load another skill already in the workspace,
+  for example your own site context. Repeatable.
+- On a Border that dispatches to an investigator member, add the federation tools:
+  `--allow-tool n2n-mcp__n2n_route --allow-tool n2n-mcp__n2n_task_wait`
+  (and `n2n_task_status`, `n2n_task_result`, `n2n_member_health`).
 
 `apply` backs up `openclaw.json` and `.env` under `~/.openclaw/backups/`, checks the
 key against the case API, installs the MCP server in its own virtualenv, creates the
@@ -75,7 +92,10 @@ Check that the pieces work, not only that they are configured:
 
 ## Admit an alert and prove the loop
 
-The policy (`INVESTIGATION_POLICY_PATH` in `receiver.env`) admits nothing at first.
+The policy (`INVESTIGATION_POLICY_PATH` in `receiver.env`) admits nothing at first. Start
+from [`investigation-policy.example.yaml`](../../../deploy/convergence/config/investigation-policy.example.yaml);
+the receiver reloads it within about 30 seconds, and `curl -s http://127.0.0.1:8099/policy/status`
+shows the file it loaded, the default tier and how many rules each tier admits.
 Admit one harmless test alert at tier T2:
 
 ```yaml
