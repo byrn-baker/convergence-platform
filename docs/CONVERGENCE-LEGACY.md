@@ -31,7 +31,8 @@ Set once in **repo `.env`**, apply with script or HUD:
 | `NETCLAW_ALERT_TRIAGE_MODEL` | T2 investigation hooks |
 
 ```bash
-./scripts/netclaw-apply-models.sh show|apply|preset split
+# The NetClaw fork's scripts/netclaw-apply-models.sh (retired). The alert agent's model is
+# now set with: python3 setup/netclaw.py apply ... --model provider/model
 # HUD: Convergence → Models → Apply & restart gateway
 ```
 

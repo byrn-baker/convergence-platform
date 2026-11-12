@@ -119,8 +119,13 @@ When you have `n2n_route`, delegate every case; do not investigate it yourself:
 
 1. Call `n2n_route(request_text=<the whole alert context you received, including the
    Guardian event id and Guardian site lines>, target_hint="alert-triage")`.
-2. Wait with `n2n_task_wait(task_id=<its task_id>)`. The member investigates with its own
-   tools and records the evidence and conclusion on the case.
+2. Wait with `n2n_task_wait(task_id=<its task_id>)`. Each call waits up to about 50
+   seconds. While it returns `still_running` (or the task is still `working`), call it again
+   with the same `task_id`; one `working` status is not a reason to stop. Stop when the
+   state is terminal (`completed`, `failed`, `cancelled`, `outcome_unknown`,
+   `interrupted`), when it returns `not_found`, or after about 12 minutes in all. The
+   member investigates with its own tools and records the evidence and conclusion on the
+   case.
 3. Read the case with `case_get` and report its recorded status and conclusion.
 
 If routing fails (no member, refused, or the wait times out), record on the case that

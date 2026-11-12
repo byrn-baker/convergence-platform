@@ -229,3 +229,109 @@ def test_openclaw_cli_acts_on_the_given_openclaw_dir(tmp_path, monkeypatch):
     assert netclaw.main(['status', '--openclaw-dir', str(home)]) == 1
     assert netclaw.os.environ['OPENCLAW_CONFIG_PATH'] == str(home/'openclaw.json')
     assert netclaw.os.environ['OPENCLAW_STATE_DIR'] == str(home)
+
+
+def merge(base, patch):
+    """RFC 7396, as `openclaw config patch` applies it."""
+    if not isinstance(patch, dict):
+        return patch
+    out = dict(base) if isinstance(base, dict) else {}
+    for key, value in patch.items():
+        if value is None:
+            out.pop(key, None)
+        else:
+            out[key] = merge(out.get(key), value)
+    return out
+
+
+LEGACY_AGENT = {'name': 'Alert Orchestrator', 'workspace': '/ws', 'skills': ['alert-triage', 'home'],
+                'model': {'primary': 'openai/m1', 'fallbacks': ['openai/m1']},
+                'tools': {'fs': {'workspaceOnly': True}, 'allow': ['read', 'n2n-mcp__n2n_route']}}
+LEGACY_MAPPING = {'match': {'path': 'alert'}, 'action': 'agent', 'name': 'NetClaw Alert Triage',
+                  'sessionKey': 'hook:alert:{{alerts[0].fingerprint}}', 'messageTemplate': 'old',
+                  'model': 'openai/m1', 'agentId': 'alert', 'deliver': False}
+RECONCILE = {'match': {'path': 'reconcile'}, 'action': 'agent', 'messageTemplate': 'r'}
+LEGACY_MCP = {'command': '/py', 'args': ['/old/server.py'],
+              'env': {'CONVERGENCE_API_URL': '${HOME_API_URL}', 'CONVERGENCE_API_TOKEN': '${HOME_API_TOKEN}',
+                      'GUARDIAN_DEFAULT_SITE': 'home'}}
+
+
+def legacy(tmp_path):
+    config = fleet(hooks={'enabled': True, 'token': '${OPENCLAW_HOOKS_TOKEN}', 'allowedAgentIds': ['main', 'alert'],
+                          'mappings': [LEGACY_MAPPING, RECONCILE]},
+                   mcp={'servers': {'convergence-case-mcp': LEGACY_MCP}})
+    config['agents']['entries'] = {'main': {'workspace': str(tmp_path/'ws')}, 'alert': LEGACY_AGENT}
+    (tmp_path/'ws/skills/home').mkdir(parents=True)
+    (tmp_path/'ws/skills/home/SKILL.md').write_text('home skill')
+    return config
+
+
+def test_existing_alert_setup_needs_replace_existing(tmp_path):
+    config = legacy(tmp_path)
+    conflicts = ' | '.join(netclaw.plan(config, {'OPENCLAW_HOOKS_TOKEN': 't'}, opts(), tmp_path, SKILL)['conflicts'])
+    assert conflicts.count('--replace-existing') == 3
+
+
+def test_replace_existing_takes_over_exactly(tmp_path):
+    config = legacy(tmp_path)
+    result = netclaw.plan(config, {'OPENCLAW_HOOKS_TOKEN': 't'},
+                          opts(replace_existing=True, model='openai/m2', agent_skills=['home'],
+                               allow_tools=['n2n-mcp__n2n_route']), tmp_path, SKILL)
+    assert result['conflicts'] == []
+    after = merge(config, result['patch'])
+    agent = after['agents']['entries']['alert']
+    assert agent == {'workspace': '/ws', 'name': 'Convergence alert triage', 'skills': ['alert-triage', 'home'],
+                     'model': {'primary': 'openai/m2'},
+                     'tools': {'allow': ['read', 'convergence-case-mcp__*', 'n2n-mcp__n2n_route'],
+                               'deny': netclaw.DENY_TOOLS, 'fs': {'workspaceOnly': True}}}
+    mappings = after['hooks']['mappings']
+    assert [m.get('id') for m in mappings] == [netclaw.MAPPING_ID, None] and mappings[1] == RECONCILE
+    assert mappings[0]['model'] == 'openai/m2' and 'sessionKey' not in mappings[0]
+    assert after['hooks']['allowedAgentIds'] == ['main', 'alert'] and result['allowed_added'] is False
+    server = after['mcp']['servers']['convergence-case-mcp']
+    assert server['env']['CONVERGENCE_API_TOKEN'] == '${CONVERGENCE_CASE_TOKEN}' and server['args'][0] == '-u'
+    assert result['previous'] == {'agent': LEGACY_AGENT, 'mappings': [{'index': 0, 'mapping': LEGACY_MAPPING}],
+                                  'mcp': LEGACY_MCP}
+
+
+def test_plan_checks_model_and_agent_skills(tmp_path):
+    config = fleet()
+    config['agents']['entries']['main']['workspace'] = str(tmp_path/'ws')
+    conflicts = ' | '.join(netclaw.plan(config, {}, opts(model='no-slash', agent_skills=['missing', 'Bad!']),
+                                        tmp_path, SKILL)['conflicts'])
+    assert '--model no-slash' in conflicts and 'no such skill' in conflicts and 'Bad!: not a skill name' in conflicts
+
+
+def test_new_agent_reads_only_its_workspace(tmp_path):
+    entry = netclaw.plan(fleet(), {}, opts(), tmp_path, SKILL)['patch']['agents']['entries']['alert']
+    assert entry['tools']['fs'] == {'workspaceOnly': True} and 'model' not in entry
+
+
+def test_remove_restores_replaced_entries_and_skill(tmp_path, monkeypatch):
+    home = tmp_path/'oc'
+    home.mkdir()
+    config = legacy(tmp_path)
+    env = {'OPENCLAW_HOOKS_TOKEN': 't'}
+    result = netclaw.plan(config, env, opts(replace_existing=True, agent_skills=['home']), tmp_path, SKILL)
+    applied = merge(config, result['patch'])
+    (home/'openclaw.json').write_text(json.dumps(applied))
+    (home/'.env').write_text('OPENCLAW_HOOKS_TOKEN=t\nCONVERGENCE_CASE_TOKEN=k\n')
+    target = tmp_path/'ws/skills/alert-triage/SKILL.md'
+    target.parent.mkdir(parents=True)
+    target.write_text(SKILL)
+    old_skill = tmp_path/'backup-alert-triage.md'
+    old_skill.write_text('the old alert-triage')
+    (home/netclaw.STATE).write_text(json.dumps({
+        'agent_id': 'alert', 'agent_created': False, 'mcp_created': False, 'allowed_agent_added': False,
+        'hooks_enabled_by_us': False, 'previous': result['previous'], 'skill_target': str(target),
+        'skill_sha256': netclaw.digest(target.read_bytes()), 'skill_previous': str(old_skill),
+        'env_keys': ['CONVERGENCE_CASE_TOKEN']}))
+    patches, runs = [], []
+    monkeypatch.setattr(netclaw, 'openclaw_patch', lambda cli, patch: patches.append(patch))
+    monkeypatch.setattr(netclaw, 'run', lambda cmd: runs.append(cmd))
+    monkeypatch.setattr('builtins.print', lambda *a, **k: None)
+    assert netclaw.remove(netclaw.argparse.Namespace(openclaw='openclaw'), home) == 0
+    assert merge(applied, patches[0]) == config
+    assert runs == []  # an adopted agent is restored, never deleted
+    assert target.read_text() == 'the old alert-triage'
+    assert netclaw.read_env(home/'.env') == {'OPENCLAW_HOOKS_TOKEN': 't'}
