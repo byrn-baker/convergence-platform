@@ -347,3 +347,14 @@ def test_remove_restores_replaced_entries_and_skill(tmp_path, monkeypatch):
     assert runs == []  # an adopted agent is restored, never deleted
     assert target.read_text() == 'the old alert-triage'
     assert netclaw.read_env(home/'.env') == {'OPENCLAW_HOOKS_TOKEN': 't'}
+
+
+def test_alert_hook_selects_dispatcher_or_local_investigation(tmp_path):
+    for tools, dispatch in (([], False), (['n2n-mcp__n2n_member_health'], False),
+                            (['n2n-mcp__n2n_route'], True), (['n2n-mcp__*'], True)):
+        result = netclaw.plan(fleet(), {}, opts(allow_tools=tools), tmp_path, SKILL)
+        assert not result['conflicts']
+        message = result['patch']['hooks']['mappings'][0]['messageTemplate']
+        assert ('First use n2n_route' in message) == dispatch
+        assert ('investigate with your read-only tools' in message) != dispatch
+        assert message.endswith('{{alerts[0].annotations.investigation_prompt}}')
