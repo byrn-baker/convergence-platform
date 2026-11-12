@@ -294,6 +294,18 @@ def test_replace_existing_takes_over_exactly(tmp_path):
                                   'mcp': LEGACY_MCP}
 
 
+def test_plan_finds_workspace_skills_below_configured_home(tmp_path, monkeypatch):
+    monkeypatch.setenv('HOME', str(tmp_path))
+    config = fleet()
+    config['agents']['entries']['main']['workspace'] = '${HOME}/ws'
+    target = tmp_path/'ws/skills/home/SKILL.md'
+    target.parent.mkdir(parents=True)
+    target.write_text('home context')
+    result = netclaw.plan(config, {}, opts(agent_skills=['home']), tmp_path, SKILL)
+    assert result['conflicts'] == []
+    assert Path(result['skill_target']) == tmp_path/'ws/skills/alert-triage/SKILL.md'
+
+
 def test_plan_checks_model_and_agent_skills(tmp_path):
     config = fleet()
     config['agents']['entries']['main']['workspace'] = str(tmp_path/'ws')
