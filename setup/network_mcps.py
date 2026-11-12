@@ -60,12 +60,10 @@ SERVERS = {
     },
     'unifi': {
         'name': 'unifi-network',
-        # Integration API device tools, the UniFi OS Server probe fix and
-        # UNIFI_PRELOAD_GROUPS (chris2ao/unifi-mcp#9); move to the upstream release
-        # once it is merged.
+        # Convergence maintains the Integration API device reads, probe and preload support.
         'repo': 'https://github.com/byrn-baker/unifi-mcp.git',
-        'ref': 'integration-devices',
-        'commit': 'cb2b1f1de4b770ffcae5affc3fb88432955daa91',
+        'ref': 'v0.10.0-convergence.1',
+        'commit': 'c61ad97fa37143277da1136dcca067a36c9dba89',
         'python': (3, 12),
         'install': ['.'],
         'args': ['-u', '-m', 'unifi_mcp'],

@@ -8,11 +8,12 @@ pinned commits and registers them in OpenClaw, under the names the
 | OpenClaw server | Source (pinned) | Runs |
 |---|---|---|
 | `pfsense-mcp` | [gensecaihq/pfsense-mcp-server](https://github.com/gensecaihq/pfsense-mcp-server) v1.1.0 | read-only: `MCP_READ_ONLY=true` leaves 130 read tools of 331; `MCP_ENABLE_LOG_FILES=false` also drops `get_log_file`, which reads raw `/var/log` files through the firewall's command endpoint (the API log tools stay) |
-| `unifi-network` | [byrn-baker/unifi-mcp](https://github.com/byrn-baker/unifi-mcp) `integration-devices` (upstream v0.9.0 plus [chris2ao/unifi-mcp#9](https://github.com/chris2ao/unifi-mcp/pull/9)) | the Integration API device reads (`integration_*`) registered at startup |
+| `unifi-network` | [byrn-baker/unifi-mcp](https://github.com/byrn-baker/unifi-mcp) [`v0.10.0-convergence.1`](https://github.com/byrn-baker/unifi-mcp/releases/tag/v0.10.0-convergence.1) | the Integration API device reads (`integration_*`) registered at startup |
 
-The UniFi pin moves to an upstream release once #9 is merged. It adds the
-`integration_*` device tools, which work on UniFi OS Server installs where the legacy
-controller paths hang, and `UNIFI_PRELOAD_GROUPS`. The investigator may call those
+Convergence maintains the UniFi fork. This release builds on upstream v0.10.0
+with a Network application probe that works on UniFi OS Server, the
+`integration_*` device reads and startup loading through `UNIFI_PRELOAD_GROUPS`.
+The investigator may call those
 reads but not `load_network_tools`, so the helper preloads `network:integration`.
 UniFi has no read-only mode: its configuration-changing tools need a preview and
 `confirm=True`, and each agent's tool allowlist decides what it may call.
