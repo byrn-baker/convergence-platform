@@ -125,7 +125,8 @@ for line in sys.stdin:
     if msg.get('method') == 'initialize':
         print(json.dumps({'jsonrpc': '2.0', 'id': msg['id'], 'result': {'protocolVersion': '2025-06-18'}}), flush=True)
     elif msg.get('method') == 'tools/list':
-        print('not json', flush=True)
+        # Deliver noise and the reply in the same pipe write.
+        print('not json', flush=False)
         print(json.dumps({'jsonrpc': '2.0', 'id': msg['id'], 'result': {'tools': [{'name': 'a'}, {'name': 'b'}]}}), flush=True)
 '''
 
@@ -133,7 +134,7 @@ for line in sys.stdin:
 def test_probe_lists_tools_over_stdio(tmp_path):
     server = tmp_path/'server.py'
     server.write_text(FAKE_SERVER)
-    assert mcps.probe(sys.executable, [str(server)], None, {}, timeout=20) == ['a', 'b']
+    assert mcps.probe(sys.executable, [str(server)], None, {}, timeout=3) == ['a', 'b']
 
 
 def test_probe_times_out_on_a_silent_server(tmp_path):

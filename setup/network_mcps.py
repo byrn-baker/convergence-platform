@@ -229,14 +229,23 @@ def probe(command, args, cwd, env, timeout=60):
         proc.stdin.write(json.dumps(message)+'\n')
         proc.stdin.flush()
 
-    def receive(wanted):
+    def response_lines():
+        pending = bytearray()
         while time.monotonic() < deadline:
             ready, _, _ = select.select([proc.stdout], [], [], max(0.0, deadline-time.monotonic()))
             if not ready:
                 break
-            line = proc.stdout.readline()
-            if not line:
+            chunk = os.read(proc.stdout.fileno(), 65536)
+            if not chunk:
                 break
+            pending.extend(chunk)
+            *lines, pending = pending.split(b'\n')
+            yield from lines
+
+    responses = response_lines()
+
+    def receive(wanted):
+        for line in responses:
             try:
                 message = json.loads(line)
             except ValueError:
