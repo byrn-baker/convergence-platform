@@ -57,7 +57,7 @@ namespace for a parallel trial; existing installations follow [operations](opera
 ## 2. Build and deliver the API image
 
 Releases publish `ghcr.io/byrn-baker/convergence-api:<version>` (amd64 and arm64,
-public). Use it with `--image ghcr.io/byrn-baker/convergence-api:0.1.9` and skip the
+public). Use it with `--image ghcr.io/byrn-baker/convergence-api:0.1.10` and skip the
 rest of this step. To build from the checkout instead, use a revision-specific tag:
 
 ```bash

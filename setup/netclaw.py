@@ -60,13 +60,29 @@ AGENT_KEEP = ('workspace', 'agentDir')
 
 
 def alert_message(allow_tools):
-    if any(fnmatch.fnmatchcase('n2n-mcp__n2n_route', pattern) for pattern in allow_tools):
+    def permits(tool):
+        return any(fnmatch.fnmatchcase('n2n-mcp__'+tool, pattern) for pattern in allow_tools)
+
+    if permits('n2n_route'):
         instruction = ('You are the Border dispatcher. Follow the alert-triage delegation procedure. '
                        'First use n2n_route with target_hint="alert-triage" and the full alert context, '
                        'including the case ID and site. The investigator member reads the evidence and '
-                       'updates the case. Use n2n_task_wait when available and repeat while still running, '
-                       'up to the skill deadline. Read back the recorded case and report the result. '
-                       'If routing fails, follow the delegation failure procedure.')
+                       'updates the case. ')
+        if permits('n2n_task_wait'):
+            instruction += ('After submission, wait for that task ID using n2n_task_wait. '
+                       'Select each MCP tool by its exact name. While a tool call is pending, resume '
+                       'its run ID with wait until it returns the MCP result. While the member state '
+                       'is working or still_running, call n2n_task_wait again on the same task ID. '
+                       'Keep the case open during tool lookup or argument errors and retry the exact '
+                       'wait tool. Only a terminal member result, confirmed refusal or the 12-minute '
+                       'deadline ends the wait. On completion, read back the case with case_get and '
+                       'report the member findings. Follow the skill for confirmed delegation failures.')
+        elif permits('n2n_task_status'):
+            instruction += ('Poll n2n_task_status by exact name for the submitted task ID until it is '
+                            'terminal or the 12-minute deadline expires. Then read back the case.')
+        else:
+            instruction += ('Report the submitted task ID and that its status cannot be confirmed '
+                            'with the tools available. Leave the case for the investigator to update.')
     else:
         instruction = ('A Convergence alert case was assigned to you. Follow the alert-triage skill: '
                        'investigate with your read-only tools and record the result on the case.')

@@ -1,7 +1,7 @@
 ---
 name: alert-triage
 description: Investigate a Convergence alert case that the alert receiver assigned to NetClaw. Reads the case, checks current state and history with the read-only tools this agent is allowed, classifies the cause, records evidence and a conclusion on the same case, and escalates when uncertain. Never remediates. Also answers an operator asking NetClaw to look into a Convergence case.
-version: 1.1.0
+version: 1.1.1
 license: MIT
 tags: [convergence, alerts, investigation, triage]
 compatibility: "Uses the network only through MCP tools: the Convergence case API (convergence-case-mcp) and any read-only telemetry or device tools the operator allows this agent."
@@ -126,6 +126,13 @@ When you have `n2n_route`, delegate every case; do not investigate it yourself:
    `interrupted`), when it returns `not_found`, or after about 12 minutes in all. The
    member investigates with its own tools and records the evidence and conclusion on the
    case.
+   On a code-mode gateway, resolve the exact tool name in catalog search results.
+   A pending tool call has its own run ID. Resume that run with `wait` until the MCP
+   result arrives, then use the member state and task ID to decide whether to wait
+   again. If only `n2n_task_status` is available, poll it for the same task ID.
+   If neither tracking tool is granted, report the submitted task ID and leave
+   the case open for the investigator to update. A tool lookup or argument error leaves the member state unknown. Verify
+   the tool name and retry the wait before recording a delegation failure.
 3. Read the case with `case_get` and report its recorded status and conclusion.
 
 If routing fails (no member, refused, or the wait times out), record on the case that
