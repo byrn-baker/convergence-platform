@@ -99,11 +99,14 @@ def write_env(path, updates):
 
 def workspace(config, home):
     agents = config.get('agents') or {}
-    for key in ('main',):
-        ws = ((agents.get('entries') or {}).get(key) or {}).get('workspace')
-        if ws:
-            return ws
-    return (agents.get('defaults') or {}).get('workspace') or str(home/'workspace')
+    main = (agents.get('entries') or {}).get('main') or {}
+    ws = main.get('workspace') or (agents.get('defaults') or {}).get('workspace')
+    if not ws:
+        return home/'workspace'
+    path = Path(ws)
+    if path.parts and path.parts[0] in ('${HOME}', '$HOME'):
+        return Path.home().joinpath(*path.parts[1:])
+    return path.expanduser()
 
 
 def gateway_url(config):
@@ -208,7 +211,7 @@ def plan(config, env, opts, home, skill_text):
               'cwd': str(MCP_DIR), 'env': {'CONVERGENCE_API_URL': opts['api_url'],
                                            'CONVERGENCE_API_TOKEN': '${'+CASE_ENV+'}',
                                            'GUARDIAN_DEFAULT_SITE': opts['site']}}
-    ws = Path(os.path.expanduser(workspace(config, home)))
+    ws = workspace(config, home)
     agent_skills = []
     for name in opts.get('agent_skills') or []:
         if not SKILL_NAME.fullmatch(name) or name == 'alert-triage':
@@ -337,7 +340,7 @@ def apply(args, home):
     added = False
     try:
         if result['agent_new']:
-            added = add_agent(args, os.path.expanduser(workspace(config, home)))
+            added = add_agent(args, str(workspace(config, home)))
         # One atomic, validated write; a failure leaves the config unchanged.
         openclaw_patch(args.openclaw, result['patch'])
     except RuntimeError:
@@ -487,13 +490,13 @@ def status(args, home):
     agent = state.get('agent_id', args.agent_id)
     entry = ((config.get('agents') or {}).get('entries') or {}).get(agent)
     hooks = config.get('hooks') or {}
-    target = Path(state.get('skill_target') or Path(os.path.expanduser(workspace(config, home)))/'skills/alert-triage/SKILL.md')
+    target = Path(state.get('skill_target') or workspace(config, home)/'skills/alert-triage/SKILL.md')
     checks = {
         'agent': bool(entry) and 'alert-triage' in (entry.get('skills') or []),
         'skill': target.exists() and target.read_text() == SKILL.read_text(),
         'workspace_skills': all(t.exists() and t.read_bytes() == source.read_bytes() for t, source in (
             (Path(((state.get('skills') or {}).get(name) or {}).get('target')
-                  or Path(os.path.expanduser(workspace(config, home)))/'skills'/name/'SKILL.md'), source)
+                  or workspace(config, home)/'skills'/name/'SKILL.md'), source)
             for name, source in WORKSPACE_SKILLS.items())),
         'mcp_server': MCP_NAME in ((config.get('mcp') or {}).get('servers') or {}),
         'hook_mapping': bool(hooks.get('enabled')) and any(isinstance(m, dict) and m.get('id') == MAPPING_ID
