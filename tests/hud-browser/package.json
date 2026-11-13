@@ -1,0 +1,9 @@
+{
+  "name": "convergence-hud-browser-test",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright": "1.58.2"
+  }
+}

@@ -1,5 +1,6 @@
 import {caseIPContext, ipContextHTML} from './IPContext.js';
 import {caseCaptureContext, captureContextHTML} from './CaptureContext.js';
+import {reviewerLink} from './ReviewerLink.js';
 import {jevReviewHTML} from './JevReview.js';
 
 const esc = value => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -42,9 +43,10 @@ export function securityQueueHTML(data, filter = 'all', drafts = new Map(), pend
       <span class="home-muted">Prepare a deep dive with this case and its JEV advice. Review the Canvas draft, then send.</span></div><details>
       <summary><span class="home-badge ${tones[e.security_assessment?.bucket] || ''}">${esc(e.security_assessment?.label || 'Review context')}</span> ${esc(e.security_assessment?.signature || e.message || e.alert_name)}</summary>
       <p class="home-muted">${esc(e.timestamp)} · Investigation: ${esc(e.status)} · Observed VLAN: ${esc(e.capture_context?.vlan_tags?.join(', ') || 'not recorded')}</p>
-      ${assessmentHTML(e, {form: true, draft: drafts.get(key), busy: pending.has(key), error: errors.get(key)})}
+      ${assessmentHTML(e, {form: !options.readOnly, draft: drafts.get(key), busy: pending.has(key), error: errors.get(key)})}
       ${captureContextHTML(caseCaptureContext(e))}${ipContextHTML(caseIPContext(e))}
-      ${jevReviewHTML(e, options.pending?.has(key), options.errors?.get(key))}
+      ${jevReviewHTML(e, options.pending?.has(key), options.errors?.get(key), !options.readOnly)}
+      ${options.readOnly ? reviewerLink(options.reviewerOrigin,site,e.id) : ''}
     </details></article>`; }).join('') || '<p>No cases in this view. This does not establish full network coverage.</p>'}
   </section>`;
 }

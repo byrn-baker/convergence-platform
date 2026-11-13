@@ -1,6 +1,7 @@
 import {caseIPContext, ipContextHTML} from './IPContext.js';
 import {caseCaptureContext, observedVlanHTML, captureContextHTML} from './CaptureContext.js';
 import {assessmentHTML} from './IncidentReview.js';
+import {reviewerLink} from './ReviewerLink.js';
 import {jevReviewHTML} from './JevReview.js';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
@@ -86,7 +87,7 @@ export function diaryHTML(raw, state = {}) {
     return `<tr><td><input type="checkbox" data-diary-select="${esc(e.id)}" aria-label="Select case ${esc(e.id)}" ${selected.has(e.id)?'checked':''} ${!selected.has(e.id)&&selected.size>=MAX_SELECTION?'disabled':''}></td>
       <td><time>${esc(time(e.timestamp))}</time><small>${esc(e.status)} · ${esc(e.severity)}</small></td>
       <td><strong>${esc(e.traffic_context?.signature || e.security_assessment?.signature || e.alert_name || 'Event')}</strong><p>${esc(e.message)}</p>
-      <details><summary>Evidence and assessment</summary>${assessmentHTML(e)}${captureContextHTML(capture)}${ipContextHTML(caseIPContext(e))}${jevReviewHTML(e,state.jevPending?.has(`${state.site}:${e.id}`),state.jevErrors?.get(`${state.site}:${e.id}`))}${e.rag_document_id?`<p>RAG: ${esc(e.rag_document_id)}</p>`:''}</details></td>
+      <details><summary>Evidence and assessment</summary>${assessmentHTML(e)}${captureContextHTML(capture)}${ipContextHTML(caseIPContext(e))}${jevReviewHTML(e,state.jevPending?.has(`${state.site}:${e.id}`),state.jevErrors?.get(`${state.site}:${e.id}`), !state.readOnly)}${state.readOnly ? reviewerLink(state.reviewerOrigin,state.site,e.id) : ''}${e.rag_document_id?`<p>RAG: ${esc(e.rag_document_id)}</p>`:''}</details></td>
       <td>${esc(ep.source || 'Unknown')}<span class="home-muted"> → </span>${esc(ep.destination || 'Unknown')}<small>${esc(e.traffic_context?.protocol || '')} ${e.traffic_context?.destination_port != null ? '· destination port '+esc(e.traffic_context.destination_port) : ''}</small></td>
       <td class="home-observed-vlan">${observedVlanHTML(capture)}</td><td><button data-diary-canvas="${esc(e.id)}" ${state.canInvestigate?'':'disabled title="Open the new HUD to use Canvas"'}>Deep dive ↗</button></td></tr>`;
   };

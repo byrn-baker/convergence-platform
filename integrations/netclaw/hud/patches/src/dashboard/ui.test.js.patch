@@ -1,0 +1,37 @@
+diff --git a/src/dashboard/ui.test.js b/src/dashboard/ui.test.js
+index ddff293106cbad7d292cfa4087b4c9ee36ab9aad..9db195ec929b803832a3fe54f05a1a1627ad2b9d 100644
+--- a/src/dashboard/ui.test.js
++++ b/src/dashboard/ui.test.js
+@@ -49,6 +49,7 @@ test('local Pal shares the Chat draft and thread; avatar choice never starts Tav
+   const {document,window,errors}=await app(t,false,async(url,options={})=>{
+     calls.push([url,options]);return {ok:true,json:async()=>url==='/api/pal/local/status'?{available:true,maxCharacters:1800}:url==='/api/chat/models'?{models:[]}:{}};
+   });
++  await waitFor(() => document.querySelector('#standard-chat-message'), 'initial Chat composer');
+   typeChat(window,document,'Keep this question while I choose a Pal');await settle();
+   const chat=document.querySelector('.standard-chat');
+   click(document,'Avatar');await settle();
+@@ -228,3 +229,24 @@ test('full open lab workspace offers normal Chat Canvas RAG members and protecte
+  assert.equal([...document.querySelectorAll('nav button')].some(b=>b.textContent.includes('Configuration')),false);
+  assert.equal(calls.some(([url])=>url.includes('/session')),false);assert.ok(calls.every(([,o])=>o.credentials==='omit'));assert.deepEqual(errors,[]);
+ });
++
++test('retained evidence and Site operations stay independent, with no remote owner bootstrap', async t => {
++  const calls = [];
++  const runtime = {kind:'openclaw', installationId:'11111111-1111-4111-8111-111111111111',
++    label:'OpenClaw', readiness:{ready:true}, capabilities:{convergence:true, siteOperations:true}};
++  const {document} = await app(t, false, async (url, options = {}) => {
++    calls.push([url, options]);
++    if (url === '/api/home/status') return Response.json({configured:false, localOwnerMode:false, reviewerOrigin:'https://review.example.test'});
++    return Response.json({});
++  }, runtime);
++  const retained = [...document.querySelectorAll('nav button')].find(b => b.textContent.endsWith('Convergence'));
++  assert.ok(retained);
++  const beforeOpen = calls.length;
++  click(document, 'Site operations');
++  await waitFor(() => document.querySelector('a[href="https://review.example.test/"]'), 'reviewer link');
++  assert.ok(!calls.slice(beforeOpen).some(([url, options]) =>
++    (url === '/api/hud/session' && options.headers?.has?.('X-NetClaw-Installation')) ||
++    (url.startsWith('/api/home/') && url !== '/api/home/status')));
++  retained.click();
++  await waitFor(() => document.querySelector('h1')?.textContent.startsWith('Convergence'), 'retained evidence');
++});
