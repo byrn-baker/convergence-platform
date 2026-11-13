@@ -61,6 +61,34 @@ jobs:
       - run: npm ci
       - run: node --test test-*.cjs
 
+  hud:
+    # The HUD overlay must build onto upstream NetClaw and keep the HUD's own tests green.
+    runs-on: ubuntu-24.04
+    env:
+      NETCLAW_REF: a5e7c3a3e07d8c8c4f2f26d22b4bd854dd1ba42e
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: automateyournetwork/netclaw
+          ref: ${{ env.NETCLAW_REF }}
+          path: netclaw
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Build the HUD tree
+        run: |
+          python3 -c "import sys; sys.path.insert(0, 'setup'); import hud; from pathlib import Path; \
+            print(hud.build(Path('netclaw'), Path('hud-build'), sys.argv[1]))" "$(command -v node)" | tee tree.txt
+      - name: HUD tests
+        run: |
+          cd "$(cat tree.txt)/ui/netclaw-visual"
+          npm test
+          node --test test/convergence-*.mjs src/fork-local/model-settings.test.js
+
   images:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [python, node]

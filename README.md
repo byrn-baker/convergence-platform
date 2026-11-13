@@ -27,6 +27,8 @@ The pfSense and UniFi MCP servers investigations read the firewall and Wi-Fi wit
 are installed on that host by [docs/convergence/setup/network-mcps.md](docs/convergence/setup/network-mcps.md).
 NetClaw's token and cost metrics come from an exporter on the same host: see
 [docs/convergence/setup/agent-metrics.md](docs/convergence/setup/agent-metrics.md).
+The Convergence views in NetClaw's HUD are built onto an unmodified NetClaw checkout by
+[docs/convergence/setup/hud.md](docs/convergence/setup/hud.md).
 
 NetClaw's `convergence-setup` skill can do any of these for you, following the
 [setup procedures](docs/convergence/setup/): it discovers what it can, asks for the rest, shows
@@ -41,8 +43,8 @@ deploy/convergence/        Docker trial (Compose), adapters, Grafana, flow demo,
 deploy/helm/               Helm charts (convergence, victoria-stack), tooling and tests
 deploy/cluster/            Proxmox VM provisioning (proxmox.py) and K3s Ansible playbooks
 deploy/argocd/             Argo CD install
-setup/                     Setup helpers (Docker bundle, K3s/Argo CD, receiver, NetClaw, investigator member, pfSense/UniFi MCPs, agent metrics, verification, flows)
-integrations/netclaw/      Skills installed by setup/netclaw.py (alert-triage, convergence-isp-report); investigator.json, the investigator member spec
+setup/                     Setup helpers (Docker bundle, K3s/Argo CD, receiver, NetClaw, investigator member, pfSense/UniFi MCPs, agent metrics, HUD, verification, flows)
+integrations/netclaw/      Skills installed by setup/netclaw.py (alert-triage, convergence-isp-report); investigator.json, the investigator member spec; hud/, the HUD overlay
 scripts/                   Telemetry inventory setup and rendering (scripts/lib: inventory import)
 docs/  specs/  tests/
 ```

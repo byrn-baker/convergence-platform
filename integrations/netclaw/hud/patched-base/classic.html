@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NetClaw Visual</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Feature 101 FR-024 ("zero console errors") was the one criterion the HUD
+         failed, and only because no favicon was declared — the browser requests
+         /favicon.ico by default and got a 404 on every load. Pre-existing, cosmetic,
+         and it made an otherwise-clean console permanently non-empty. -->
+    <link rel="icon" type="image/png" href="/logos/netclaw.png" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="scene-root"></div>
+      <div class="noise"></div>
+      <div class="scan-beam"></div>
+
+      <header class="topbar panel">
+        <div>
+          <p class="eyebrow">NetClaw Visual Command Deck</p>
+          <h1 class="brand">NETCLAW</h1>
+        </div>
+        <div class="topbar-stats">
+          <div class="metric">
+            <span class="metric-value" id="metric-integrations">--</span>
+            <span class="metric-label">Integrations</span>
+          </div>
+          <div class="metric">
+            <span class="metric-value" id="metric-skills">--</span>
+            <span class="metric-label">Skills</span>
+          </div>
+          <div class="metric">
+            <span class="metric-value" id="metric-devices">--</span>
+            <span class="metric-label">Devices</span>
+          </div>
+          <div class="metric">
+            <span class="metric-value" id="metric-tools">--</span>
+            <span class="metric-label">Tool Est.</span>
+          </div>
+        </div>
+      </header>
+
+      <aside class="sidebar panel left" id="sidebar-left">
+        <button class="panel-toggle" id="toggle-left" type="button" aria-label="Collapse left sidebar">&lsaquo;</button>
+        <section>
+          <p class="eyebrow">Filters</p>
+          <input id="search" class="search" type="search" placeholder="Search claws, categories, tools" />
+          <div id="category-list" class="toggle-list"></div>
+        </section>
+
+        <!-- HUD 2.0 legend (FR-009c). Four states is past the point where an
+             operator can be expected to infer the encoding. Each swatch carries
+             a distinct SHAPE as well as a colour, so the legend still works in
+             greyscale (SC-007) and under reduced motion (SC-010). -->
+        <section class="sidebar-section" id="health-legend">
+          <p class="eyebrow">Claw health</p>
+          <ul class="legend-list">
+            <li><span class="legend-swatch legend-hot">&#9679;</span> <b>Hot</b> — running now</li>
+            <li><span class="legend-swatch legend-warm">&#9670;</span> <b>Warm</b> — seen recently, idle</li>
+            <li><span class="legend-swatch legend-cold">&#9644;</span> <b>Cold</b> — never started, by design</li>
+            <li><span class="legend-swatch legend-fault">&#9723;</span> <b>Fault</b> — was reachable, now not</li>
+          </ul>
+        </section>
+
+        <section class="sidebar-section">
+          <p class="eyebrow">Settings</p>
+          <div id="settings-list" class="info-stack compact"></div>
+        </section>
+      </aside>
+
+      <aside class="sidebar panel right" id="sidebar-right">
+        <button class="panel-toggle" id="toggle-right" type="button" aria-label="Collapse right sidebar">&rsaquo;</button>
+        <section>
+          <p class="eyebrow">Focus</p>
+          <div class="segmented">
+            <button class="segmented-btn active" data-view="integrations">Integrations</button>
+            <button class="segmented-btn" data-view="devices">Devices</button>
+            <button class="segmented-btn" data-view="overview">Overview</button>
+          </div>
+        </section>
+
+        <section class="sidebar-section">
+          <p class="eyebrow">Selection</p>
+          <div id="detail-panel" class="detail-panel">
+            <h2>Awaiting target</h2>
+            <p>Select a node to inspect skills, config surfaces, and topology context.</p>
+          </div>
+        </section>
+      </aside>
+
+      <footer class="footer panel" id="footer-panel">
+        <button class="panel-toggle" id="toggle-footer" type="button" aria-label="Collapse footer">&darr;</button>
+        <div class="footer-row">
+          <span>Model <strong id="footer-model">--</strong></span>
+          <span>Gateway <strong id="footer-gateway">--</strong></span>
+          <span>Budget <strong id="footer-budget" class="budget-indicator" title="Click to configure budget">--</strong></span>
+          <span>Socket <strong id="footer-socket">CONNECTING</strong></span>
+          <span>Updated <strong id="footer-updated">--</strong></span>
+        </div>
+        <div class="footer-row muted">
+          <span>HUD mode: layered network operations graph</span>
+          <span>Quality <button id="quality-toggle" class="quality-toggle" type="button">BALANCED</button></span>
+          <span>Use mouse drag + wheel to navigate</span>
+        </div>
+      </footer>
+
+      <!-- Reopen tabs for collapsed panels -->
+      <button id="reopen-left" class="panel-reopen reopen-left" type="button">FILTERS</button>
+      <button id="reopen-right" class="panel-reopen reopen-right" type="button">DETAIL</button>
+      <button id="reopen-footer" class="panel-reopen reopen-footer" type="button">STATUS</button>
+
+      <div id="tooltip" class="tooltip"></div>
+
+      <!-- Chat Drawer -->
+      <div id="chat-drawer" class="chat-drawer panel">
+        <div class="chat-header">
+          <p class="eyebrow">NetClaw Terminal <span id="gateway-status" class="gateway-indicator offline">OFFLINE</span></p>
+          <div class="chat-header-actions">
+            <a class="canvas-chat-link" href="/canvas.html" title="Open the branching Canvas Chat interface">Canvas Chat</a>
+            <button id="new-session" class="new-session-btn" type="button">New Session</button>
+            <button id="chat-toggle" class="chat-toggle-btn" type="button">_</button>
+          </div>
+        </div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <form id="chat-form" class="chat-input-row">
+          <input id="chat-input" class="chat-input" type="text" placeholder="Ask NetClaw anything..." autocomplete="off" />
+          <button type="submit" class="chat-send">Send</button>
+        </form>
+      </div>
+
+      <div id="loading" class="loading-screen">
+        <div class="loading-mark">NETCLAW</div>
+        <div class="loading-bar"><span id="loading-progress"></span></div>
+        <div id="loading-text" class="loading-text">Booting visual layer...</div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
