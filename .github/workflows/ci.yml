@@ -50,6 +50,17 @@ jobs:
 
   node:
     runs-on: ubuntu-24.04
+    services:
+      reviewer-postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture
+          POSTGRES_DB: reviewer_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd pg_isready --health-interval 3s --health-timeout 3s --health-retries 10
     defaults:
       run:
         working-directory: ui/convergence-api
@@ -58,6 +69,14 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
+      - name: Configure the isolated PostgreSQL fixture
+        env:
+          FIXTURE_PORT: ${{ job.services.reviewer-postgres.ports[5432] }}
+          FIXTURE_CONTAINER: ${{ job.services.reviewer-postgres.id }}
+        run: |
+          echo "REVIEWER_TEST_DATABASE_URL=postgres://postgres:fixture@127.0.0.1:${FIXTURE_PORT}/reviewer_test" >> "$GITHUB_ENV"
+          echo "SECURITY_HISTORY_PG_CONTAINER=${FIXTURE_CONTAINER}" >> "$GITHUB_ENV"
+          echo "REVIEWER_PSQL_CONTAINER=${FIXTURE_CONTAINER}" >> "$GITHUB_ENV"
       - run: npm ci
       - run: node --test test-*.cjs
 

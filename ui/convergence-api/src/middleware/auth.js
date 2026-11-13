@@ -2,6 +2,9 @@
 
 const jwt = require('jsonwebtoken');
 
+const pgDirectory = process.env.CONVERGENCE_ACCOUNT_SOURCE === 'postgres';
+const accounts = require('../lib/web-accounts').webAccounts(pgDirectory ? require('../db').pool : null, process.env);
+
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 
 /**
@@ -12,7 +15,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
  *   req.user = { sub, name, role, sites }
  *   req.site = validated site string
  */
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith('Bearer ')) {
@@ -38,12 +41,13 @@ function authMiddleware(req, res, next) {
   // Otherwise validate as JWT
   try {
     const payload = jwt.verify(token, JWT_SECRET);
+    if (!await accounts.current(payload)) return res.status(401).json({error: 'Sign in again'});
     req.user = payload;
 
     // Site scope enforcement
     const requestedSite = req.query.site;
     if (requestedSite) {
-      if (payload.role !== 'admin' && !payload.sites.includes(requestedSite)) {
+      if ((pgDirectory || payload.role !== 'admin') && !payload.sites.includes(requestedSite)) {
         return res.status(403).json({ error: 'Site not authorized for this token' });
       }
       req.site = requestedSite;

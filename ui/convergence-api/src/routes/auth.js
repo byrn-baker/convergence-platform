@@ -2,26 +2,14 @@
 
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const { createPasswordVerifier, InvalidCredentialInput } = require('../lib/password-verification');
+const { InvalidCredentialInput } = require('../lib/password-verification');
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const TOKEN_EXPIRY = '24h';
 
-// Load users from environment
-let users = [];
-try {
-  const configured = JSON.parse(process.env.USERS || '[]');
-  if (!Array.isArray(configured)) throw new Error();
-  users = configured;
-} catch {
-  console.error('Invalid USERS configuration');
-}
-
-const verifyPassword = createPasswordVerifier(
-  username => users.find(user => user?.username === username),
-  users[0]?.passwordHash,
-);
+const {webAccounts} = require('../lib/web-accounts');
+const accounts = webAccounts(process.env.CONVERGENCE_ACCOUNT_SOURCE === 'postgres' ? require('../db').pool : null, process.env);
 
 /**
  * POST /api/auth/login
@@ -31,7 +19,7 @@ router.post('/login', async (req, res) => {
   const { username, password } = req.body || {};
   let user;
   try {
-    user = await verifyPassword(username, password);
+    user = await accounts.authenticate(username, password);
   } catch (err) {
     if (err instanceof InvalidCredentialInput) {
       return res.status(400).json({ error: 'Username and password required' });
@@ -49,7 +37,8 @@ router.post('/login', async (req, res) => {
       sub: user.id,
       name: user.name,
       role: user.role,
-      sites: user.sites
+      sites: user.sites,
+      ...(user.directory && {directory: user.directory, revision: user.revision}),
     },
     JWT_SECRET,
     { expiresIn: TOKEN_EXPIRY }
