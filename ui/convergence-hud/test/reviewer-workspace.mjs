@@ -344,3 +344,24 @@ test('storage denial preserves case reads and blocks new writes without a durabl
   api.submit('disposition'); await wait();
   assert.equal(api.calls.filter(c => c.options.method === 'POST').length, 0);
 });
+
+test('a HUD case link is stripped, waits for sign-in and only selects a granted site', async t => {
+  for (const site of ['blue', 'unauthorized']) {
+    let signedIn = false;
+    const api = endpoint(t, path => {
+      if (path === '/review/sign-in') signedIn = true;
+      else assert.equal(path, '/review/session');
+      return response(200, signedIn ? {user: identity, csrf:'signed'} : {user:null, csrf:'pre'});
+    }, window => { window.location.hash = new URLSearchParams({site, case:id}); });
+    assert.equal(api.window.location.hash, '');
+    await wait();
+    assert.equal(api.byId('lookup').elements.caseId.value, '');
+    api.byId('login').elements.username.value = 'reviewer';
+    api.byId('login').elements.password.value = 'synthetic';
+    api.submit('login');
+    await wait();
+    assert.equal(api.byId('lookup').elements.caseId.value, site === 'blue' ? id : '');
+    if (site === 'blue') assert.equal(api.byId('lookup').elements.site.value, site);
+    assert.deepEqual(api.calls.map(c => c.path), ['/review/session', '/review/sign-in']);
+  }
+});
