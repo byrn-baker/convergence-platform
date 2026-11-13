@@ -21,7 +21,7 @@ From the convergence-hud package directory, run:
 npm run reviewer
 ```
 
-Route only the dedicated hostname to this listener. Direct TLS or layer-4 TLS passthrough preserves end-to-end HTTPS and the original Host and Origin. A trusted reverse proxy that terminates and re-encrypts traffic needs independent ingress qualification. The application never uses forwarded identity headers. Keep the native owner HUD, machine credentials, private API port and WebSocket facilities off this route. A copied review URL cannot supply a service grant.
+Route only the dedicated hostname to this listener. Direct TLS or layer-4 TLS passthrough preserves end-to-end HTTPS and the original Host and Origin. Proxies that add Forwarded or X-Forwarded-* headers are rejected. A TLS-terminating and re-encrypting ingress would require a separately qualified design that authenticates the hop and removes untrusted forwarding headers. Keep the native owner HUD, machine credentials, private API port and WebSocket facilities off this route. A copied review URL cannot supply a service grant.
 
 Each sign-in rotates a host-only secure cookie and binds it to one server-held grant. Serve one HUD process per reviewer origin, or route the same session to the same HUD replica. The private API supports multiple replicas. Restarting the HUD ends its in-memory associations. The private API enforces a 30-minute maximum and a 10-minute idle limit. A case read or background poll does not renew the idle limit. An acknowledged write can extend it up to the absolute deadline.
 
