@@ -27,3 +27,5 @@ In one database transaction the service validates the grant, current authority, 
 ## Deployment sequence
 
 First qualify sign-in, session status, sign-out and a scoped read in isolation. Add one audited disposition. Expand to other operations after proving their permissions, side effects and retry semantics. Make the adapter opt-in, and validate both HUD entry points with it disabled and enabled. Rollback disables the adapter, revokes its grants and returns the HUD to the existing views. Preserve case and audit records.
+
+The [queued investigation design](queued-investigations.md) proposes ownership of case notes, command receipts, receiver admission and recovery after a lost response.
