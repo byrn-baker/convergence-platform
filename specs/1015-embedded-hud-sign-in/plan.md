@@ -1,0 +1,23 @@
+# Integration design
+
+## Session and sign-in
+
+Mount a narrow adapter in the local HUD server after the existing local-origin, profile and installation gates. The host supplies verified session ownership and expiry. Use a server-only digest of the verified owner cookie, namespaced by installation and runtime, as the lookup key. A dedicated adapter namespace supports sign-in, session status, sign-out and specific case operations. The host must support this mount before deployment.
+
+Session status returns a short-lived pre-login nonce bound to the verified owner. Require this nonce, exact origin, JSON and the installation ID for sign-in. Rotate the nonce after sign-in and sign-out, and serve session and private responses with Cache-Control: no-store.
+
+The HUD submits credentials over a same-origin request. The adapter exchanges them once against a configured TLS Convergence origin and clears them after the exchange. Use mutual TLS with a per-installation client certificate and a configured service trust root. Map the verified certificate identity to the installation on the service side. If a trusted proxy terminates TLS, strip client-supplied identity headers and authenticate the proxy-to-service connection. Reject redirects. Use sensitive request-body and token redaction, small body limits, deadlines and login throttling. Use the sign-in mechanism's established password checks. Require an explicit non-default signing configuration where JWTs are used.
+
+Convergence issues a short-lived opaque user grant for the HUD adapter audience. Store the token digest, subject, audience, installation, role and site ceiling at issue, authorization revision, expiry and revocation state. Requests must satisfy both the grant ceiling and the current user entitlements. A later privilege increase requires a fresh grant. This grant authorizes only the approved operation family. Check the current user record, enabled state, role, permitted sites, grant audience and installation for each operation. Reject machine keys and standalone JWTs on the grant exchange or embedded-operation interface.
+
+The HUD adapter retains the raw grant only in server memory, tied to a single live HUD session. Start with a 30-minute absolute limit capped by HUD session expiry and a shorter interactive idle timeout. Background polling cannot renew either limit. Restart signs users out. The browser receives sign-in state, authorized presentation metadata and a separate CSRF nonce. Credentials and grants must stay out of URLs, persistent browser storage, logs, model context and Canvas handoffs. Sign-out must accept a valid owner-bound nonce even while login is pending. It invalidates pending exchanges as well as any active grant. Recheck owner and generation before accepting an exchange result and revoke any late grant.
+
+## Read and write paths
+
+Use fixed destination, HTTP method, parameters and response projection per operation. Check the actual installation and host profile before dispatch. Require exact origin, JSON and a session-bound CSRF nonce for state changes, including login CSRF protection. Sign-out invalidates the local association immediately and revokes the upstream grant. If upstream is unreachable the local binding remains invalid and the upstream grant expires. A late read must still match the active owner, grant and installation when released.
+
+In one database transaction the service validates the grant, current authority, case site and allowed state transition, then persists the mutation and audit record with the authenticated subject. Serialize concurrent revocation and writes against the grant record so their outcome has an unambiguous order. Reuse existing case operations without forwarding a generic path or arbitrary PATCH fields. An in-flight write can commit before logout is observed. Expose a receipt or an unknown outcome and reconcile it by ID. Before enabling queued investigations, persist an unique operation ID scoped to actor and installation. Bind it to site, case, command and payload digest, and reject reuse with any different inputs. Persist queued work and the audit record atomically with the idempotency record. Forward the same operation ID to the receiver and deduplicate delivery there. Disable automatic retries for mutations with an unknown outcome.
+
+## Deployment sequence
+
+First qualify sign-in, session status, sign-out and a scoped read in isolation. Add one audited disposition. Expand to other operations after proving their permissions, side effects and retry semantics. Make the adapter opt-in, and validate both HUD entry points with it disabled and enabled. Rollback disables the adapter, revokes its grants and returns the HUD to the existing views. Preserve case and audit records.
