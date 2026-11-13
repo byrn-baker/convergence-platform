@@ -52,7 +52,7 @@ Run the schema migration once with schema-owner credentials before starting the 
 node reviewer-service.js migrate
 ```
 
-An administrator can run this command in an isolated one-off workload with access to the target database. Apply the [reviewer DB permissions](https://github.com/byrn-baker/convergence-platform/pull/10), then use the separate provisioning role to create individually scoped reviewer accounts. Pod startup checks for the migrated schema. Neither pod needs schema-owner or provisioning credentials.
+An administrator can run this command in an isolated one-off workload with access to the target database. Apply the [reviewer DB permissions](https://github.com/byrn-baker/convergence-platform/pull/10), then use the separate provisioning role to create individually scoped reviewer accounts. The runtime role needs INSERT on event_history and USAGE on event_history_sequence_seq because the existing event update trigger writes a history row. The supplied permissions script includes both. Readiness checks for the migrated schema and runtime database access. Neither pod needs schema-owner or provisioning credentials.
 
 The chart creates ClusterIP services RELEASE-review-api:3443 and RELEASE-review-hud:3444. The backend has a NetworkPolicy admitting connections only from the same release's HUD pods. Check that the cluster CNI enforces NetworkPolicy. Site-specific routing must expose only the review HUD over trusted HTTPS. Use dedicated TCP/TLS passthrough to preserve the browser's origin and the HUD certificate. The HUD rejects forwarded identity, scheme and address headers. An ordinary HTTP Ingress with default forwarding headers cannot serve this contract.
 
