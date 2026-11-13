@@ -50,6 +50,8 @@ without. Optional fields may be absent; the view must degrade, not throw.
 | `summary` | no | counters only; the view never derives truth from it |
 | `mgmt` | no | management URLs for name links |
 
+WAN and firewall probes, UniFi, and both SNMP sources require a matching `site` label. Label legacy scrape targets before upgrading to retain their visibility. Interface counts are aggregated within the selected site.
+
 Switch discovery is config-driven (`switches.match` / `switches.models` per site
 in `SITES_CONFIG`), defaulting to every device reporting `interface_status`.
 

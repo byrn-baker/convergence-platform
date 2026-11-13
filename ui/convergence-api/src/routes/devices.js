@@ -2,8 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { instantQuery } = require('../lib/queryEngine');
-const { vmInstantQuery } = require('../lib/queryEngine');
+const { instantQuery, vmInstantQuery } = require('../lib/queryEngine');
 const { formatUptime } = require('../lib/formatters');
 const {
   getSiteConfig, getMgmtUrls, getSwitchConfig, promqlLabelValue,
@@ -17,6 +16,12 @@ const {
  */
 router.get('/', async (req, res) => {
   const site = req.site;
+  if (typeof site !== 'string' || !site.trim()) {
+    return res.status(400).json({ error: 'A site is required for device inventory' });
+  }
+  const siteFilter = `site="${promqlLabelValue(site)}"`;
+  const wan = `job=~"blackbox_wan_tcp|blackbox_wan_http|blackbox_wan_dns|blackbox_http",${siteFilter}`;
+  const snmp = `job="device_snmp",${siteFilter}`;
   const config = getSiteConfig(site);
   const mgmt = getMgmtUrls(site);
   // device_name matcher for the pilot VictoriaMetrics SNMP queries. Escaped
@@ -35,35 +40,35 @@ router.get('/', async (req, res) => {
       // Pilot OBS VictoriaMetrics (optional dual-run; fails soft on Docker-only)
       switchIfUp, switchIfTotal, switchErrors
     ] = await Promise.allSettled([
-      instantQuery(`probe_success{job=~"blackbox_wan_tcp|blackbox_wan_http|blackbox_wan_dns|blackbox_http"}`),
-      instantQuery(`probe_duration_seconds{job=~"blackbox_wan_tcp|blackbox_wan_http|blackbox_wan_dns|blackbox_http"}`),
+      instantQuery(`probe_success{${wan}}`),
+      instantQuery(`probe_duration_seconds{${wan}}`),
       // Edge firewall (blackbox_edge) or any probe labeled role=firewall / device_name=pfsense
-      instantQuery(`probe_success{job="blackbox_edge"} or probe_success{role="firewall"} or probe_success{device_name="pfsense"}`),
-      instantQuery(`probe_duration_seconds{job="blackbox_edge"} or probe_duration_seconds{role="firewall"} or probe_duration_seconds{device_name="pfsense"}`),
-      instantQuery(`unifi_device_up{role="ap", site="${site}"}`),
-      instantQuery(`unifi_ap_clients{site="${site}"}`),
-      instantQuery(`unifi_device_cpu_pct{role="ap", site="${site}"}`),
-      instantQuery(`unifi_device_memory_pct{role="ap", site="${site}"}`),
-      instantQuery(`unifi_device_uptime_seconds{role="ap", site="${site}"}`),
-      instantQuery(`unifi_device_up{role="gateway", site="${site}"}`),
-      instantQuery(`unifi_device_cpu_pct{role="gateway", site="${site}"}`),
-      instantQuery(`unifi_device_memory_pct{role="gateway", site="${site}"}`),
-      instantQuery(`unifi_device_uptime_seconds{role="gateway", site="${site}"}`),
-      instantQuery(`unifi_device_up{role="switch", site="${site}"}`),
-      instantQuery(`unifi_device_cpu_pct{role="switch", site="${site}"}`),
-      instantQuery(`unifi_device_memory_pct{role="switch", site="${site}"}`),
-      instantQuery(`unifi_device_uptime_seconds{role="switch", site="${site}"}`),
-      // Greenfield: ifOperStatus 1=up (job device_snmp; site label optional)
-      instantQuery(`count by (device_name) (ifOperStatus{job="device_snmp"} == 1)`),
-      instantQuery(`count by (device_name) (ifOperStatus{job="device_snmp"})`),
-      instantQuery(`sum by (device_name) (rate(ifInErrors{job="device_snmp"}[5m]) + rate(ifOutErrors{job="device_snmp"}[5m]))`),
-      instantQuery(`up{job="device_snmp"}`),
+      instantQuery(`probe_success{job="blackbox_edge",${siteFilter}} or probe_success{role="firewall",${siteFilter}} or probe_success{device_name="pfsense",${siteFilter}}`),
+      instantQuery(`probe_duration_seconds{job="blackbox_edge",${siteFilter}} or probe_duration_seconds{role="firewall",${siteFilter}} or probe_duration_seconds{device_name="pfsense",${siteFilter}}`),
+      instantQuery(`unifi_device_up{role="ap", ${siteFilter}}`),
+      instantQuery(`unifi_ap_clients{${siteFilter}}`),
+      instantQuery(`unifi_device_cpu_pct{role="ap", ${siteFilter}}`),
+      instantQuery(`unifi_device_memory_pct{role="ap", ${siteFilter}}`),
+      instantQuery(`unifi_device_uptime_seconds{role="ap", ${siteFilter}}`),
+      instantQuery(`unifi_device_up{role="gateway", ${siteFilter}}`),
+      instantQuery(`unifi_device_cpu_pct{role="gateway", ${siteFilter}}`),
+      instantQuery(`unifi_device_memory_pct{role="gateway", ${siteFilter}}`),
+      instantQuery(`unifi_device_uptime_seconds{role="gateway", ${siteFilter}}`),
+      instantQuery(`unifi_device_up{role="switch", ${siteFilter}}`),
+      instantQuery(`unifi_device_cpu_pct{role="switch", ${siteFilter}}`),
+      instantQuery(`unifi_device_memory_pct{role="switch", ${siteFilter}}`),
+      instantQuery(`unifi_device_uptime_seconds{role="switch", ${siteFilter}}`),
+      // Greenfield: ifOperStatus 1=up (job device_snmp, filtered before counting interfaces)
+      instantQuery(`count by (device_name) (ifOperStatus{${snmp}} == 1)`),
+      instantQuery(`count by (device_name) (ifOperStatus{${snmp}})`),
+      instantQuery(`sum by (device_name) (rate(ifInErrors{${snmp}}[5m]) + rate(ifOutErrors{${snmp}}[5m]))`),
+      instantQuery(`up{${snmp}}`),
       // Pilot VictoriaMetrics SNMP. The device_name matcher comes from site
       // config (switches.match, default ".*") — it was hardcoded to one lab's
       // naming scheme, which left this table empty everywhere else.
-      vmInstantQuery(`count by (device_name) (interface_status{device_name=~"${switchMatch}"} == 1)`),
-      vmInstantQuery(`count by (device_name) (interface_status{device_name=~"${switchMatch}"})`),
-      vmInstantQuery(`sum by (device_name) (rate(interface_errors_in_total{device_name=~"${switchMatch}"}[5m]) + rate(interface_errors_out_total{device_name=~"${switchMatch}"}[5m]))`)
+      vmInstantQuery(`count by (device_name) (interface_status{device_name=~"${switchMatch}",${siteFilter}} == 1)`),
+      vmInstantQuery(`count by (device_name) (interface_status{device_name=~"${switchMatch}",${siteFilter}})`),
+      vmInstantQuery(`sum by (device_name) (rate(interface_errors_in_total{device_name=~"${switchMatch}",${siteFilter}}[5m]) + rate(interface_errors_out_total{device_name=~"${switchMatch}",${siteFilter}}[5m]))`)
     ]);
 
     // Build WAN probes table
