@@ -252,7 +252,8 @@ try {
         if (kind === "dashboard" && local) {
           await page.goto(origin + "/canvas.html#terminal=fixture-sw");
           const device = page.getByRole("combobox", { name: "Testbed device" });
-          await device.waitFor();
+          // The native selector mounts before the asynchronous testbed response.
+          await device.locator('option[value="fixture-sw"]:checked').waitFor({state:"attached"});
           assert.equal(await device.inputValue(), "fixture-sw");
           assert.equal(new URL(page.url()).hash, "");
           assert.ok(!writes.some((path) => path.includes("/terminal/")));
