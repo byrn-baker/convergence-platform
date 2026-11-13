@@ -1,0 +1,13 @@
+Convergence HUD views
+
+The browser modules under modules/convergence and the six original convergence
+test suites were copied from ui/netclaw-visual in byrn-baker/netclaw-convergence
+at revision f182b8be2eb9588486d9d8e34a67dc3bd31631d6. They retain the source
+repository's Apache License, Version 2.0, included in LICENSE. The platform
+extraction generalized one HomeView.js comment to omit a deployment's hostnames.
+
+world-regions.js includes Natural Earth 1:110m public-domain country outlines.
+The original source attribution is preserved in that file.
+
+Package metadata, documentation and additional package tests were added during
+the Convergence platform extraction. Dependencies retain their own licenses.

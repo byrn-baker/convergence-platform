@@ -5,7 +5,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 node --test ui/convergence-api/test-host-status.cjs \
   ui/convergence-api/test-host-heartbeat-ui.cjs \
   ui/convergence-api/test-reliability.cjs
-node --test ui/netclaw-visual/test/convergence-host-heartbeat.mjs \
-  ui/netclaw-visual/test/convergence-security-explorer.mjs \
-  ui/netclaw-visual/test/convergence-security-history.mjs \
-  ui/netclaw-visual/test/convergence-incident-review.mjs
+node --test ui/convergence-hud/test/convergence-host-heartbeat.mjs \
+  ui/convergence-hud/test/convergence-security-explorer.mjs \
+  ui/convergence-hud/test/convergence-security-history.mjs \
+  ui/convergence-hud/test/convergence-incident-review.mjs
