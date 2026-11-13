@@ -133,12 +133,12 @@ function createGrantAuthority(pool) {
         `INSERT INTO reviewer_grants (token_digest, account_id, installation, issued_role, issued_sites,
           issued_revision, credential_revision, expires_at, idle_expires_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, statement_timestamp() + $8::interval,
-            statement_timestamp() + $9::interval) RETURNING expires_at`,
+            statement_timestamp() + $9::interval) RETURNING expires_at, idle_expires_at`,
         [digest(token), account.id, installation, account.role, account.sites,
           account.revision, account.credentialRevision, absoluteInterval, idleInterval]);
       return rows[0];
     });
-    return {token, expiresAt: row.expires_at, id: account.id, name: account.name, role: account.role, sites: account.sites};
+    return {token, expiresAt: row.expires_at, idleExpiresAt: row.idle_expires_at, id: account.id, name: account.name, role: account.role, sites: account.sites};
   }
 
   async function revoke(installation, token) {
@@ -167,7 +167,7 @@ function createGrantAuthority(pool) {
            WHERE token_digest = $1 AND installation = $2) FOR SHARE`, [tokenDigest, installation]);
       if (!account) throw unauthenticated();
       const {rows: [grant]} = await client.query(
-        `SELECT issued_role, issued_sites FROM reviewer_grants WHERE token_digest = $1
+        `SELECT issued_role, issued_sites, expires_at, idle_expires_at FROM reviewer_grants WHERE token_digest = $1
          AND account_id = $2 AND installation = $3 AND credential_revision = $4 FOR UPDATE`,
         [tokenDigest, account.id, installation, account.credential_revision]);
       if (!grant) throw unauthenticated();
@@ -182,7 +182,8 @@ function createGrantAuthority(pool) {
       if ((site !== null && !sites.includes(site)) || (write && !['admin', 'operator'].includes(role))) {
         throw denied(403, 'Operation not authorized');
       }
-      const result = await operation(client, {id: account.id, name: account.name, role, sites, installation});
+      const result = await operation(client, {id: account.id, name: account.name, role, sites, installation,
+        expiresAt: grant.expires_at, idleExpiresAt: grant.idle_expires_at});
       const renewed = write
         ? await client.query(`UPDATE reviewer_grants SET idle_expires_at = LEAST(expires_at,
               clock_timestamp() + $2::interval) WHERE token_digest = $1 AND ${expiry}`, [tokenDigest, idleInterval])

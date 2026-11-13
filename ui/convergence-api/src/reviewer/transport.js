@@ -101,7 +101,8 @@ function createReviewerService({tls, enrollments, authority}) {
       const site = match?.[1] ?? null;
       const input = write ? await readJSON(req, ['operationId', 'kind', 'reason']) : undefined;
       const data = await authority.withGrant(installation, token, {site, write: Boolean(write)}, (client, actor) => {
-        if (status) return {id: actor.id, name: actor.name, role: actor.role, sites: actor.sites};
+        if (status) return {id: actor.id, name: actor.name, role: actor.role, sites: actor.sites,
+          expiresAt: actor.expiresAt, idleExpiresAt: actor.idleExpiresAt};
         if (receipt) return readDispositionReceipt(client, actor, site, match[2], match[4]);
         if (write) return recordDisposition(client, actor, site, match[2], input);
         return readCase(client, actor, site, match[2]);

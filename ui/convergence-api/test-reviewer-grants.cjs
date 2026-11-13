@@ -67,7 +67,8 @@ test('PostgreSQL reviewer grant authority', {skip: !url && 'Set REVIEWER_TEST_DA
     await assert.rejects(first.withGrant('one', grant.token, write, getPrincipal), errorStatus(403));
     await assert.rejects(first.withGrant('one', grant.token, {site:'blue',write:false}, getPrincipal), errorStatus(403));
     const summary = await second.withGrant('one', grant.token, {site:null,write:false}, getPrincipal);
-    assert.deepEqual(summary, {id:'alice',name:'alice',role:'viewer',sites:['red'],installation:'one'});
+    assert.equal(+grant.idleExpiresAt, +stored.idle_expires_at);
+    assert.deepEqual(summary, {expiresAt:stored.expires_at,idleExpiresAt:stored.idle_expires_at,id:'alice',name:'alice',role:'viewer',sites:['red'],installation:'one'});
 
     const elevated = await second.issue('one', credentials);
     assert.equal((await first.withGrant('one', elevated.token, write, getPrincipal)).id, 'alice');
