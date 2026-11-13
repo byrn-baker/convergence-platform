@@ -5,7 +5,8 @@ GRANT USAGE ON SCHEMA :"reviewer_schema" TO :"reviewer_runtime", :"reviewer_prov
 SET search_path TO :"reviewer_schema", pg_catalog;
 GRANT SELECT ON reviewer_accounts TO :"reviewer_runtime";
 -- PostgreSQL requires an UPDATE privilege for FOR SHARE row locks.
-GRANT UPDATE (name) ON reviewer_accounts TO :"reviewer_runtime";
+-- The revision trigger preserves the old revision on a direct revision-only update.
+GRANT UPDATE (revision) ON reviewer_accounts TO :"reviewer_runtime";
 GRANT SELECT, INSERT, UPDATE, DELETE ON reviewer_grants, reviewer_login_buckets TO :"reviewer_runtime";
 GRANT SELECT, INSERT ON reviewer_case_dispositions TO :"reviewer_runtime";
 GRANT SELECT, UPDATE (security_disposition) ON events TO :"reviewer_runtime";
