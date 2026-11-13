@@ -27,3 +27,5 @@ The tests exercise synthetic API records and DOM interactions, including incorre
 ## Source and license
 
 The browser sources and original test suite were extracted from NetClaw's Convergence fork. Geographic outlines retain their Natural Earth public-domain attribution. [Source and license notices](NOTICE) · [Apache License 2.0](LICENSE)
+
+The package also includes a dedicated HTTPS investigation review entry point for individually authenticated reviewers. [Reviewer setup](reviewer/README.md)

@@ -5,13 +5,18 @@
   "description": "Convergence browser views for NetClaw HUD hosts",
   "license": "Apache-2.0",
   "type": "module",
-  "files": ["modules/convergence", "NOTICE"],
+  "files": [
+    "modules/convergence",
+    "NOTICE",
+    "reviewer"
+  ],
   "exports": {
     "./dashboard": "./modules/convergence/DashboardView.jsx",
     "./classic": "./modules/convergence/ui.js"
   },
   "scripts": {
-    "test": "node --test test/*.mjs"
+    "test": "node --test test/*.mjs",
+    "reviewer": "node reviewer/start.mjs"
   },
   "peerDependencies": {
     "react": "^18.3.1"
