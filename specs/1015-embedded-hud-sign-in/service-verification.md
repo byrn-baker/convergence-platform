@@ -13,3 +13,5 @@ A fresh PostgreSQL 16 fixture ran node --test test-*.cjs with REVIEWER_TEST_DATA
 No production listener, database migration, TLS files or human accounts were installed. The actual browser integration belongs to the companion downstream reviewer view.
 
 After browser integration, grant issuance and current-grant metadata expose database idle and absolute deadlines to the trusted HUD adapter. Polling preserves the same idle expiry. Browser sessions can discard private content at the effective deadline. A fresh PostgreSQL 16 full suite passed all 73 tests after this change.
+
+The checked-in permission grants were exercised with real non-owner PostgreSQL 16 roles. The runtime could issue, use and revoke a grant and commit a case disposition with audit. Attempts to elevate account roles or delete audit records failed. The provisioner could create and disable named reviewers; attempts to read password hashes or cases failed.

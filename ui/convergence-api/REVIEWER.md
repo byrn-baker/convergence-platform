@@ -10,6 +10,14 @@ Use PostgreSQL 16 and the existing Convergence event schema. Run the following f
 node reviewer-service.js migrate
 ```
 
+After creating the two restricted database roles through your normal PG administration process, apply the checked-in grants from a schema-owner connection:
+
+```sh
+psql -X -v ON_ERROR_STOP=1 -v reviewer_schema=public \
+  -v reviewer_runtime=convergence_reviewer -v reviewer_provisioner=convergence_account_admin \
+  -f src/reviewer/permissions.sql
+```
+
 Keep the schema owner and account administrator credentials separate from the runtime role. The migrator needs DDL privileges. The reviewer runtime needs SELECT on reviewer_accounts; SELECT, INSERT, UPDATE and DELETE on reviewer_grants and reviewer_login_buckets; SELECT and INSERT on reviewer_case_dispositions; and SELECT plus UPDATE(security_disposition) on events. PostgreSQL row locking with SELECT FOR SHARE also requires an UPDATE privilege on the locked table. Grant UPDATE on an innocuous account column, e.g. name, to the trusted reviewer service role for account locks. Existing event-history triggers require access to event_history and its sequence for the event update. The runtime must have no DDL or direct account-administration privileges beyond the necessary lock privilege. Grant the account CLI its own restricted provisioning role. Audit immutability is enforced for ordinary DML; database owners and infrastructure administrators remain trusted.
 
 ## Provision reviewers
