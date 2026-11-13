@@ -332,3 +332,15 @@ test('unsent draft returns after switching tabs only for the same unchanged auth
   assert.equal(api.byId('detail').hidden, true);
   assert.equal(api.byId('disposition').elements.reason.value, '');
 });
+
+test('storage denial preserves case reads and blocks new writes without a durable receipt pointer', async t => {
+  const api = endpoint(t, path => response(200, path === '/review/session' ? {csrf:'s', user:identity} : caseData),
+    window => Object.defineProperty(window, 'sessionStorage', {get() { throw Error('unavailable'); }}));
+  await wait(); api.open(); await wait();
+  assert.equal(api.byId('detail').hidden, false);
+  assert.match(api.byId('facts').textContent, /private investigation/);
+  assert.equal(api.byId('disposition').querySelector('button').disabled, true);
+  assert.match(api.byId('status').textContent, /cannot access pending receipts/);
+  api.submit('disposition'); await wait();
+  assert.equal(api.calls.filter(c => c.options.method === 'POST').length, 0);
+});

@@ -53,7 +53,7 @@ export function startReviewer(document, browser = document.defaultView) {
   const node = (tag, value) => { const element = document.createElement(tag); element.textContent = value; return element; };
   let session = null, generation = 0, sessionRequest = 0, authBusy = false;
   let current = null, currentKey = null, operation = null, expiryTimer = null, expiresAt = 0;
-  let logoutNonce = null, preparing = false, suspendedDraft = null;
+  let logoutNonce = null, preparing = false, suspendedDraft = null, recoveryUnavailable = false;
   const pointers = receiptPointers(browser);
   const changes = typeof browser.BroadcastChannel === 'function' ? new browser.BroadcastChannel('review-session') : null;
   if (changes) changes.onmessage = () => { if (!logoutNonce) { ++sessionRequest; purgeSession(); refreshSession(); } };
@@ -61,7 +61,7 @@ export function startReviewer(document, browser = document.defaultView) {
   function purgeCase() {
     generation++;
     current = currentKey = operation = null;
-    preparing = false;
+    preparing = recoveryUnavailable = false;
     form.reset();
     for (const id of ['case-title', 'case-status', 'operation-note', 'operation-id', 'status']) text(id, '');
     for (const id of ['facts', 'history']) byId(id).replaceChildren();
@@ -231,14 +231,19 @@ export function startReviewer(document, browser = document.defaultView) {
       if (!entry || entry.id !== id || entry.site_id !== site.value || !Array.isArray(entry.review_history)) {
         throw Error('Invalid case response');
       }
-      const key = await pointers.scope(session.user.id, entry.site_id, entry.id);
+      let key, pending, unavailable = false;
+      try {
+        key = await pointers.scope(session.user.id, entry.site_id, entry.id);
+        pending = pointers.get(key);
+      } catch { unavailable = true; }
       if (seq !== generation) return;
+      recoveryUnavailable = unavailable;
       currentKey = key;
-      const pending = pointers.get(key);
       const recover = pending && !operation;
       if (recover) operation = {...pending, state: 'unknown'};
       render(entry);
-      text('status', '');
+      text('status', unavailable && session.user.role !== 'viewer' ?
+        'Recording is disabled because this tab cannot access pending receipts.' : '');
       if (recover) await submitOperation(true);
     } catch (error) {
       if (seq !== generation) return;
@@ -251,7 +256,7 @@ export function startReviewer(document, browser = document.defaultView) {
 
   function updateOperation() {
     const reenter = operation?.state === 'unknown' && operation.retry && !operation.input;
-    for (const field of form.elements) field.disabled = preparing || Boolean(operation && operation.state !== 'saved' && !reenter);
+    for (const field of form.elements) field.disabled = recoveryUnavailable || preparing || Boolean(operation && operation.state !== 'saved' && !reenter);
     form.querySelector('button').textContent = reenter ? 'Retry original disposition' : 'Save disposition';
     visible('operation', Boolean(operation));
     visible('check-receipt', operation?.state === 'unknown');
@@ -381,7 +386,7 @@ export function startReviewer(document, browser = document.defaultView) {
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const reenter = operation?.state === 'unknown' && operation.retry && !operation.input;
-    if (!current || !currentKey || preparing || (operation && operation.state !== 'saved' && !reenter) || session?.user?.role === 'viewer') return;
+    if (!current || !currentKey || recoveryUnavailable || preparing || (operation && operation.state !== 'saved' && !reenter) || session?.user?.role === 'viewer') return;
     const reason = form.elements.reason.value.trim(), kind = form.elements.kind.value;
     if (reason.length < 10 || reason.length > 4000) return text('status', 'Enter 10 to 4000 characters of evidence.');
     const seq = generation;
