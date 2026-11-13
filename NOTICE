@@ -11,3 +11,8 @@ the Apache License, Version 2.0. See ui/convergence-hud/NOTICE and LICENSE
 in that package.
 
 Dependencies and container base images keep their own licenses.
+
+The NetClaw HUD host patches and fork-derived HUD files under
+integrations/netclaw/hud retain the Apache License, Version 2.0.
+See ui/convergence-hud/LICENSE. The host baseline is automateyournetwork/netclaw,
+with adaptations from byrn-baker/netclaw-convergence and this staging integration.

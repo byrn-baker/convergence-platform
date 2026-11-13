@@ -2,6 +2,7 @@
  * 080-convergence — Home product view (HUD-styled).
  * Live data via HUD proxy /api/home/* → convergence-api / Network Guardian (dual-run).
  */
+import {reviewerLink} from './ReviewerLink.js';
 import {caseIPContext, ipContextHTML} from './IPContext.js';
 import {caseCaptureContext, observedVlanHTML, captureContextHTML} from './CaptureContext.js';
 import {jevReviewHTML} from './JevReview.js';
@@ -55,7 +56,7 @@ function writeStoredSite(siteId) {
   }
 }
 
-async function homeFetch(path, options = {}) {
+async function homeFetch(path, options = {}, request = fetch) {
   const method = (options.method || 'GET').toUpperCase();
   const headers = { Accept: 'application/json', ...(options.headers || {}) };
   let body;
@@ -63,7 +64,7 @@ async function homeFetch(path, options = {}) {
     headers['Content-Type'] = 'application/json';
     body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
   }
-  const res = await fetch(`/api/home${path}`, {
+  const res = await request(`/api/home${path}`, {
     method,
     headers,
     body,
@@ -158,6 +159,8 @@ function consoleAction(name, terminal) {
 export class HomeView {
   constructor(rootEl, options = {}) {
     this.options = options;
+    this.readOnly = Boolean(options.hostAccess);
+    this.authorityGeneration = 0;
     this.disposed = false;
     this.requests = new Set();
     this.notesDrafts = new Map();
@@ -207,10 +210,12 @@ export class HomeView {
 
   async fetch(path, options = {}) {
     if (this.disposed) throw new Error('Convergence workspace closed');
+    const generation = this.authorityGeneration;
     const controller = new AbortController();
     this.requests.add(controller);
     try {
-      const data = await homeFetch(path, { ...options, signal: controller.signal });
+      const data = await homeFetch(path, { ...options, signal: controller.signal }, this.options?.hostAccess?.request);
+      if (this.readOnly && generation !== this.authorityGeneration) throw Error('Owner session changed.');
       // VM observations set their read time only after the requesting site is checked.
       if ((!options.method || options.method === 'GET') && !data?.unavailable && !path.startsWith('/security/vms?')) {
         const key = path.startsWith('/events/escalated') ? 'escalated' : path.slice(1).split(/[/?]/)[0];
@@ -218,11 +223,23 @@ export class HomeView {
       }
       return data;
     }
+    catch (error) {
+      if (this.readOnly && [401, 403].includes(error.status) && generation === this.authorityGeneration) {
+        this.clearOwnerData({...this.cache.status, configured: false});
+        this.renderSubview();
+      }
+      throw error;
+    }
     finally { this.requests.delete(controller); }
   }
 
   destroy() {
     this.disposed = true;
+    if (this.onOwnerVisibility) {
+      document.removeEventListener('visibilitychange', this.onOwnerVisibility);
+      window.removeEventListener('pagehide', this.onOwnerHidden);
+      window.removeEventListener('pageshow', this.onOwnerReturn);
+    }
     this.requests.forEach(controller => controller.abort());
     this.requests.clear();
     this.chrome?.remove();
@@ -236,6 +253,17 @@ export class HomeView {
     this.element.innerHTML = this.templateShell();
     this.root.innerHTML = '';
     this.root.appendChild(this.element);
+    if (this.readOnly) {
+      this.onOwnerHidden = () => {
+        this.clearOwnerData({...this.cache.status, configured:false});
+        this.renderSubview();
+      };
+      this.onOwnerReturn = () => this.refresh();
+      this.onOwnerVisibility = () => document.hidden ? this.onOwnerHidden() : this.onOwnerReturn();
+      document.addEventListener('visibilitychange', this.onOwnerVisibility);
+      window.addEventListener('pagehide', this.onOwnerHidden);
+      window.addEventListener('pageshow', this.onOwnerReturn);
+    }
     this.mountChrome();
     this.bind();
     this.renderSubview();
@@ -301,7 +329,7 @@ export class HomeView {
   templateToolbar() {
     const buttons = SUBVIEWS.map(
       (s) =>
-        `<button type="button" aria-pressed="${s.id === this.subview}" class="home-sub-btn${s.id === this.subview ? ' active' : ''}" data-home-sub="${s.id}">${s.label}</button>`,
+        `<button type="button" ${this.readOnly && s.id === 'models' ? 'hidden' : ''} aria-pressed="${s.id === this.subview}" class="home-sub-btn${s.id === this.subview ? ' active' : ''}" data-home-sub="${s.id}">${s.label}</button>`,
     ).join('');
     return `
       <div class="home-toolbar-left">
@@ -718,15 +746,20 @@ export class HomeView {
    * degrade to the old single-site behaviour, not blank the view.
    */
   async discoverSites() {
-    if (this.sites.length) return;
+    if (this.sites.length && !this.readOnly) return;
     let sites = [];
     try {
       const res = await this.fetch('/sites');
       sites = Array.isArray(res?.sites) ? res.sites : [];
-    } catch {
-      return; // keep this.site as-is
+    } catch (error) {
+      if (this.readOnly) throw error;
+      return;
     }
-    if (!sites.length) return;
+    if (!sites.length) {
+      if (this.readOnly) throw Error('No authorized site available.');
+      return;
+    }
+    if (this.readOnly && this.sites.length && this.site !== sites[0].id) this.clearOwnerData(this.cache.status);
 
     this.sites = sites;
     const ids = sites.map((s) => s.id);
@@ -734,7 +767,7 @@ export class HomeView {
       // Stored or default id is not on offer (renamed site, revoked access, or a
       // deployment that never used "home") — take the first authorised one.
       this.site = ids[0];
-      writeStoredSite(this.site);
+      if (!this.readOnly) writeStoredSite(this.site);
     }
   }
 
@@ -796,11 +829,13 @@ export class HomeView {
       const status = await this.fetch('/status').catch(() => ({ configured: false }));
       this.cache.status = status;
 
+      if (this.readOnly && (document.hidden || this.disposed)) return;
       if (!status.configured) {
-        this.cache.security = {hostTelemetry: {status: 'unavailable', agents: []}};
+        if (this.readOnly) this.clearOwnerData(status);
+        if (!this.readOnly) this.cache.security = {hostTelemetry: {status: 'unavailable', agents: []}};
         this.lastError = {
           kind: 'config',
-          message: 'Convergence API not configured. Set CONVERGENCE_API_URL + CONVERGENCE_API_TOKEN (aliases: HOME_API_* / NETWORK_GUARDIAN_*) in ~/.openclaw/.env',
+          message: this.readOnly ? 'Site telemetry requires a local owner session. Sign in to the reviewer to work on cases.' : 'Convergence API is unavailable.',
         };
         this.syncTopbarMetrics(null);
         return;
@@ -857,7 +892,7 @@ export class HomeView {
         // endpoints (not convergence-api): the pyATS testbed inventory, and
         // whether the terminal is enabled at all. Failures are non-fatal — the
         // Console action just doesn't render.
-        this.cache.terminal = await loadTerminalTargets().catch(() => null);
+        this.cache.terminal = this.readOnly ? null : await loadTerminalTargets().catch(() => null);
       }
       if (this.subview === 'isp' || force) {
         this.cache.wanCases = await this.fetch(`/events?site=${this.site}&type=wan&limit=50`);
@@ -879,10 +914,11 @@ export class HomeView {
           this.fetch(`/events?site=${this.site}&status=escalated&limit=20`),
         );
       }
-      if (this.subview === 'models' || force) {
+      if (this.subview === 'models' || (!this.readOnly && force)) {
         await this.refreshModels(false);
       }
 
+      if (this.readOnly && !this.cache.status?.configured) return;
       this.lastSuccess = new Date().toISOString();
       this.syncTopbarMetrics(this.cache.health);
     } catch (err) {
@@ -931,6 +967,10 @@ export class HomeView {
 
   renderSubview() {
     if (this.disposed) return;
+    if (this.readOnly) {
+      const models = this.chrome?.querySelector('[data-home-sub="models"]');
+      if (models) models.hidden = !this.cache.status?.configured;
+    }
     this.options.onUpdate?.(this);
     const body = this.element?.querySelector('#home-panel-body');
     if (!body) return;
@@ -963,20 +1003,38 @@ export class HomeView {
       </div>`;
   }
 
+  clearOwnerData(status) {
+    this.authorityGeneration++;
+    this.requests.forEach(controller => controller.abort());
+    this.cache = {status};
+    this.sites = [];
+    this.site = '';
+    this.selectedEventId = this.securitySelectedId = this.vmSecuritySelected = null;
+    this.lastSuccess = this.triageFlash = this.securityHistoryWindow = null;
+    this.modelsDraft = this.modelsFlash = null;
+    this.readTimes = {};
+    this.sourceErrors = {};
+    for (const collection of [this.notesDrafts, this.securityDrafts, this.incidentErrors, this.jevErrors,
+      this.ispReports, this.ispProviders, this.diarySelected]) collection.clear();
+    this.syncTopbarMetrics(null);
+  }
+
   htmlBodyForSubview() {
+    const origin = this.cache.status?.reviewerOrigin;
+    if (this.readOnly && !this.cache.status?.configured) return reviewerLink(origin);
     const map = {
       overview: () => this.htmlOverview(),
       wifi: () => this.htmlWifi(),
       devices: () => this.htmlDevices(),
       security: () => this.htmlSecurity(),
       'vm-security': () => vmSecurityHTML(this.cache.vmSecurity, {site:this.site, search:this.vmSecuritySearch, filter:this.vmSecurityFilter, page:this.vmSecurityPage, selected:this.vmSecuritySelected, loading:this.loading, error:this.sourceErrors['vm-security'] || this.lastError?.message}),
-      isp: () => ispReportsHTML(this.cache.wanCases, this.cache.ispCatalog, this.ispProviders.get(this.site), this.ispReports, this.incidentPending, this.incidentErrors, this.site),
+      isp: () => this.readOnly ? this.htmlWanCases() : ispReportsHTML(this.cache.wanCases, this.cache.ispCatalog, this.ispProviders.get(this.site), this.ispReports, this.incidentPending, this.incidentErrors, this.site),
       diary: () => this.htmlDiary(),
       flows: () => flowHTML(this.cache.flows, {range:this.flowRange, exporter:this.flowExporter, canInvestigate:Boolean(this.options?.investigate)}),
       triage: () => this.htmlTriage(),
       models: () => this.htmlModels(),
     };
-    return (map[this.subview] || map.overview)();
+    return (this.readOnly ? reviewerLink(origin) : '') + (map[this.subview] || map.overview)();
   }
 
   htmlSecurity() {
@@ -989,7 +1047,7 @@ export class HomeView {
       <p>Firewall telemetry: <strong>${esc(data.status)}</strong> · observation window ${esc(data.observedWindow || 'unknown')}</p>
       ${data.reason ? `<p class="home-muted">${esc(data.reason)}</p>` : ''}
       <p>IDS feed: <strong>${esc(ids.status || 'unknown')}</strong> · ${esc(ids.reason || 'Coverage needs verification')}</p>
-      ${embedded?'':securityQueueHTML(this.cache.securityCases, this.securityFilter, this.securityDrafts, this.incidentPending, this.incidentErrors, this.site, {pending: this.jevPending, errors: this.jevErrors, canInvestigate: Boolean(this.options?.investigate)})}
+      ${embedded?'':securityQueueHTML(this.cache.securityCases, this.securityFilter, this.securityDrafts, this.incidentPending, this.incidentErrors, this.site, {readOnly:this.readOnly, reviewerOrigin:this.cache.status?.reviewerOrigin, pending: this.jevPending, errors: this.jevErrors, canInvestigate: Boolean(this.options?.investigate)})}
       <div class="home-kpi-grid">
         <div class="home-kpi"><div class="home-kpi-label">Blocked connections · 1 hour</div><div class="home-kpi-value">${esc(data.blockedConnections?.lastHour ?? 'Unknown')}</div></div>
         <div class="home-kpi"><div class="home-kpi-label">Blocked connections · 24 hours</div><div class="home-kpi-value">${esc(data.blockedConnections?.last24h ?? 'Unknown')}</div></div>
@@ -1031,8 +1089,16 @@ export class HomeView {
       </tbody></table></div></div>${embedded?'</details>':''}`;
   }
 
+  htmlWanCases() {
+    const cases = this.cache.wanCases;
+    if (!Array.isArray(cases?.events)) return '<p>WAN case history unavailable.</p>';
+    return '<h2>Internet incidents</h2>' + (cases.events.map(e =>
+      `<article><h3>${esc(e.alert_name)}</h3><p>${esc(e.message)}</p>${reviewerLink(this.cache.status?.reviewerOrigin, this.site, e.id)}</article>`
+    ).join('') || '<p>No recorded WAN incidents in this view.</p>');
+  }
+
   securityState() {
-    return {site:this.site,range:this.securityRange,group:this.securityGroup,filter:this.securityFilter,search:this.securitySearch,
+    return {readOnly:this.readOnly, reviewerOrigin:this.cache.status?.reviewerOrigin, site:this.site,range:this.securityRange,group:this.securityGroup,filter:this.securityFilter,search:this.securitySearch,
       history:this.cache.securityHistory,historyWindow:this.securityHistoryWindow,historyCountry:this.securityHistoryCountry,
       vlan:this.securityVlan,network:this.securityNetwork,country:this.securityCountry,selectedId:this.securitySelectedId,
       drafts:this.securityDrafts,incidentPending:this.incidentPending,incidentErrors:this.incidentErrors,
@@ -1061,9 +1127,14 @@ export class HomeView {
       `/api/home${securityCasesPath(this.site,this.securityRange,this.securityHistoryWindow,this.securityHistoryCountry)}`,this.readTimes.securityCases);
   }
 
+  fetchModels(options) {
+    return this.readOnly ? this.options.hostAccess.models(options) : fetch('/api/models', options);
+  }
+
   async refreshModels(render = true) {
+    if (this.readOnly && !this.cache.status?.configured) return;
     try {
-      const res = await fetch('/api/models', {
+      const res = await this.fetchModels({
         headers: { Accept: 'application/json' },
         signal: AbortSignal.timeout(10000),
       });
@@ -1084,7 +1155,7 @@ export class HomeView {
   }
 
   async handleModelsApply(isPreset, presetName) {
-    if (this.modelsBusy) return;
+    if (this.readOnly || this.modelsBusy) return;
     this.modelsBusy = true;
     this.modelsFlash = { kind: 'ok', message: isPreset ? `Applying preset ${presetName}…` : 'Applying models…' };
     this.renderSubview();
@@ -1101,7 +1172,7 @@ export class HomeView {
               '',
             restart: true,
           };
-      const res = await fetch('/api/models', {
+      const res = await this.fetchModels({
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(body),
@@ -1135,6 +1206,14 @@ export class HomeView {
     const err = m?.error;
     const sot = m?.sot || {};
     const live = m?.live || {};
+    if (this.readOnly) {
+      if (err) return this.htmlBanner('down', err);
+      return `<h2>Models</h2><dl>
+        <dt>Default model</dt><dd>${esc(live.defaultsPrimary || sot.brain || 'Unavailable')}</dd>
+        <dt>Alert agent</dt><dd>${esc(live.alertAgent || sot.alert || 'Unavailable')}</dd>
+        <dt>Alert fallback</dt><dd>${esc(sot.fallback || 'None configured')}</dd>
+      </dl><p>Select a model for your conversation in NetClaw Chat.</p>`;
+    }
     const draft = this.modelsDraft || {
       brain: sot.brain || '',
       alert: sot.alert || '',
@@ -1367,6 +1446,7 @@ export class HomeView {
 
   htmlDevices() {
     const d = this.cache.devices;
+    if (d?.unavailable) return this.htmlBanner('down', d.reason || 'Site-scoped inventory is unavailable.');
     if (!d) {
       return `<div class="home-panel-header"><div><p class="eyebrow">Inventory</p><h2>Devices</h2></div></div>
         <p class="home-muted">No device data loaded. Click Refresh.</p>`;
@@ -1552,7 +1632,7 @@ export class HomeView {
 
   htmlDiary() {
     return diaryHTML(this.cache.events, {mode:this.diaryMode, range:this.diaryRange, search:this.diarySearch,
-      selected:this.diarySelected, site:this.site, canInvestigate:Boolean(this.options?.investigate),
+      selected:this.diarySelected, site:this.site, readOnly:this.readOnly, reviewerOrigin:this.cache.status?.reviewerOrigin, canInvestigate:Boolean(this.options?.investigate),
       jevPending:this.jevPending, jevErrors:this.jevErrors, flash:this.diaryFlash});
   }
 
@@ -1628,7 +1708,7 @@ export class HomeView {
           ${captureContextHTML(caseCaptureContext(selected))}
           ${assessmentHTML(selected)}
           ${ipContextHTML(caseIPContext(selected))}
-          ${jevReviewHTML(selected, this.jevPending?.has(`${this.site}:${selected.id}`), this.jevErrors?.get(`${this.site}:${selected.id}`))}
+          ${jevReviewHTML(selected, this.jevPending?.has(`${this.site}:${selected.id}`), this.jevErrors?.get(`${this.site}:${selected.id}`), !this.readOnly)}
           ${ragBlock}
           ${selected.expert_feedback ? `
             <div class="home-triage-field">
@@ -1637,7 +1717,7 @@ export class HomeView {
                 ${selected.feedback_quality ? ` <span class="home-muted">(${esc(selected.feedback_quality)})</span>` : ''}
               </p>
             </div>` : ''}
-          <label class="home-triage-field" for="triage-notes-${esc(id)}">
+          ${this.readOnly ? reviewerLink(this.cache.status?.reviewerOrigin, this.site, selected.id) : `<label class="home-triage-field" for="triage-notes-${esc(id)}">
             <span class="home-triage-label">Your notes (optional)</span>
             <textarea id="triage-notes-${esc(id)}" class="home-triage-textarea" data-event-id="${esc(id)}" rows="3"
               placeholder="Context for the investigator or diary…">${esc(this.notesDrafts.get(String(id)) || '')}</textarea>
@@ -1657,7 +1737,7 @@ export class HomeView {
           <p class="home-muted home-triage-hint">
             <strong>Need More</strong> reopens the case as <code>investigating</code> and re-triggers the host
             investigation pipe when alert-receiver is reachable. Other buttons write operator feedback via PATCH.
-          </p>
+          </p>`}
         </div>`;
     }
 

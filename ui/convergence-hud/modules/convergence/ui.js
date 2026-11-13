@@ -87,6 +87,7 @@ function ensureRoot() {
 }
 
 export async function registerUI(ctx) {
+  if (ctx.convergenceAccess && !await ctx.convergenceAccess.available()) return;
   const { state } = ctx;
 
   if (!ensureTabButton()) {
@@ -98,7 +99,7 @@ export async function registerUI(ctx) {
   ensureTopbarSlot();
 
   if (!state.homeView) {
-    state.homeView = new HomeView(root);
+    state.homeView = new HomeView(root, {hostAccess: ctx.convergenceAccess});
     state.homeView.mount();
   }
 

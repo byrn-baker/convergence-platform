@@ -1,0 +1,23 @@
+diff --git a/src/hud-server/chat-models.js b/src/hud-server/chat-models.js
+index 6ace5281362a3224bbd3b593bac22051308663fc..ddaa7a4448f23eef6efaaac7f865b8fc40bcd058 100644
+--- a/src/hud-server/chat-models.js
++++ b/src/hud-server/chat-models.js
+@@ -8,10 +8,16 @@ export function chatModelCatalog(config, discovered = []) {
+     || config?.agents?.list?.find(a => a.id === agentId) || {};
+   const model = agent.model ?? defaults.model;
+   const primary = typeof model === 'string' ? model : model?.primary;
+-  const refs = [...new Set([primary, ...Object.keys(defaults.models || {}), ...Object.keys(agent.models || {}),
++  // FORK-LOCAL: wildcard policy entries are selectors, never executable model ids.
++  const configured = [...Object.keys(defaults.models || {}), ...Object.keys(agent.models || {})].flatMap(ref => {
++    if (!ref.endsWith('/*')) return [ref];
++    const provider = ref.slice(0, -2);
++    return (config.models?.providers?.[provider]?.models || []).map(model => `${provider}/${model.id}`);
++  });
++  const refs = [...new Set([primary, ...configured,
+     ...(discovered || []).filter(m => m.available === true && typeof m.provider === 'string' && typeof m.id === 'string' && /^[a-zA-Z0-9_.-]+$/.test(m.provider) && /^[a-zA-Z0-9_.:/-]+$/.test(m.id)).map(m => `${m.provider}/${m.id}`),
+     ...(Array.isArray(model?.fallbacks) ? model.fallbacks : [])])]
+-    .filter(ref => typeof ref === 'string' && ref.length <= 512 && !/[\r\n\0]/.test(ref));
++    .filter(ref => typeof ref === 'string' && ref.length <= 512 && !/[\r\n\0*$]/.test(ref));
+   const entries = refs.map(ref => ({
+     id: createHash('sha256').update(ref).digest('hex').slice(0, 24),
+     label: ref.split('@')[0], ref,

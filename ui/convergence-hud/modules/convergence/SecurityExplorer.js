@@ -1,6 +1,7 @@
 import {caseIPContext, ipContextHTML} from './IPContext.js';
 import {caseCaptureContext, captureContextHTML, observedVlanHTML} from './CaptureContext.js';
 import {assessmentHTML} from './IncidentReview.js';
+import {reviewerLink} from './ReviewerLink.js';
 import {jevReviewHTML} from './JevReview.js';
 import {diaryGroup, endpoints} from './DiaryExplorer.js';
 import {securityHistoryHTML} from './SecurityHistory.js';
@@ -99,9 +100,10 @@ function detailHTML(model,state){
     <div class="security-endpoint-path"><div><span>Source</span>${endpoint(e,'source')}</div><span class="security-direction" aria-label="to">→</span><div><span>Destination</span>${endpoint(e,'destination')}</div></div>
     <dl class="security-facts"><div><dt>Transport / ports</dt><dd>${esc(traffic.protocol || 'Unknown')} · ${esc(traffic.source_port ?? '?')} → ${esc(traffic.destination_port ?? '?')}</dd></div><div><dt>Observed VLAN</dt><dd>${observedVlanHTML(capture)}</dd></div><div><dt>Rule priority</dt><dd>${esc(e.security_assessment?.rule_priority ?? 'Not recorded')}</dd></div><div><dt>Firewall verdict</dt><dd>Not established by this IDS case</dd></div></dl>
     <section class="security-evidence"><h4>Matched signature</h4><p>${esc(traffic.signature || e.security_assessment?.signature || 'Not recorded')}</p><small class="home-muted">Signature ID: ${esc(traffic.signature_id ?? 'Not recorded')}</small></section>
-    ${assessmentHTML(e,{form:true,draft,busy:state.incidentPending?.has(key),error:state.incidentErrors?.get(key)})}
+    ${assessmentHTML(e,{form:!state.readOnly,draft,busy:state.incidentPending?.has(key),error:state.incidentErrors?.get(key)})}
     ${e.root_cause || e.investigation_notes?`<details class="security-investigation-notes"><summary>Stored investigation findings</summary>${e.root_cause?`<p>${esc(e.root_cause)}</p>`:''}${e.investigation_notes?`<pre>${esc(e.investigation_notes)}</pre>`:''}<p class="home-muted">Stored findings require review against their cited evidence.</p></details>`:''}
-    ${jevReviewHTML(e,state.jevPending?.has(key),state.jevErrors?.get(key))}
+    ${jevReviewHTML(e,state.jevPending?.has(key),state.jevErrors?.get(key),!state.readOnly)}
+    ${state.readOnly ? reviewerLink(state.reviewerOrigin,state.site,e.id) : ''}
     ${captureContextHTML(capture)}${ipContextHTML(caseIPContext(e))}
     <details><summary>Case reference and observation</summary><code>${esc(e.id)}</code><p>${esc(e.message)}</p></details>
   </aside>`;

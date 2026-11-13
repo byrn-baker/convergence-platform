@@ -1,0 +1,23 @@
+diff --git a/env-map.js b/env-map.js
+index 40f9b64e0cf25f7eab3656034db1945f9f4bb3ea..dba10177d08af8e7bea0a2cec916bfbadceed6ff 100644
+--- a/env-map.js
++++ b/env-map.js
+@@ -13970,6 +13970,18 @@ export const COMPONENT_SETTINGS = {
+       ]
+     }
+   ],
++  "convergence-core": [],
++  "convergence-metrics": [],
++  "convergence-unifi": [],
++  "convergence-pfsense": [],
++  "convergence-sot-nautobot": [],
++  "convergence-sot-netbox": [],
++  "convergence-device-snmp": [],
++  "convergence-device-syslog": [],
++  "convergence-agent-metrics": [],
++  "convergence-agent-logs": [],
++  "convergence-grafana-dashboards": [],
++  "visual-hud": [],
+   "netconverter": [
+     {
+       "key": "NETCONVERTER_MODE",

@@ -58,6 +58,7 @@
 
 #app.home-mode #sidebar-left,
 #app.home-mode #sidebar-right,
+body:has(#app.home-mode) > #layout-controls,
 #app.home-mode .panel-reopen {
   display: none !important;
 }
@@ -1056,3 +1057,10 @@
   font-family: inherit;
 }
 .home-site-select:focus { outline: none; border-color: #3b5bdb; }
+
+/* The Classic toolbar can wrap after the module installs its site controls. */
+@media (min-width: 1101px) {
+  #app .sidebar {
+    top: calc(18px + var(--topbar-height, 88px) + 12px);
+  }
+}
