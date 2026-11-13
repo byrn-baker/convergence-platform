@@ -27,7 +27,7 @@ node reviewer-accounts.js disable alice
 
 Use the password subcommand instead of create to rotate an existing account's password through stdin. A password change or disablement invalidates existing grants. Every new action checks the issued grant ceiling and current account permissions. A viewer can only read authorized sites. Admin accounts on this interface also require explicit sites. Dispositions store the acting user's stable ID and display name as recorded at the time.
 
-To use the same accounts for the standalone web dashboard, set CONVERGENCE_ACCOUNT_SOURCE=postgres on the standalone API and configure its JWT_SECRET. That mode rejects pre-existing environment-directory JWTs and rechecks the database account revision on each authenticated user request. Rotate a user's credentials or change their authorization to invalidate those web sessions. Legacy deployments default to the USERS environment directory. Static machine API keys retain their existing contracts and cannot sign in to the reviewer service.
+To use the same accounts for the standalone web dashboard, set CONVERGENCE_ACCOUNT_SOURCE=postgres on the standalone API and configure its JWT_SECRET with at least 32 bytes from a securely generated secret. That mode rejects pre-existing environment-directory JWTs and rechecks the database account revision on each authenticated user request. Rotate a user's credentials or change their authorization to invalidate those web sessions. Legacy deployments default to the USERS environment directory. Static machine API keys retain their existing contracts and cannot sign in to the reviewer service.
 
 ## Run the private service
 

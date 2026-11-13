@@ -84,7 +84,7 @@ test('two mTLS reviewer services authorize and audit one durable case dispositio
   try {
     db.pool = first;
     process.env.CONVERGENCE_ACCOUNT_SOURCE = 'postgres';
-    for (const bad of [undefined, 'dev-secret']) {
+    for (const bad of [undefined, 'dev-secret', 'short', 'change-me-to-a-strong-random-string', 'change-me-convergence-api-jwt', '<generate with: openssl rand -base64 32>']) {
       restore('JWT_SECRET', bad);
       assert.throws(() => require('./src/routes/auth'), /explicit JWT/);
     }

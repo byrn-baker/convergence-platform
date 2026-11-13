@@ -5,7 +5,8 @@ const {createPasswordVerifier} = require('./password-verification');
 function webAccounts(database, environment) {
   const source = environment.CONVERGENCE_ACCOUNT_SOURCE || 'environment';
   if (source === 'postgres') {
-    if (!environment.JWT_SECRET?.trim() || environment.JWT_SECRET.trim() === 'dev-secret') {
+    const secret = environment.JWT_SECRET?.trim();
+    if (!secret || Buffer.byteLength(secret) < 32 || /^(?:dev-secret$|change-me|<generate with:)/i.test(secret)) {
       throw new Error('The PostgreSQL account source requires an explicit JWT signing secret');
     }
     if (!database) throw new Error('PostgreSQL account source requires a database');
