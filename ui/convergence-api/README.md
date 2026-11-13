@@ -55,3 +55,7 @@ bash tests/convergence-host-status/run-tests.sh
 ## Spec
 
 See `specs/080-convergence/`.
+
+## Embedded case review
+
+The private mTLS reviewer service supports individually authenticated case review, revocable grants and transactional disposition history. [Setup and API](REVIEWER.md)

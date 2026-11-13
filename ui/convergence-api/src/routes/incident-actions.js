@@ -1,7 +1,7 @@
 'use strict';
 const router = require('express').Router();
 const {query, DbUnavailableError} = require('../db');
-const {securityAssessment, DISPOSITIONS} = require('../lib/securityAssessment');
+const {securityAssessment, validDisposition, securityDisposition} = require('../lib/securityAssessment');
 const {buildIspReport} = require('../lib/ispReport');
 
 router.use((req, res, next) => {
@@ -19,14 +19,14 @@ function failure(res, error) {
 
 router.post('/:id/security-disposition', async (req, res) => {
   const {kind, reason} = req.body || {};
-  if (!DISPOSITIONS.includes(kind) || typeof reason !== 'string' || reason.trim().length < 10 || reason.length > 4000) {
+  if (!validDisposition(kind, reason)) {
     return res.status(400).json({error: 'Choose a review outcome and provide a reason between 10 and 4000 characters'});
   }
   try {
     const event = await readCase(req);
     if (!event) return res.status(404).json({error: 'Event not found'});
     if (!securityAssessment(event)) return res.status(400).json({error: 'This review applies to IDS cases'});
-    const disposition = {version: 1, kind, reason: reason.trim(), reviewed_at: new Date().toISOString(), reviewed_by: req.user.sub};
+    const disposition = securityDisposition(kind, reason, req.user.sub, new Date().toISOString());
     await query('UPDATE events SET security_disposition = $1 WHERE id = $2 AND site_id = $3', [disposition, event.id, req.site]);
     res.json({id: event.id, security_disposition: disposition, security_assessment: securityAssessment({...event, security_disposition: disposition})});
   } catch (error) { failure(res, error); }

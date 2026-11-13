@@ -43,4 +43,13 @@ function securityAssessment(event) {
     basis: 'Rule metadata and explicit case review; no automatic suppression or traffic changes.'};
 }
 
-module.exports = {securityAssessment, DISPOSITIONS};
+function validDisposition(kind, reason) {
+  return DISPOSITIONS.includes(kind) && typeof reason === 'string'
+    && reason.trim().length >= 10 && reason.length <= 4000;
+}
+
+function securityDisposition(kind, reason, actor, reviewedAt) {
+  return {version: 1, kind, reason: reason.trim(), reviewed_at: reviewedAt, reviewed_by: actor};
+}
+
+module.exports = {securityAssessment, DISPOSITIONS, validDisposition, securityDisposition};
