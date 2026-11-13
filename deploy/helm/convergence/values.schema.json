@@ -84,6 +84,76 @@
           }
         }
       }
+    },
+    "reviewer": {
+      "type": "object",
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "then": {
+        "required": [
+          "publicOrigin",
+          "apiImage",
+          "hudImage",
+          "databaseSecret",
+          "serviceTlsSecret",
+          "installationTlsSecret",
+          "browserTlsSecret"
+        ],
+        "properties": {
+          "publicOrigin": {
+            "type": "string",
+            "pattern": "^https://([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?\\.)*[a-z]([-a-z0-9]{0,61}[a-z0-9])?(:[1-9][0-9]{0,4})?$",
+            "maxLength": 270
+          },
+          "apiImage": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^@\\s]+(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}|@sha256:[a-f0-9]{64})$"
+          },
+          "hudImage": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^@\\s]+(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}|@sha256:[a-f0-9]{64})$"
+          },
+          "databaseSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+          },
+          "serviceTlsSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+          },
+          "installationTlsSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+          },
+          "browserTlsSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+          }
+        }
+      },
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
     }
   }
 }
