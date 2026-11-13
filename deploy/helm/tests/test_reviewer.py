@@ -100,6 +100,9 @@ def test_reviewer_only_mounts_each_workloads_credentials(tmp_path, release, name
 @pytest.mark.parametrize('invalid', [
     {'publicOrigin': 'http://case.example'}, {'publicOrigin': 'https://case.example/login'},
     {'publicOrigin': 'https://case.example:84430'}, {'publicOrigin': 'https://case.example:443'},
+    {'publicOrigin': 'https://127.1'}, {'publicOrigin': 'https://0x7f.1'},
+    {'publicOrigin': 'https://999.999.999.999'}, {'publicOrigin': 'https://' + 'a' * 64 + '.test'},
+    {'publicOrigin': 'https://' + '.'.join(['a' * 63] * 4)},
     {'databaseSecret': ''}, {'serviceTlsSecret': 'Not_valid'}, {'browserTlsSecret': 'review-client'},
     {'serviceTlsSecret': 'ordinary-app'}, {'apiImage': 'no-tag'}, {'hudImage': 'registry/image:latest'},
 ])

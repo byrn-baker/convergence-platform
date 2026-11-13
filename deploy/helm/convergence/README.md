@@ -30,7 +30,7 @@ existing shared Grafana. Old home profiles describe one deployment, not defaults
 
 ## Optional HTTPS reviewer workloads
 
-After preparing the private Convergence API database and accounts, enable the dedicated review API and HUD in a separate values overlay. Both images need a build containing the reviewer entry points. Use verified release digests in production.
+After preparing the private Convergence API database and accounts, enable the dedicated review API and HUD in a separate values overlay. Both images need a build containing the reviewer entry points. Use verified release digests in production. Configure a canonical HTTPS DNS hostname whose final label starts with a letter.
 
 ```yaml
 reviewer:
