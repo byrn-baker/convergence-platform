@@ -6,4 +6,8 @@ This repository includes scripts/write-env.py from NetClaw
 Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0).
 That file keeps its original license.
 
+The imported NetClaw HUD views and tests in ui/convergence-hud retain
+the Apache License, Version 2.0. See ui/convergence-hud/NOTICE and LICENSE
+in that package.
+
 Dependencies and container base images keep their own licenses.
