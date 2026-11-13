@@ -1,0 +1,173 @@
+{{- if .Values.reviewer.enabled }}
+{{- $r := .Values.reviewer }}
+{{- $secrets := list $r.databaseSecret $r.serviceTlsSecret $r.installationTlsSecret $r.browserTlsSecret }}
+{{- if ne (len (uniq (append $secrets .Values.existingSecret))) 5 }}
+{{- fail "Reviewer workloads need four distinct existing Secrets, separate from existingSecret" }}
+{{- end }}
+{{- $originParts := splitList ":" $r.publicOrigin }}
+{{- if eq (len $originParts) 3 }}
+{{- $port := int (last $originParts) }}
+{{- if or (eq $port 443) (gt $port 65535) }}
+{{- fail "reviewer.publicOrigin must be a canonical HTTPS origin with a valid non-default port or no explicit port" }}
+{{- end }}
+{{- end }}
+{{- range $image := list $r.apiImage $r.hudImage }}
+{{- if hasSuffix ":latest" $image }}{{ fail "Set reviewer images to version-specific tags or digests" }}{{ end }}
+{{- end }}
+{{- $api := printf "%s-review-api" .Release.Name }}
+{{- range $name := list "review-api" "review-hud" }}
+{{- $backend := eq $name "review-api" }}
+{{- $port := ternary 3443 3444 $backend }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-%s" $.Release.Name $name | quote }}
+  labels: {{ include "convergence.labels" $ | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {app.kubernetes.io/instance: {{ $.Release.Name }}, app.kubernetes.io/component: {{ $name }}}
+  ports: [{name: https, port: {{ $port }}, targetPort: https}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-%s" $.Release.Name $name | quote }}
+  labels: {{ include "convergence.labels" $ | nindent 4 }}
+spec:
+  replicas: 1
+  {{- if not $backend }}
+  strategy: {type: Recreate}
+  {{- end }}
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ $.Release.Name }}, app.kubernetes.io/component: {{ $name }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ $.Release.Name }}, app.kubernetes.io/component: {{ $name }}}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ ternary $r.apiImage $r.hudImage $backend | quote }}
+          imagePullPolicy: IfNotPresent
+          command: [node, {{ ternary "reviewer-service.js" "reviewer/start.mjs" $backend | quote }}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports: [{name: https, containerPort: {{ $port }}}]
+          env:
+            {{- if $backend }}
+            {{- range $key := list "PGHOST" "PGPORT" "PGUSER" "PGDATABASE" "PGPASSWORD" }}
+            - name: {{ $key }}
+              valueFrom: {secretKeyRef: {name: {{ $r.databaseSecret | quote }}, key: {{ $key }}}}
+            {{- end }}
+            - {name: REVIEWER_SERVICE_HOST, value: "0.0.0.0"}
+            - {name: REVIEWER_SERVICE_PORT, value: "3443"}
+            - {name: REVIEWER_CLIENT_CA, value: /run/reviewer/service/ca.crt}
+            - {name: REVIEWER_TLS_CERT, value: /run/reviewer/service/tls.crt}
+            - {name: REVIEWER_TLS_KEY, value: /run/reviewer/service/tls.key}
+            - {name: REVIEWER_INSTALLATIONS_FILE, value: /run/reviewer/service/enrolled.json}
+            {{- else }}
+            - {name: REVIEWER_HUD_HOST, value: "0.0.0.0"}
+            - {name: REVIEWER_HUD_PORT, value: "3444"}
+            - {name: REVIEWER_HUD_ORIGIN, value: {{ $r.publicOrigin | quote }}}
+            - {name: REVIEWER_SERVICE_ORIGIN, value: {{ printf "https://%s.%s.svc:3443" $api $.Release.Namespace | quote }}}
+            - {name: REVIEWER_SERVICE_CA, value: /run/reviewer/installation/ca.crt}
+            - {name: REVIEWER_INSTALLATION_CERT, value: /run/reviewer/installation/tls.crt}
+            - {name: REVIEWER_INSTALLATION_KEY, value: /run/reviewer/installation/tls.key}
+            - {name: REVIEWER_HUD_CERT, value: /run/reviewer/browser/tls.crt}
+            - {name: REVIEWER_HUD_KEY, value: /run/reviewer/browser/tls.key}
+            {{- end }}
+          volumeMounts:
+            {{- if $backend }}
+            - {name: service-tls, mountPath: /run/reviewer/service, readOnly: true}
+            {{- else }}
+            - {name: installation-tls, mountPath: /run/reviewer/installation, readOnly: true}
+            - {name: browser-tls, mountPath: /run/reviewer/browser, readOnly: true}
+            {{- end }}
+          readinessProbe:
+            {{- if $backend }}
+            # The service binds only after verifying the migrated database.
+            # Continue to verify PostgreSQL reachability during normal operation.
+            exec:
+              command:
+                - node
+                - -e
+                - >-
+                  const net = require('node:net'), {Client} = require('pg');
+                  const db = new Client({connectionTimeoutMillis:1500,statement_timeout:1500});
+                  const s = net.connect(3443,'127.0.0.1',async () => {
+                    s.end(); try { await db.connect(); await db.query('SELECT 1 FROM reviewer_grants LIMIT 0'); }
+                    catch { process.exitCode=1; } finally { await db.end(); }
+                  }); s.on('error',() => process.exit(1));
+            {{- else }}
+            # Public static shell with its actual origin Host. Sign-in still needs
+            # an authenticated installation and a separately provisioned reviewer.
+            httpGet:
+              scheme: HTTPS
+              path: /
+              port: https
+              httpHeaders:
+                - {name: Host, value: {{ trimPrefix "https://" $r.publicOrigin | quote }}}
+            {{- end }}
+            periodSeconds: 15
+            timeoutSeconds: 4
+          resources: {requests: {cpu: 50m, memory: 96Mi}, limits: {cpu: "1", memory: 256Mi}}
+      volumes:
+        {{- if $backend }}
+        - name: service-tls
+          secret:
+            secretName: {{ $r.serviceTlsSecret | quote }}
+            defaultMode: 0440
+            items:
+              - {key: tls.crt, path: tls.crt}
+              - {key: tls.key, path: tls.key}
+              - {key: ca.crt, path: ca.crt}
+              - {key: enrolled.json, path: enrolled.json}
+        {{- else }}
+        - name: installation-tls
+          secret:
+            secretName: {{ $r.installationTlsSecret | quote }}
+            defaultMode: 0440
+            items:
+              - {key: tls.crt, path: tls.crt}
+              - {key: tls.key, path: tls.key}
+              - {key: ca.crt, path: ca.crt}
+        - name: browser-tls
+          secret:
+            secretName: {{ $r.browserTlsSecret | quote }}
+            defaultMode: 0440
+            items:
+              - {key: tls.crt, path: tls.crt}
+              - {key: tls.key, path: tls.key}
+        {{- end }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $api }}
+  labels: {{ include "convergence.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: review-api}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: review-hud}
+      ports: [{protocol: TCP, port: 3443}]
+{{- end }}
