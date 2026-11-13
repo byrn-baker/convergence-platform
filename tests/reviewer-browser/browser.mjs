@@ -141,6 +141,11 @@ test(
       ],
     });
     t.after(() => browser.close());
+    async function openCase(page) {
+      await page.getByLabel('Case ID').fill(caseId);
+      await page.getByRole('button', { name: 'Open case' }).click();
+      await page.getByText('Synthetic review case', { exact: true }).first().waitFor();
+    }
     async function login(name, mobile = false) {
       const ctx = await browser.newContext({
         viewport: mobile ? { width: 390, height: 844 } : { width: 1280, height: 800 },
@@ -153,10 +158,7 @@ test(
       await page.getByLabel('Username').fill(name);
       await page.getByLabel('Password').fill('fixture-only-password');
       await page.getByRole('button', { name: 'Sign in' }).click();
-      await page.getByLabel('Case ID').waitFor();
-      await page.getByLabel('Case ID').fill(caseId);
-      await page.getByRole('button', { name: 'Open case' }).click();
-      await page.getByText('Synthetic review case', { exact: true }).first().waitFor();
+      await openCase(page);
       assert.ok(
         (await ctx.cookies()).some(
           (c) => c.secure && c.httpOnly && c.sameSite === 'Strict' && c.name.startsWith('__Host-'),
@@ -172,17 +174,34 @@ test(
       .getByLabel('Evidence and reason')
       .fill('Synthetic packet trace confirmed expected activity');
     await operator.page.getByLabel('Outcome').selectOption('expected_activity');
+    // Commit through the real API, then discard only the browser's response.
+    const wire = await operator.ctx.newCDPSession(operator.page);
+    await wire.send('Fetch.enable', {
+      patterns: [{ urlPattern: '*/disposition', requestStage: 'Response' }],
+    });
+    const interrupted = once(wire, 'Fetch.requestPaused').then(async ([event]) => {
+      await wire.send('Fetch.failRequest', { requestId: event.requestId, errorReason: 'Failed' });
+      return { status: event.responseStatusCode, id: JSON.parse(event.request.postData).operationId };
+    });
     await operator.page.getByRole('button', { name: 'Save disposition' }).click();
-    await operator.page.locator('#operation:not([hidden])').waitFor();
-    for (let i = 0; i < 40; i++) {
-      const x = await db.query('SELECT 1 FROM reviewer_case_dispositions');
-      if (x.rowCount) break;
-      await pause(100);
-    }
+    const committed = await interrupted;
+    await wire.detach();
+    await operator.page.getByText(/The outcome is unknown/).waitFor();
+    assert.equal(committed.status, 200);
+    assert.equal(await operator.page.locator('#operation-id').innerText(), committed.id);
+    await operator.page.reload();
+    const recovery = operator.page.waitForResponse(
+      (r) => r.request().method() === 'GET' && r.url().endsWith('/disposition/' + committed.id),
+    );
+    await openCase(operator.page);
+    assert.equal((await recovery).status(), 200);
+    await operator.page.locator('#operation-note').getByText(/recorded by responder/).waitFor();
+    assert.equal(await operator.page.locator('#operation-id').innerText(), committed.id);
     const audit = await db.query(
-      'SELECT actor_id,actor_name AS reviewed_by_name FROM reviewer_case_dispositions',
+      'SELECT actor_id, actor_name AS reviewed_by_name, operation_id FROM reviewer_case_dispositions',
     );
     assert.equal(audit.rowCount, 1);
+    assert.equal(audit.rows[0].operation_id, committed.id);
     assert.equal(audit.rows[0].reviewed_by_name, 'responder');
     await reader.page.getByRole('button', { name: 'Open case' }).click();
     await reader.page
@@ -227,7 +246,7 @@ test(
     );
     assert.equal((await db.query('SELECT 1 FROM reviewer_case_dispositions')).rowCount, 1);
     t.diagnostic(
-      'Real CLI startup, named accounts, trusted HTTPS, mTLS and PostgreSQL. Independent mobile viewer and desktop operator. One durable receipt, stable actor ID and readable actor name. Cross-site, native routes and hostile origin denied; separate logout.',
+      'Real CLI startup, named accounts, trusted HTTPS, mTLS and PostgreSQL. Independent mobile viewer and desktop operator. Committed request with a lost response recovered the same receipt after reload, with one audit row and a named actor. Cross-site, native routes and hostile origin denied; separate logout.',
     );
   },
 );
