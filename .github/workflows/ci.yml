@@ -76,6 +76,7 @@ jobs:
         run: |
           echo "REVIEWER_TEST_DATABASE_URL=postgres://postgres:fixture@127.0.0.1:${FIXTURE_PORT}/reviewer_test" >> "$GITHUB_ENV"
           echo "SECURITY_HISTORY_PG_CONTAINER=${FIXTURE_CONTAINER}" >> "$GITHUB_ENV"
+          echo "REVIEWER_PSQL_CONTAINER=${FIXTURE_CONTAINER}" >> "$GITHUB_ENV"
       - run: npm ci
       - run: node --test test-*.cjs
       - name: Install HUD test dependencies
