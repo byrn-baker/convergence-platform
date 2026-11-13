@@ -52,3 +52,7 @@ FR-001–FR-003
 ## Tasks (all complete)
 
 T010–T017 (Phase 1), T020–T026 (Phase 2), H000–H010 (Phase H).
+
+## Device inventory site scope
+
+The Devices view must list and count only telemetry labelled with the authorized site's ID. Equal device names and shared probe targets in different sites must stay distinct. Samples with unknown site ownership cannot be attributed to a site by device name.
