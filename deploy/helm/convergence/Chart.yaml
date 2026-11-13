@@ -2,7 +2,7 @@ apiVersion: v2
 name: convergence
 description: Dedicated Convergence data plane on a reusable Victoria stack; external
   shared Grafana
-version: 0.3.2
+version: 0.4.0
 type: application
 kubeVersion: '>=1.29.0-0'
 dependencies:
