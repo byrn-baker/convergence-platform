@@ -97,3 +97,14 @@ grafana:
   resources:
     requests: {cpu: 100m, memory: 128Mi}
     limits: {cpu: '1', memory: 512Mi}
+# Dedicated, installation-authenticated reviewer service and browser origin.
+# Run the reviewer DB migration separately before enabling these workloads.
+reviewer:
+  enabled: false
+  publicOrigin: ''          # exact HTTPS browser origin, without a path
+  apiImage: ''              # tag or digest containing reviewer-service.js
+  hudImage: ''              # tag or digest containing reviewer/start.mjs
+  databaseSecret: ''        # PGHOST, PGPORT, PGUSER, PGDATABASE, PGPASSWORD
+  serviceTlsSecret: ''      # tls.crt, tls.key, ca.crt (client CA), enrolled.json
+  installationTlsSecret: '' # tls.crt, tls.key (client identity), ca.crt (service CA)
+  browserTlsSecret: ''      # tls.crt, tls.key for publicOrigin
