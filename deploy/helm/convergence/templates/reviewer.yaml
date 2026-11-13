@@ -5,6 +5,9 @@
 {{- fail "Reviewer workloads need four distinct existing Secrets, separate from existingSecret" }}
 {{- end }}
 {{- $originParts := splitList ":" $r.publicOrigin }}
+{{- if gt (len (trimPrefix "//" (index $originParts 1))) 253 }}
+{{- fail "reviewer.publicOrigin DNS hostname exceeds 253 characters" }}
+{{- end }}
 {{- if eq (len $originParts) 3 }}
 {{- $port := int (last $originParts) }}
 {{- if or (eq $port 443) (gt $port 65535) }}
