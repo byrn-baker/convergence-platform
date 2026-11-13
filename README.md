@@ -36,6 +36,7 @@ the plan before changing anything, and verifies each layer.
 
 ```text
 ui/convergence-api/        API and dashboards
+ui/convergence-hud/        Browser views for NetClaw HUD integration
 services/                  IDS ingest, alert receiver, agent metrics (NetClaw token exporter), Proxmox observer/mirror/shipper
 deploy/convergence/        Docker trial (Compose), adapters, Grafana, flow demo, host agent, IDS sensor
 deploy/helm/               Helm charts (convergence, victoria-stack), tooling and tests
@@ -54,6 +55,7 @@ python3 -m pytest tests/unit deploy/helm/tests
 (cd services/ids-ingest && python3 -m pytest)        # needs services/ids-ingest/requirements.txt
 (cd services/agent-metrics && python3 -m pytest)     # services/agent-metrics/requirements.txt for compressed events
 NETCLAW_DIR=/path/to/netclaw bash tests/convergence-host/run-tests.sh
+(cd ui/convergence-hud && npm ci && npm test)
 ```
 
 ## Images
@@ -65,5 +67,5 @@ image into a cluster without a registry.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). `scripts/write-env.py` comes from NetClaw and keeps its
-Apache-2.0 license; see [NOTICE](NOTICE).
+The platform uses the [MIT License](LICENSE). The imported HUD sources and
+`scripts/write-env.py` retain Apache-2.0 licensing. [Notice](NOTICE)
