@@ -63,6 +63,14 @@ test('HTTPS reviewer routes only release protected data to the current authorize
     async readReceipt(token,site,id,operationId) {
       calls.push('receipt'); return wrongResult || {case_id:id.toLowerCase(),site_id:site,operation_id:operationId.toLowerCase(),reviewed_by:grants.get(token).id};
     },
+    async requestInvestigation(token,site,id,data) {
+      calls.push('investigate');
+      if (grants.get(token)?.role === 'viewer') throw Object.assign(new Error('wrong role'),{status:403});
+      return wrongResult || {case_id:id,site_id:site,operation_id:data.operationId.toLowerCase(),requested_by:grants.get(token).id};
+    },
+    async readInvestigationReceipt(token,site,id,operationId) {
+      return wrongResult || {case_id:id,site_id:site,operation_id:operationId.toLowerCase(),requested_by:grants.get(token).id};
+    },
     async recordDisposition(token,_site,_id,data) {
       calls.push('write');
       if (grants.get(token)?.role === 'viewer') throw Object.assign(new Error('wrong role'),{status:403});
@@ -164,6 +172,23 @@ test('HTTPS reviewer routes only release protected data to the current authorize
     assert.equal((await request(caseURL,{state:alice})).status,401);
     assert.equal((await request(caseURL,{state:bob})).status,200);
     await signOut(bob);
+  });
+
+  await t.test('investigation uses the same identity/CSRF boundaries and rejects forged receipts', async () => {
+    const alice = await authenticated('alice'), bob = await authenticated('bob');
+    const input = {operationId:randomUUID(),feedback:'Inspect this synthetic case again'};
+    const url = caseURL+'/investigation';
+    assert.equal((await request(url,{method:'POST',state:bob,data:input})).status,403);
+    assert.equal((await request(url,{method:'POST',state:{...alice,csrf:bob.csrf},data:input})).status,403);
+    assert.equal((await request(url,{method:'POST',state:alice,data:{...input,actor:'spoof'}})).status,400);
+    assert.equal((await request(url,{method:'POST',state:alice,data:input})).body.requested_by,'alice');
+    assert.equal((await request(url+'/'+input.operationId,{state:alice})).status,200);
+    try {
+      wrongResult={case_id:caseId,site_id:'red',operation_id:input.operationId,requested_by:'bob'};
+      assert.equal((await request(url+'/'+input.operationId,{state:alice})).status,503);
+      assert.equal((await request(url,{method:'POST',state:alice,data:input})).status,503);
+    } finally {wrongResult=null;}
+    await signOut(alice); await signOut(bob);
   });
 
   await t.test('response scope must match the requested case, site, operation and reviewer', async () => {

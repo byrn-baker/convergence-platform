@@ -2,8 +2,9 @@
 
 const https = require('node:https');
 const { readCase, readDispositionReceipt, recordDisposition } = require('./cases');
+const {requestInvestigation, readInvestigationReceipt} = require('./investigations');
 
-const casePath = /^\/v1\/sites\/([a-zA-Z0-9_.-]{1,128})\/cases\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/(disposition)(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}))?)?$/i;
+const casePath = /^\/v1\/sites\/([a-zA-Z0-9_.-]{1,128})\/cases\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/(disposition|investigation)(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}))?)?$/i;
 const messages = {
   400: 'Invalid request', 401: 'Invalid credentials or grant', 403: 'Access denied',
   404: 'Not found', 409: 'Conflicting operation', 413: 'Request too large',
@@ -69,7 +70,7 @@ function bearer(req) {
   return match[1];
 }
 
-function createReviewerService({tls, enrollments, authority}) {
+function createReviewerService({tls, enrollments, authority, investigationEnabled = false}) {
   const installations = parseEnrollments(enrollments);
   const server = https.createServer({
     ...tls, requestCert: true, rejectUnauthorized: true, minVersion: 'TLSv1.2',
@@ -99,13 +100,15 @@ function createReviewerService({tls, enrollments, authority}) {
         return reply(res, 204);
       }
       const site = match?.[1] ?? null;
-      const input = write ? await readJSON(req, ['operationId', 'kind', 'reason']) : undefined;
+      const investigation = match?.[3] === 'investigation';
+      if (write && investigation && !investigationEnabled) reject(503);
+      const input = write ? await readJSON(req, investigation ? ['operationId','feedback'] : ['operationId', 'kind', 'reason']) : undefined;
       const data = await authority.withGrant(installation, token, {site, write: Boolean(write)}, (client, actor) => {
         if (status) return {id: actor.id, name: actor.name, role: actor.role, sites: actor.sites,
           expiresAt: actor.expiresAt, idleExpiresAt: actor.idleExpiresAt};
-        if (receipt) return readDispositionReceipt(client, actor, site, match[2], match[4]);
-        if (write) return recordDisposition(client, actor, site, match[2], input);
-        return readCase(client, actor, site, match[2]);
+        if (receipt) return (investigation ? readInvestigationReceipt : readDispositionReceipt)(client, actor, site, match[2], match[4]);
+        if (write) return (investigation ? requestInvestigation : recordDisposition)(client, actor, site, match[2], input);
+        return readCase(client, actor, site, match[2]).then(record => ({...record, investigation_enabled: investigationEnabled}));
       });
       return reply(res, 200, data);
     } catch (error) {

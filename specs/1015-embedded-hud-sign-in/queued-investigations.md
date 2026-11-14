@@ -1,6 +1,6 @@
 # Investigation requests from a signed-in reviewer
 
-**Proposed for review.** An operator should be able to request more evidence twice intentionally and see who requested each investigation. Recovering from a dropped connection should return the receipt for the original request. Reinvestigation is the first proposed command. JEV review needs additional rules for sharing its per-case result.
+**Reinvestigation implemented behind opt-in; production transport/result integration pending.** An operator should be able to request more evidence twice intentionally and see who requested each investigation. Recovering from a dropped connection should return the receipt for the original request. Reinvestigation is the first proposed command. JEV review needs additional rules for sharing its per-case result.
 
 ## Current behavior
 
@@ -34,3 +34,7 @@ python3 -B specs/1015-embedded-hud-sign-in/queue_replay_test.py -v
 ```
 
 The legacy cases use the existing receiver inbox. The proposed acceptance and delivery transactions use two temporary SQLite databases and a counted synthetic hook. PostgreSQL transaction isolation, authenticated HTTP delivery, concurrent relay workers and JEV execution require implementation-level qualification. [Replay fixture](queue_replay_test.py)
+
+## Implementation
+
+[Protocol and acceptance](dispatch-contract.md) · [Database/relay deployment and rollback](../../ui/convergence-api/REVIEWER-DISPATCH.md). The real receiver owns durable admission and checkpoint recovery; ordinary asynchronous hook acknowledgements remain unknown without a correlated result. See verification.md for executed database, receiver, browser and integration evidence.

@@ -66,6 +66,11 @@ export function createReviewerClient({origin, tls, deadlineMs = 10000}) {
       if (typeof operationId !== 'string' || !uuid.test(operationId)) throw Object.assign(new Error('Invalid receipt'), {status: 400});
       return call('GET', casePath(site, id) + '/disposition/' + operationId, token);
     },
+    requestInvestigation: (token, site, id, body) => call('POST', casePath(site, id) + '/investigation', token, body),
+    readInvestigationReceipt(token, site, id, operationId) {
+      if (typeof operationId !== 'string' || !uuid.test(operationId)) throw Object.assign(new Error('Invalid receipt'), {status: 400});
+      return call('GET', casePath(site, id) + '/investigation/' + operationId, token);
+    },
     close: () => agent.destroy(),
   };
 }
