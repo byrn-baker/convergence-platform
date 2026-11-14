@@ -177,11 +177,13 @@ The opt-in `/reviewer/commands` POST and `/reviewer/commands/{delivery_id}` GET
 use a **separate** `REVIEWER_DELIVERY_TOKEN`. Both methods require it; the ordinary
 machine token cannot submit or inspect reviewer deliveries. Empty or reused
 machine credentials leave these routes disabled. They require HTTPS and reject
-browser cookies/origins and forwarding headers. Configure native TLS on the
-receiver listener (for example uvicorn's `--ssl-certfile` and `--ssl-keyfile`),
-with a certificate trusted by the relay. The ordinary plaintext launcher does
-not enable reviewer delivery. Do not launch a second receiver process against
-the same SQLite inbox; it is owned by one receiver process.
+browser cookies/origins and forwarding headers. Run `python server.py` with all
+four `REVIEWER_HTTPS_HOST`, `REVIEWER_HTTPS_PORT`, `REVIEWER_HTTPS_CERT_FILE` and
+`REVIEWER_HTTPS_KEY_FILE` settings to add the dedicated trusted HTTPS listener.
+The existing `ALERT_RECEIVER_HOST/PORT` HTTP listener continues serving legacy
+callers and always rejects reviewer commands. Both listeners share one process,
+application lifespan, SQLite inbox and worker pool. Do not launch a second
+receiver process to add HTTPS.
 
 The [v1 contract](../../specs/1015-embedded-hud-sign-in/dispatch-contract.md)
 defines the bounded immutable envelope. Each PostgreSQL-assigned delivery ID
@@ -214,3 +216,64 @@ requires reconciliation before resuming relay delivery. Disabling the service to
 stops new admission; already accepted jobs remain commissioned and may run.
 Pause the receiver deliberately if those jobs must also be held. Legacy manual
 and JEV routes keep their existing behavior; JEV is not a reviewer command.
+
+### Receiver listener lifecycle
+
+With no nonempty `REVIEWER_HTTPS_*` settings, `python server.py` runs legacy
+HTTP only. Partial configuration fails startup. HTTPS requires a numeric bind IP,
+a different port from HTTP, a separate nonempty delivery token, and absolute
+certificate/key paths (a leading `~` is expanded). The certificate and unencrypted
+private key must match; encrypted keys fail without an interactive prompt. The
+server requires TLS 1.2 or newer. The relay still verifies the server's hostname
+and certificate chain; server preflight does not establish client trust.
+
+The TLS boundary exposes only reviewer command/receipt routes and a minimal
+`GET /health` returning `{"status":"ok"}`. Legacy routes, admin operations,
+metrics, documentation and WebSockets are not exposed there. Neither listener
+interprets proxy headers. The runtime validates configuration and pre-binds both
+sockets before queue startup. A bind/configuration failure therefore cannot leave
+an HTTP-only half-started receiver with live workers.
+
+The runtime alone owns SIGINT/SIGTERM. Stopping or failing either listener shuts
+down both, and new ASGI requests receive 503 once draining begins. Existing
+requests receive a 10-second graceful interval. Remaining transports, including
+incomplete TLS handshakes, are then closed; request tasks are canceled and joined
+before the application lifespan ends. Request cancellation has a 2-second window,
+and worker-coroutine cancellation has a 5-second window. A task that still refuses
+to stop causes a static diagnostic and process exit 70 **before** database/queue
+ownership cleanup. The operating system then releases resources together; this
+prevents an old handler from writing after a new receiver acquires the queue.
+A closed stderr cannot bypass that fail-stop behavior. Durable jobs and dispatch
+checkpoints survive restart.
+
+These are listener and coroutine shutdown bounds, not a total process-exit SLA.
+Legacy RAG work dispatched with `asyncio.to_thread` may keep the executor alive
+until its existing timeout, even after its worker coroutine stops. That existing
+RAG thread lifecycle is unchanged here; those threads do not own JobStore.
+
+Supported startup acquires an exclusive advisory lock beside the resolved queue
+path (`jobs.sqlite.owner.lock`) before opening JobStore. A second receiver using
+the same queue fails before it can reset running jobs. The lock file remains on
+disk; the OS lock is released only after workers/database stop or the process
+exits. Do not delete the file to bypass ownership. This protects supported
+receiver startup on POSIX hosts, not arbitrary SQLite tools. The first upgrade
+from an older unlocked receiver still requires stopping that process first.
+
+From the repository root, validate an operator environment before installation:
+
+```sh
+python3 setup/receiver.py preflight --env-file /private/path/receiver.env
+```
+
+This reads the environment and certificate/key without changing files or binding
+ports. The install command with `--start` reuses this validation before mutation.
+
+Installers can import the standard-library-only `receiver_runtime` module and
+call `load_settings(mapping)` followed by `validate_tls(settings)` before making
+changes. `prepare_listeners(settings)` additionally reserves both sockets and
+must be closed after a preflight. Production uses `run(app)`; isolated tests may
+await `serve(app, settings, stop_event=..., handle_signals=False)`. A raw
+`uvicorn server:app` command bypasses dual-listener orchestration and is not the
+supported launch command for this feature. Configure the relay and reviewer
+submission separately after end-to-end qualification; adding TLS does not enable
+reviewer UI submission by itself.

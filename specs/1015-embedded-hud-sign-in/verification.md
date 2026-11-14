@@ -36,3 +36,47 @@ Evidence is local: /tmp/dispatch-api-final.log, /tmp/dispatch-receiver-final.log
 Production activation is not complete. The live receiver currently has a plaintext listener shared by existing callers; deployment must migrate that service boundary without starting a second process on its inbox or breaking those callers. Its asynchronous gateway acknowledgement is not correlated completion. This implementation preserves unknown outcomes and never repeats a checkpointed hook; a trustworthy correlated production result still needs integration. JEV remains disabled. D5 is the next deployment task.
 
 During this run the owner reported unavailable Convergence in the native HUD. The backend was healthy; the preceding rollout's local-owner-only profile had removed existing network telemetry. The coordinator rolled back native HUD activation, verified live health in React and Classic, and left the dedicated HTTPS reviewer unchanged. Future native migration acceptance must preserve authenticated full dashboard telemetry from the owner's actual workstation. No changes to native host access controls are included in this dispatch branch.
+
+## Receiver HTTPS refactor run
+
+Run receiver-https-20261114 / start 2026-11-14T18:24:02.599832+00:00 / deadline 2026-11-14T19:09:02.599832+00:00 / checkout cp-reviewer-dispatch / branch feat/reviewer-investigation-dispatch / base852b31b. User authorized starting the recommended HTTPS refactor after prior completed implementation. D5a transport/lifecycle attempt1 of3; acceptance receiver-https.md. Coordinator owns spec/setup/integration, receiver implementer owns services/alert-receiver; research worker may inspect gateway correlation read-only. No production changes during coding qualification; restored HUD is preserved.
+
+D5a attempt1 verification found an actionable shutdown-order issue: when the graceful deadline expires, listener tasks stop but active ASGI request tasks can remain alive while the shared lifespan closes SQLite and releases ownership. Independent real-socket reproduction confirmed it. Attempt2 of3 will cancel/join tracked request tasks before shared lifespan shutdown and add a forced-deadline regression. Normal request drain, queue restart, TLS/auth, full browser integration, and setup/chart checks passed before this correction.
+
+Independent review also confirmed an inherited limitation at base852b31b: ordinary RAG paths use asyncio.to_thread, and rag_bridge defaults to a180-second subprocess timeout plus reap. Canceling the worker coroutine does not stop that executor work; asyncio.run can therefore delay total process exit. Those callbacks do not access JobStore after cancellation, so this is not the new request/queue ownership defect. Listener and coroutine drain bounds must not be described as a whole-process restart SLA. Busy-RAG restart behavior remains an operational qualification item; no RAG lifecycle refactor is included here.
+
+### D5a outcome
+
+COMPLETE on attempt 2 of 3. The runtime now joins active request tasks before
+application shutdown, rejects late requests while draining, shields cleanup from
+repeated cancellation and tracks incomplete TLS handshakes through public asyncio
+APIs. Noncooperative requests/workers cause process exit before queue ownership
+is released; even a failed stderr diagnostic cannot bypass that behavior. Normal
+requests finish during the grace interval. The independent timeout and double
+cancellation reproductions now complete handler cleanup before lifespan exit.
+
+Final validation:
+
+- `NETCLAW_DIR=/home/ubuntu/netclaw-production-candidate python -m pytest -q services/alert-receiver`:
+  129 passed on Python 3.12.3 / Uvicorn 0.30.0 and Python 3.14.6 / Uvicorn 0.54.0.
+- Independent verifier: full receiver 129 passed on the current runtime, runtime
+  acceptance 19 passed on the minimum runtime, and installer preflight 12 passed.
+- `python -m pytest -q -rs tests/unit deploy/helm/tests`: 253 passed, 3 optional
+  Prometheus rule evaluations skipped because PROMTOOL_BIN was unset. The first
+  broad run lacked the local chart dependency; `helm dependency build
+  deploy/helm/convergence` supplied it and the rerun passed.
+- `tests/reviewer-browser/run.sh` with disposable PostgreSQL and trusted Chromium:
+  passed using the actual dual-listener runtime. Lost browser response plus lost
+  receiver acknowledgement still yielded one named note, one job and one hook.
+  The new Python TLS readiness probe initially rejected the fixture CA's missing
+  keyUsage; the synthetic CA now includes critical keyCertSign/cRLSign. Verification
+  was preserved, not disabled, and the final workflow passed.
+- Chart asset parity and `git diff --check` passed.
+
+Independent review PASS is recorded in `/tmp/receiver-https-independent-review.md`.
+Logs and the gateway research are retained under the owner-private
+`~/.local/state/convergence-receiver-https-20261114/evidence/` directory.
+No production configuration, process, queue, model call or HUD deployment changed.
+D5 remains open: implement the real Gateway result adapter described in
+gateway-results.md, qualify busy-RAG restart behavior and coordinate production
+receiver/relay activation before enabling reviewer investigation requests.

@@ -50,7 +50,8 @@ async function launch(t, cwd, args, env, runtime = process.execPath) {
   const ended = once(worker, 'exit');
   t.after(async () => {
     if (worker.exitCode === null && worker.signalCode === null) worker.kill();
-    const timer = setTimeout(() => worker.kill('SIGKILL'), 1500);
+    // The receiver drains active requests before ending its shared lifespan.
+    const timer = setTimeout(() => worker.kill('SIGKILL'), 12000);
     try {
       await ended;
     } finally {
@@ -235,8 +236,11 @@ test(
     assert.ok(!JSON.stringify(stored).includes('synthetic counters'));
 
     const receiverPort = await availablePort();
+    let receiverHttpPort;
+    do { receiverHttpPort = await availablePort(); } while (receiverHttpPort === receiverPort);
     await launch(t, fileURLToPath(new URL('.',import.meta.url)), ['receiver_fixture.py'], {
       REVIEWER_FIXTURE_DIR:fixture, REVIEWER_RECEIVER_TEST_PORT:String(receiverPort),
+      REVIEWER_RECEIVER_HTTP_TEST_PORT:String(receiverHttpPort),
     },process.env.REVIEWER_RECEIVER_PYTHON || 'python3');
     const receiver = createReceiverClient({origin:'https://localhost:'+receiverPort,token:'x'.repeat(40),ca:fs.readFileSync(file('root.pem'))});
     t.after(()=>receiver.close());

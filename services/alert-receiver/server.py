@@ -15,9 +15,11 @@ Alertmanager webhook config (on OBS VM):
 
 import asyncio
 import contextvars
+from contextlib import asynccontextmanager
 from jobs import JobStore, RetryableJobError
 import rag_bridge
 import reviewer_commands
+from queue_owner import QueueOwner
 import hashlib
 import hmac
 import json
@@ -328,6 +330,7 @@ class Metrics:
 
 metrics = Metrics()
 job_store = None
+queue_owner = None
 active_job = contextvars.ContextVar("active_job", default=None)
 workers = []
 INVESTIGATION_TIMEOUT = int(os.getenv("INVESTIGATION_TIMEOUT_SECONDS", "900"))
@@ -1496,29 +1499,65 @@ def categorize_alert(alert_name: str) -> str:
 # FastAPI App
 # ---------------------------------------------------------------------------
 
+@asynccontextmanager
+async def receiver_lifespan(_app):
+    await start_jobs()
+    try:
+        yield
+    finally:
+        await stop_jobs()
+
+
 app = FastAPI(
     title="NetClaw Alert Receiver",
     description="Accepts Alertmanager webhooks, enriches with SoT, triggers NetClaw investigation.",
     version="1.0.0",
+    lifespan=receiver_lifespan,
 )
 
 
-@app.on_event("startup")
 async def start_jobs():
-    global job_store
+    global job_store, queue_owner
+    if queue_owner is not None:
+        raise RuntimeError('Receiver application lifespan already started')
     log_redaction.install_uvicorn()
-    job_store = JobStore(os.getenv("ALERT_JOBS_PATH", str(Path(__file__).parent / "state" / "jobs.sqlite")))
-    workers.extend(asyncio.create_task(job_worker()) for _ in range(MAX_CONCURRENT_INVESTIGATIONS))
-    workers.append(asyncio.create_task(job_worker(lane='ingest')))
-    workers.append(asyncio.create_task(job_worker(lane='maintenance')))
-    workers.append(asyncio.create_task(job_worker(lane='review')))
+    owner = QueueOwner(os.getenv("ALERT_JOBS_PATH", str(Path(__file__).parent / "state" / "jobs.sqlite")))
+    owner.acquire()
+    try:
+        job_store = JobStore(owner.queue_path)
+        queue_owner = owner
+        workers.extend(asyncio.create_task(job_worker()) for _ in range(MAX_CONCURRENT_INVESTIGATIONS))
+        workers.append(asyncio.create_task(job_worker(lane='ingest')))
+        workers.append(asyncio.create_task(job_worker(lane='maintenance')))
+        workers.append(asyncio.create_task(job_worker(lane='review')))
+    except BaseException:
+        for worker in workers:
+            worker.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
+        workers.clear()
+        if job_store is not None:
+            job_store.db.close()
+            job_store = None
+        queue_owner = None
+        owner.close()
+        raise
 
-@app.on_event("shutdown")
+
 async def stop_jobs():
-    for worker in workers: worker.cancel()
-    await asyncio.gather(*workers, return_exceptions=True)
-    workers.clear()
-    if job_store: job_store.db.close()
+    from receiver_runtime import cancel_owned_tasks, complete_cleanup
+    async def finish():
+        global job_store, queue_owner
+        # Do not close SQLite or release ownership until every worker coroutine
+        # has stopped. Noncooperative owned work causes a bounded fail-stop.
+        await cancel_owned_tasks(lambda: set(workers), timeout=5)
+        workers.clear()
+        if job_store is not None:
+            job_store.db.close()
+            job_store = None
+        if queue_owner is not None:
+            queue_owner.close()
+            queue_owner = None
+    await complete_cleanup(finish())
 
 @app.middleware("http")
 async def authenticate_receiver(request: Request, call_next):
@@ -2467,7 +2506,7 @@ def _is_noisy_iot_suppressed(alert: Alert, device_info: dict) -> bool:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import uvicorn
+    from receiver_runtime import run
 
-    log.info(f"Starting NetClaw Alert Receiver on {HOST}:{PORT}")
-    uvicorn.run(app, host=HOST, port=PORT, log_level=LOG_LEVEL.lower())
+    log.info("Starting NetClaw Alert Receiver")
+    run(app)

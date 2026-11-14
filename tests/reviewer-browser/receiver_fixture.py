@@ -5,14 +5,16 @@ Only the case/device reads and model hook are synthetic. HTTP authentication,
 command validation, durable SQLite admission, queue workers and receipts use the
 real receiver. Nothing here reads production credentials or calls a real model.
 """
+import asyncio
 import json as jsonlib
 import os
 from pathlib import Path
-import socket
+import ssl
 import sys
 
 fixture = Path(os.environ['REVIEWER_FIXTURE_DIR']).resolve()
 port = int(os.environ['REVIEWER_RECEIVER_TEST_PORT'])
+http_port = int(os.environ['REVIEWER_RECEIVER_HTTP_TEST_PORT'])
 if not 0 < port < 65536:
     raise ValueError('Expected an explicit fixture port')
 fixture.mkdir(parents=True, exist_ok=True)
@@ -25,6 +27,13 @@ os.environ.update({
     'INVESTIGATION_POLICY_PATH': str(fixture / 'receiver-policy.yaml'),
     'REVIEWER_DELIVERY_TOKEN': 'x' * 40,
     'ALERT_RECEIVER_TOKEN': 'ordinary-fixture-token',
+    'ALERT_RECEIVER_HOST': '127.0.0.1',
+    'ALERT_RECEIVER_PORT': str(http_port),
+    'REVIEWER_HTTPS_HOST': '127.0.0.1',
+    'REVIEWER_HTTPS_PORT': str(port),
+    'REVIEWER_HTTPS_CERT_FILE': str(fixture / 'localhost.pem'),
+    'REVIEWER_HTTPS_KEY_FILE': str(fixture / 'localhost.key'),
+    'LOG_LEVEL': 'ERROR',
     'NETWORK_GUARDIAN_URL': 'https://synthetic-cases.invalid',
     'NETWORK_GUARDIAN_TOKEN': 'synthetic-case-token',
     'OPENCLAW_GATEWAY_URL': 'https://synthetic-hook.invalid',
@@ -39,7 +48,7 @@ os.environ.update({
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'services' / 'alert-receiver'))
 import httpx
 import server as receiver
-import uvicorn
+import receiver_runtime
 
 
 async def synthetic_case(case_id, site):
@@ -101,18 +110,37 @@ receiver._fetch_guardian_event = synthetic_case
 receiver.lookup_device = synthetic_device
 receiver.httpx.AsyncClient = SyntheticHookClient
 
-# Bind first so the parent can safely connect as soon as the startup line appears;
-# connections queue until Uvicorn has initialized the real lifespan/workers.
-listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-listener.bind(('127.0.0.1', port))
-listener.listen(128)
-config = uvicorn.Config(receiver.app, host='127.0.0.1', port=port,
-                        ssl_certfile=str(fixture / 'localhost.pem'),
-                        ssl_keyfile=str(fixture / 'localhost.key'),
-                        log_level='error', access_log=False, proxy_headers=False)
-print('Synthetic HTTPS reviewer receiver listening', flush=True)
-try:
-    uvicorn.Server(config).run(sockets=[listener])
-finally:
-    listener.close()
+async def main():
+    # Exercise the production coordinator and shared lifespan. Announce readiness
+    # only after its real trusted HTTPS health response is available.
+    serving = asyncio.create_task(receiver_runtime.serve(receiver.app))
+    context = ssl.create_default_context(cafile=str(fixture / 'root.pem'))
+    try:
+        async with asyncio.timeout(8):
+            while True:
+                if serving.done():
+                    await serving
+                    raise RuntimeError('Receiver stopped before readiness')
+                try:
+                    reader, writer = await asyncio.open_connection(
+                        '127.0.0.1', port, ssl=context, server_hostname='localhost', ssl_handshake_timeout=2)
+                    try:
+                        writer.write(b'GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n')
+                        await writer.drain()
+                        if not (await reader.readline()).startswith(b'HTTP/1.1 200 '):
+                            raise RuntimeError('Receiver health check failed')
+                    finally:
+                        writer.close()
+                        await writer.wait_closed()
+                    break
+                except (OSError, TimeoutError):
+                    await asyncio.sleep(0.02)
+        print('Synthetic dual-listener receiver listening', flush=True)
+        await serving
+    finally:
+        if not serving.done():
+            serving.cancel()
+        await asyncio.gather(serving, return_exceptions=True)
+
+
+asyncio.run(main())

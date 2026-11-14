@@ -18,3 +18,7 @@
 - [x] D4: Qualify PostgreSQL→relay→receiver→synthetic hook and browser failures, obtain independent review and document rollout.
 
 - [ ] D5: Prepare and qualify the production receiver HTTPS migration with existing caller compatibility, real gateway job/result correlation, and coordinated relay rollout before enabling investigation requests.
+
+- [x] D5a: Qualify optional receiver HTTPS listener, shared lifecycle, exclusive queue ownership, existing caller compatibility and installer preflight.
+- [ ] D5b: Correlate the production gateway run and final result before enabling reviewer requests.
+- [ ] D5c: Qualify rollout/restart with active legacy RAG work, accounting for its existing executor/subprocess timeout separately from listener drain; preserve accepted work and dispatch checkpoints.

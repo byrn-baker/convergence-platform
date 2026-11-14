@@ -19,26 +19,30 @@ class JobStore:
     def __init__(self, path, capacity=1000):
         Path(path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.db = sqlite3.connect(path)
-        Path(path).chmod(0o600)
-        self.db.row_factory = sqlite3.Row
-        self.capacity = capacity
-        self.db.execute('PRAGMA journal_mode=WAL')
-        self.db.execute('''CREATE TABLE IF NOT EXISTS jobs (
-            id TEXT PRIMARY KEY, key TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL,
-            state TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0,
-            created REAL NOT NULL, available REAL NOT NULL, dispatched REAL,
-            event_id TEXT, site TEXT, error TEXT)''')
-        self.db.execute("UPDATE jobs SET state='queued' WHERE state='running'")
-        if 'result' not in {r[1] for r in self.db.execute('PRAGMA table_info(jobs)')}:
-            self.db.execute('ALTER TABLE jobs ADD COLUMN result TEXT')
-        # Admission runs once per raw alert, including duplicates. Retained
-        # evidence must not turn dedup, capacity checks, cleanup and worker
-        # polling into repeated full-table scans on the receiver event loop.
-        self.db.execute('CREATE INDEX IF NOT EXISTS jobs_key_created ON jobs(key,created DESC)')
-        self.db.execute('CREATE INDEX IF NOT EXISTS jobs_state_created ON jobs(state,created)')
-        self.db.commit()
-        from reviewer_commands import ReviewerCommands
-        self.reviewer = ReviewerCommands(self)
+        try:
+            Path(path).chmod(0o600)
+            self.db.row_factory = sqlite3.Row
+            self.capacity = capacity
+            self.db.execute('PRAGMA journal_mode=WAL')
+            self.db.execute('''CREATE TABLE IF NOT EXISTS jobs (
+                id TEXT PRIMARY KEY, key TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL,
+                state TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0,
+                created REAL NOT NULL, available REAL NOT NULL, dispatched REAL,
+                event_id TEXT, site TEXT, error TEXT)''')
+            self.db.execute("UPDATE jobs SET state='queued' WHERE state='running'")
+            if 'result' not in {r[1] for r in self.db.execute('PRAGMA table_info(jobs)')}:
+                self.db.execute('ALTER TABLE jobs ADD COLUMN result TEXT')
+            # Admission runs once per raw alert, including duplicates. Retained
+            # evidence must not turn dedup, capacity checks, cleanup and worker
+            # polling into repeated full-table scans on the receiver event loop.
+            self.db.execute('CREATE INDEX IF NOT EXISTS jobs_key_created ON jobs(key,created DESC)')
+            self.db.execute('CREATE INDEX IF NOT EXISTS jobs_state_created ON jobs(state,created)')
+            self.db.commit()
+            from reviewer_commands import ReviewerCommands
+            self.reviewer = ReviewerCommands(self)
+        except BaseException:
+            self.db.close()
+            raise
 
     def _check_capacity(self):
         if self.db.execute("SELECT count(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0] >= self.capacity:

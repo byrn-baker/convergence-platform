@@ -16,3 +16,7 @@ The initial write for qualification is a security disposition. Reinvestigation a
 ## Approved next increment: attributed reinvestigation
 
 Implement the reinvestigation command under [dispatch-contract.md](dispatch-contract.md), including durable acceptance, relay, receiver deduplication, explicit ambiguous outcomes and browser recovery. Keep JEV disabled. Preserve reviewer authentication boundaries and existing machine/manual callers.
+
+## Receiver transport increment
+
+Add the optional single-process HTTPS listener and shared queue lifecycle described in [receiver-https.md](receiver-https.md), preserving existing HTTP callers.
