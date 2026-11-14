@@ -17,12 +17,12 @@
 - [x] D3: Add reviewer request/receipt UI with session-safe recovery and stable operation identity.
 - [x] D4: Qualify PostgreSQL→relay→receiver→synthetic hook and browser failures, obtain independent review and document rollout.
 
-- [ ] D5: Prepare and qualify the production receiver HTTPS migration with existing caller compatibility, real gateway job/result correlation, and coordinated relay rollout before enabling investigation requests.
+- [x] D5: Prepare and qualify the production receiver HTTPS migration with existing caller compatibility, real gateway job/result correlation, and coordinated relay rollout before enabling investigation requests.
 
 - [x] D5a: Qualify optional receiver HTTPS listener, shared lifecycle, exclusive queue ownership, existing caller compatibility and installer preflight.
-- [ ] D5b: Correlate the production gateway run and final result before enabling reviewer requests.
+- [x] D5b: Correlate the production gateway run and final result before enabling reviewer requests.
 - [x] D5b1: Implement and independently qualify the adapter against the installed Gateway protocol, pinned policy and durable recovery. D5b still requires its live commissioning case.
 - [x] D5c: Qualify rollout/restart with active external-process RAG under the supported systemd policy; preserve accepted work/checkpoints and document partial-write reconciliation.
 - [x] D5d: Provide opt-in GitOps deployment wiring for investigation acceptance and the relay, using separate restricted database/delivery credentials, before production activation.
 
-- [ ] D5e: Correct exact callable selection in existing triage guidance, qualify a decoy-first/missing/ambiguous catalog, and repeat deliberate production commissioning without changing terminal receipt semantics.
+- [x] D5e: Correct exact callable selection in existing triage guidance, qualify a decoy-first/missing/ambiguous catalog, and repeat deliberate production commissioning without changing terminal receipt semantics.

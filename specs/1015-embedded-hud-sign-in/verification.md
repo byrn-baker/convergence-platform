@@ -226,3 +226,51 @@ OpenClaw source confirms callableName/describe/API.read and event_id schema.
 No receiver/API/HUD execution or error semantics changed. A corrected managed
 wrapper requires deploying the skill and regenerating/pinning policy together.
 Live attempt 2 remains pending; retain the first failed acceptance/receipt.
+
+### Production commissioning outcome
+
+D5, D5b and D5e COMPLETE. Rollout attempt 2 succeeded after the scoped guidance
+correction; D5e implementation passed on attempt 1. The user explicitly overrode
+the prior 45-minute limit for this continuation. Release v0.1.12-rc.2 is commit
+f3afb8c4b35a8e224356380c1ae7436688fc0b36; PR CI 43652620932 and release CI
+43652616396 both passed. API/HUD/relay are deployed with pinned rc2 image digests;
+installed receiver checkout is rc2. Argo reports Synced/Healthy. Reviewer
+investigation acceptance and relay delivery remain enabled after qualification.
+
+The new managed wrapper and alert-triage 1.1.2 were installed together, and the
+receiver policy was re-exported/pinned. Independent actual-file review confirmed
+only the managed prompt and installed skill/digest changed; model/fallbacks,
+permissions, MCP setup and original restore records were preserved. The full
+installer plan also proposed removing the installation's existing model fallback
+setting; that unrelated action was excluded through the helper's scoped config
+patch, and documented for future full reinstalls.
+
+The first synthetic operation remains failed with its original Gateway error/run
+metadata and successful child findings. The second deliberate operation completed
+through a real named reviewer's HTTPS Chromium session. It recorded one named
+note, acceptance, receiver job, Gateway input and parent run; exact caseGet
+selection/schema inspection/readback succeeded in the actual parent transcript.
+Gateway completion was status ok/replyDisposition silent, and persisted case
+findings were checked separately. Both case-learning snapshot jobs finished
+without errors. An initial second-helper browser timeout occurred before operation
+persistence or acceptance; subsequent execution established the session and
+submitted one operation. Existing operations were never replaced or automatically
+redispatched to recover a failure.
+
+Receiver and relay were restarted through their service managers. The receiver
+queue was empty, its old control group was gone before startup, and stop/start
+took 0.41 seconds. Both terminal receipts and metadata remained unchanged, with
+one job each. A real-browser replay after restart returned the same completed
+receipt and named note. Independent before/after Gateway transcript counting
+confirmed exactly one input and parent run for each delivery, including across
+all sessions created in the commissioning window. No duplicate execution occurred.
+Ordinary alert jobs continued, native Classic and dashboard health rendering
+passed, and the native health API reported unavailable=false.
+
+Private proof is retained under
+~/.local/state/convergence-gateway-rollout-20261114/evidence/, notably
+gateway-after-restart.json, receipts-before-restart.json,
+receipts-after-restart.json, relay-pod-proof-after-restart.json and the
+commissioning-2/ browser artifacts. Private operations documentation records
+credentials by location only, backups, policy checks, certificate renewal and
+rollback. No native HUD migration or JEV browser submission was enabled.
