@@ -3,7 +3,7 @@ import { HomeView } from './HomeView.js';
 import './dashboard.css';
 
 /** Inline workspace: shares the classic controller/API, with dashboard-owned chrome. */
-export default function DashboardView({ preview, active, refreshKey, onStatus, investigate }) {
+export default function DashboardView({ preview, active, refreshKey, onStatus, investigate, hostAccess }) {
   const host = useRef(null), controller = useRef(null);
   const statusCallback = useRef(onStatus);
   statusCallback.current = onStatus;
@@ -12,7 +12,7 @@ export default function DashboardView({ preview, active, refreshKey, onStatus, i
   useEffect(() => {
     if (preview) { statusCallback.current?.('Preview · no live operations'); return; }
     const view = new HomeView(host.current, {
-      embedded: true,
+      embedded: true, hostAccess,
       investigate,
       onUpdate(current) {
         const key = { 'vm-security': 'vmSecurity', overview: 'health', diary: 'events', triage: 'escalated', isp: 'wanCases', flows: 'flows' }[current.subview] || current.subview;
@@ -26,7 +26,7 @@ export default function DashboardView({ preview, active, refreshKey, onStatus, i
     controller.current = view;
     view.mount();
     return () => { controller.current = null; view.destroy(); };
-  }, [preview]);
+  }, [preview, hostAccess]);
 
   useEffect(() => {
     if (!preview && active && refreshKey) controller.current?.refresh(true);

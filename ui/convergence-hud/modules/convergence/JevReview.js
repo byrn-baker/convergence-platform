@@ -1,10 +1,10 @@
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
 
-export function jevReviewHTML(event, busy = false, error = '') {
+export function jevReviewHTML(event, busy = false, error = '', allowRequest = true) {
   if (event?.alert_name !== 'SuricataIntrusion') return '';
   const review = event.jev_review;
   const pending = busy || review?.status === 'queued';
-  const button = !review || pending
+  const button = allowRequest && (!review || pending)
     ? `<button type="button" class="home-triage-btn ghost" data-jev-review="${esc(event.id)}" ${busy ? 'disabled' : ''}>${busy ? 'JEV review queued…' : pending ? 'Check review' : 'Review with JEV'}</button>` : '';
   let content = '';
   if (review?.status === 'ok') {

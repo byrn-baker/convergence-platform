@@ -86,9 +86,38 @@ jobs:
         working-directory: ui/convergence-hud
         run: npm test
 
+  hud-integration:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: automateyournetwork/netclaw
+          ref: a5e7c3a3e07d8c8c4f2f26d22b4bd854dd1ba42e
+          path: netclaw
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Build and test the HUD against the pinned NetClaw host
+        run: |
+          tree=$(python3 setup/hud.py build --netclaw-dir "$GITHUB_WORKSPACE/netclaw" --install-dir "$RUNNER_TEMP/convergence-hud")
+          echo "HUD_ARTIFACT=$tree" >> "$GITHUB_ENV"
+          cd "$tree/ui/netclaw-visual"
+          npm test
+          node --test src/fork-local/model-settings.test.js test/convergence-access*.mjs
+      - name: Verify Classic and React in Chromium
+        working-directory: tests/hud-browser
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          node qualify.mjs "$HUD_ARTIFACT"
+
   images:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [python, node]
+    needs: [python, node, hud-integration]
     runs-on: ubuntu-24.04
     permissions:
       contents: read

@@ -11,7 +11,8 @@ This source package contains the Convergence site workspace for a NetClaw HUD. B
 
 The views request same-origin `/api/home/*` endpoints for configuration, authorized sites, telemetry and operator actions. The host must supply an authenticated adapter that verifies the installation, permitted sites and operation for each request and keeps service credentials on the server. The host owns access to its model editor, device graph and terminal capabilities. The device console uses the host's `netclaw:open-terminal` event. [Convergence API contract](../convergence-api/CONTRACT.md)
 
-The package ships browser source. A working installation requires a host extension point for both dashboard entry points, a qualified server adapter and a HUD asset build. The upstream read-only Convergence dashboard has its own retained-evidence API. Qualify it with the optional workspace disabled as well as enabled. ProxmoxObserver.js is preserved from the original source and currently has no caller in either entry point. [Migration spec](../../specs/1014-hud-views/spec.md)
+The platform installer assembles both dashboard entry points from this package. The staging host retains NetClaw's native retained-evidence view and SSH terminal. Its Site operations view uses a site-scoped read adapter and routes case changes to the per-user HTTPS reviewer. [HUD setup and access](../../docs/convergence/setup/hud.md)
+
 
 ## Test the views
 

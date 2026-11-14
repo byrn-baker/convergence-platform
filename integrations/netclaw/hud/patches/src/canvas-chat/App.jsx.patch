@@ -1,0 +1,39 @@
+diff --git a/src/canvas-chat/App.jsx b/src/canvas-chat/App.jsx
+index 6a140a24abc7bd3113283488a62e7fca16c21dfc..ffd6a33a309eaf76bf286b28a3da2273ea925e38 100644
+--- a/src/canvas-chat/App.jsx
++++ b/src/canvas-chat/App.jsx
+@@ -956,7 +956,7 @@ export default function App() {
+     setTimeout(() => laneRefs.current[id]?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }), 60);
+   };
+ 
+-  const newTerminalWindow = () => {
++  const newTerminalWindow = (target) => {
+     commit();
+     const id = uid();
+     const vis = nodesRef.current.filter((n) => !n.closed);
+@@ -968,7 +968,7 @@ export default function App() {
+       parentId: null,
+       depth: 0,
+       sourceQuote: null,
+-      terminalDevice: null,
++      terminalDevice: typeof target === "string" ? target : null,
+       terminalTranscript: "",
+       terminalHighlightRanges: {},
+       terminalLegacySshCompatibility: false,
+@@ -1234,6 +1234,16 @@ export default function App() {
+ 
+   // ---- session persistence (IndexedDB) ----
+   const [currentSession, setCurrentSession] = useState(null);
++  useEffect(() => {
++    if (!currentSession || window.parent !== window) return;
++    const target = new URLSearchParams(location.hash.slice(1)).get("terminal");
++    if (!target) return;
++    history.replaceState(null, "", location.pathname + location.search);
++    const runtime = runtimeInfo();
++    if (runtime?.kind !== "openclaw" || runtime.capabilities?.remoteHud || runtime.capabilities?.protectedProfile ||
++        !/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(target)) return;
++    newTerminalWindow(target);
++  }, [currentSession]);
+   useEffect(() => { if (window.parent !== window) window.parent.postMessage({ type: "netclaw:session-changed" }, location.origin); }, [currentSession?.id]); // { id, createdAt }
+   const [showSessions, setShowSessions] = useState(false);
+   const [sessionList, setSessionList] = useState([]);
