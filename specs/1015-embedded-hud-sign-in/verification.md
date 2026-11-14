@@ -143,3 +143,39 @@ Executed evidence:
 Commands and detailed review are in /tmp/gateway-rag-independent-review.md and
 owner-private ~/.local/state/convergence-gateway-rag-20261114/evidence/. The
 rollout sequence is dispatch-rollout.md. Existing native HUD telemetry is preserved.
+
+### Published release and staged cutover evidence
+
+Release candidate `v0.1.12-rc.1` points to implementation commit
+`f90b5aaaa53d1c05adc54ab4b4c8e344c94a7911`. Existing draft PR #15 is updated.
+PR CI run 43634029827 and release CI run 43634044126 both completed successfully
+against that exact commit. The release workflow published multiarchitecture images.
+
+- API index: `sha256:37282961f22d99c187806db2aad27c1e8a8243c7bed641a1beee254f112c03ee`.
+- Reviewer HUD index: `sha256:b6bf192568434328a0e80737a34b8c6263a3ee1da53ba996538deba053e218f8`.
+
+Credential-free temporary Pods loaded API modules and HUD assets from those pinned
+images on actual AMD64 and ARM64 cluster nodes. All four Pods were removed. This
+qualifies image loading on these nodes, not the production dispatch path.
+
+The published API image applied the reviewer migrations twice to a disposable
+PostgreSQL database restored from a production schema-only dump. A synthetic event
+remained present and both dispatch tables existed afterward. The disposable
+PostgreSQL container was removed. No production data migration or role creation
+was performed; no production row data was copied into the rehearsal.
+
+Owner-private cutover artifacts now include a dedicated receiver CA/leaf/token,
+the preflight-checked candidate environment, separate relay database and delivery
+Secrets, restricted role creation SQL, candidate reviewer values and an Argo
+source pin. They are staged only. Acceptance is false in the candidate values.
+The offline render comparison changes only reviewer API/HUD Deployments and adds
+the relay Deployment/NetworkPolicy; nothing is removed. Live GitOps, installed
+v0.1.11 checkout, production services and native HUD remain unchanged.
+
+Full private evidence and the operational continuation are in
+`~/.local/state/convergence-gateway-rag-20261114/HANDOFF.md` and `evidence/`.
+The next operation is the coordinated cutover in dispatch-rollout.md, followed by
+a named reviewer's live commissioning case and restart/deduplication checks.
+D5b1/D5c/D5d are COMPLETE; D5b live commissioning and overall D5 stay open.
+No live model call was made, and these release checks do not claim production
+activation. This documentation-only follow-up does not change the release images.
