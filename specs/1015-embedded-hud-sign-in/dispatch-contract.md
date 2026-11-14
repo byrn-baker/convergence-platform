@@ -26,7 +26,7 @@ The relay leases rows with bounded expiry, sends the immutable envelope and retr
 
 ## Execution and recovery
 
-The existing investigation lane, concurrency and hourly budget own these jobs. The dedicated worker must not append a second case note or update feedback. Persist a dispatch checkpoint immediately before invoking the external hook. Include delivery/job IDs in hook correlation metadata. On a restarted/ambiguous checkpoint do not call the hook again. A case becoming resolved is not evidence of this job's completion. Without a trustworthy result correlated to this job/delivery, retain `unknown` for operator review. An HTTP202 means dispatched, not completed. A receipt can become completed only on a validated correlated result; do not infer it from generic case state. Preserve legacy worker behavior.
+The existing investigation lane, concurrency and hourly budget own these jobs. The dedicated worker must not append a second case note or update feedback. Persist a dispatch checkpoint immediately before invoking the external hook. Use the delivery UUID in direct-hook idempotency/session identity and persist its job/run association atomically in the receiver receipt. On a restarted/ambiguous checkpoint do not call the hook again. A case becoming resolved is not evidence of this job's completion. Without a trustworthy result correlated to this job/delivery, retain `unknown` for operator review. An HTTP202 means dispatched, not completed. A receipt can become completed only on a validated correlated Gateway execution result; this does not establish that a particular case update succeeded; do not infer it from generic case state. Preserve legacy worker behavior.
 
 ## Acceptance
 

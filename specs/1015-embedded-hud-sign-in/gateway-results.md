@@ -21,6 +21,28 @@ Do not infer a result from a shared case becoming resolved.
 
 ## Next implementation boundary
 
+Implementation acceptance for D5b: export a private, versioned dispatch policy
+from the helper-managed alert mapping; require a pinned SHA-256 digest before
+receiver dispatch. Export validates the mapping, restricted agent, hook allowlist
+and deterministic session-prefix permission, rejecting unsupported transforms or
+routing options. A read-only check compares the exported policy with current
+Gateway configuration before rollout. The receiver reads only the narrow policy,
+never Gateway operator credentials or full configuration. Runtime file drift
+fails before checkpoint; Gateway configuration drift requires the helper check
+and remains an administrative rollout responsibility.
+
+The policy contains version, agent_id, model, timeout_seconds and message_template.
+It preserves the managed mapping's exact trusted wrapper, with only its existing
+investigation_prompt placeholder substituted. Requests select no browser-supplied
+agent, model or session. Use one direct waiting hook request and validate the real
+Gateway terminal response. Persist bounded hook run ID, status and disposition
+atomically with the receipt; no model output. A successful execution is displayed
+as an agent run finishing, without asserting a case mutation succeeded. Unknown
+transport, cancellation and restart retain the no-redispatch checkpoint. Tests
+must include real HTTP against the installed protocol shape and the complete
+browser/relay/receiver fixture, plus unsupported policy, altered digest, malformed
+responses, silent success, error/skipped, timeout, cancellation and restart.
+
 Use a dedicated Gateway investigation adapter. Make one bounded waiting request,
 with a deterministic per-delivery session key and idempotency key, no redirects,
 and no chat delivery. Keep the same restricted agent, model, timeout and trusted

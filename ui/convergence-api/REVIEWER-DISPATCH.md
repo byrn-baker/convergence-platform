@@ -54,8 +54,10 @@ protocol/configuration failures become `failed`. Expired/stale lease results can
 alter a newer delivery state, and terminal states cannot move backwards.
 
 `accepted` means PostgreSQL committed the request; `enqueued` means durable receiver
-admission; `dispatched` means the hook was sent. `completed` requires a correlated
-result, never merely a resolved case. The receiver may return `unknown` after an
+admission; `dispatched` means a dispatch checkpoint was committed and the hook may
+have been sent. `completed` means the Gateway confirmed that agent execution
+finished, never merely that a case resolved or that a requested case update
+succeeded. Inspect the case findings separately. The receiver may return `unknown` after an
 ambiguous checkpoint, preventing automatic redispatch. Logging out revokes access
 to receipts until reauthentication; it does not cancel commissioned work.
 

@@ -21,6 +21,8 @@ def test_unit_uses_checkout_bundle_and_private_state():
     assert 'Environment=NETCLAW_DIR=/n' in text and 'Environment=CONVERGENCE_JEV_ENV_FILE=/n/.env' in text
     assert 'RAG_PYTHON' not in text
     assert 'WantedBy=default.target' in text and 'User=' not in text
+    assert 'KillMode=control-group' in text and 'KillSignal=SIGTERM' in text
+    assert 'SendSIGKILL=yes' in text and 'TimeoutStopSec=90' in text
 
 
 def test_unit_records_rag_python():
@@ -101,6 +103,27 @@ def test_preflight_is_read_only_and_ignores_invoking_shell_settings(tmp_path, mo
     result = receiver.preflight(receiver.argparse.Namespace(env_file=str(env)))
     assert result == {'status':'valid', 'env_file':str(env), 'https_configured':False}
     assert set(tmp_path.iterdir()) == before
+
+
+def test_partial_gateway_policy_rejected_before_install(tmp_path):
+    env = private_environment(tmp_path, 'REVIEWER_GATEWAY_POLICY_FILE=/missing/policy.json\n')
+    with pytest.raises(ValueError, match='both'):
+        receiver.preflight(receiver.argparse.Namespace(env_file=str(env)))
+
+
+def test_gateway_policy_integrity_is_checked_by_preflight(tmp_path):
+    import hashlib
+    import json
+    policy = tmp_path/'gateway.json'
+    policy.write_text(json.dumps({'version':1,'agent_id':'alert','model':'fixture/model','timeout_seconds':900,
+                                 'message_template':'Untrusted context: {{alerts[0].annotations.investigation_prompt}}'}))
+    policy.chmod(0o600)
+    digest = hashlib.sha256(policy.read_bytes()).hexdigest()
+    env = private_environment(tmp_path, f'REVIEWER_GATEWAY_POLICY_FILE={policy}\nREVIEWER_GATEWAY_POLICY_SHA256={digest}\n')
+    assert receiver.preflight(receiver.argparse.Namespace(env_file=str(env)))['status'] == 'valid'
+    policy.write_text(policy.read_text()+' ')
+    with pytest.raises(ValueError):
+        receiver.preflight(receiver.argparse.Namespace(env_file=str(env)))
 
 
 def test_partial_tls_rejected_before_installer_mutations(tmp_path, monkeypatch):

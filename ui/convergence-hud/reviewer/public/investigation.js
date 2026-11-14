@@ -2,8 +2,9 @@ import {receiptPointers, tokenDigest} from './pending-operations.js';
 
 const stateLabels = {
   accepted: 'Accepted; waiting for delivery.', enqueued: 'Queued for investigation.',
-  dispatched: 'Investigation dispatched; waiting for its result.', completed: 'Investigation completed.',
-  failed: 'Investigation failed. Review the evidence before requesting more work.',
+  dispatched: 'Agent run dispatched; waiting for its execution result.',
+  completed: 'Agent run finished. Review the case findings to confirm the investigation outcome.',
+  failed: 'Agent run failed or was skipped. Review the evidence before requesting more work.',
   unknown: 'Investigation outcome is unknown. Review it before requesting more work.',
 };
 

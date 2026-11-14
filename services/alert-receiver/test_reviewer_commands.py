@@ -2,6 +2,7 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import json
+import hashlib
 import time
 from uuid import uuid4
 from unittest.mock import AsyncMock
@@ -38,7 +39,7 @@ def test_admission_replay_cleanup_and_distinct_same_case(tmp_path):
     job = store.claim()
     assert job['id'] == first['job_id'] and job['kind'] == 'reviewer'
     assert store.reviewer.checkpoint(job['id'], 10)
-    store.reviewer.finish(job['id'], 'completed')
+    store.reviewer.finish(job['id'], 'completed', completion={'run_id': str(uuid4()), 'status': 'ok', 'reply_disposition': 'visible'})
     # Late failure must not downgrade a terminal result.
     store.reviewer.finish(job['id'], 'unknown')
     with store.db:
@@ -150,42 +151,68 @@ def worker_fixture(tmp_path, monkeypatch, response='accepted', site='home'):
     calls = []
     monkeypatch.setattr(receiver, 'job_store', store)
     monkeypatch.setattr(receiver, 'INVESTIGATION_TIMEOUT', 0)
+    async def no_wait(seconds): pass
+    monkeypatch.setattr(receiver.asyncio, 'sleep', no_wait)
     for name in ('NETWORK_GUARDIAN_URL', 'NETWORK_GUARDIAN_TOKEN', 'OPENCLAW_GATEWAY_URL', 'OPENCLAW_HOOK_TOKEN'):
         monkeypatch.setattr(receiver, name, 'fixture')
     monkeypatch.setattr(receiver, '_fetch_guardian_event', AsyncMock(return_value={'id':body['case_id'], 'site_id':body['site_id'], 'status':'resolved', 'investigation_notes':'Original note'}))
     monkeypatch.setattr(receiver, 'lookup_device', AsyncMock(return_value={'name':'fixture'}))
     no_patch = AsyncMock(side_effect=AssertionError('Reviewer worker must not rewrite case notes'))
     monkeypatch.setattr(receiver, 'patch_guardian_event', no_patch)
-    class Client:
-        def __init__(self, **kwargs):
-            assert kwargs['follow_redirects'] is False
-        async def __aenter__(self): return self
-        async def __aexit__(self, *args): pass
-        async def post(self, url, json, headers):
-            calls.append(json)
-            assert store.db.execute('SELECT dispatched FROM jobs WHERE id=?', (job['id'],)).fetchone()[0]
-            if response == 'cancel': raise asyncio.CancelledError()
-            if response == 'timeout': raise httpx.ReadTimeout('fixture')
-            if response == 'completed':
-                return httpx.Response(200, json={**receipt, 'state':'completed'})
-            if response == 'mismatch':
-                return httpx.Response(200, json={**receipt, 'job_id':str(uuid4()), 'state':'completed'})
-            return httpx.Response(202, json={**receipt, 'state':'completed'})
-    monkeypatch.setattr(receiver.httpx, 'AsyncClient', Client)
+    monkeypatch.setattr(receiver, 'OPENCLAW_GATEWAY_URL', 'http://127.0.0.1:18789')
+    policy = {'version': 1, 'agent_id': 'alert', 'model': 'fixture/model', 'timeout_seconds': 1,
+              'message_template': 'Trusted wrapper: {{alerts[0].annotations.investigation_prompt}} End wrapper.'}
+    policy_file = tmp_path/'gateway-policy.json'
+    policy_file.write_text(json.dumps(policy))
+    policy_file.chmod(0o600)
+    monkeypatch.setenv('REVIEWER_GATEWAY_POLICY_FILE', str(policy_file))
+    monkeypatch.setenv('REVIEWER_GATEWAY_POLICY_SHA256', hashlib.sha256(policy_file.read_bytes()).hexdigest())
+    async def handle(request):
+        payload = json.loads(request.content)
+        calls.append(payload)
+        assert request.url.path == '/hooks/agent'
+        assert request.headers['idempotency-key'] == body['delivery_id']
+        assert request.headers['authorization'] == 'Bearer fixture'
+        assert store.db.execute('SELECT dispatched FROM jobs WHERE id=?', (job['id'],)).fetchone()[0]
+        if response == 'cancel': raise asyncio.CancelledError()
+        if response == 'timeout': raise httpx.ReadTimeout('fixture')
+        result = {'ok': True, 'runId': str(uuid4()),
+                  'completion': {'status': response if response in ('error', 'skipped') else 'ok',
+                                 'replyDisposition': response if response in ('silent', 'empty') else 'visible'}}
+        if response == 'mismatch': result['runId'] = 'invalid-run'
+        class Stream(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                yield json.dumps(result).encode()
+        return httpx.Response(202 if response == 'accepted' else 200,
+                              headers={'Content-Type': 'application/json'}, stream=Stream())
+    original_client = httpx.AsyncClient
+    def client(**kwargs):
+        assert kwargs['follow_redirects'] is False and kwargs['trust_env'] is False
+        return original_client(transport=httpx.MockTransport(handle), **kwargs)
+    monkeypatch.setattr(receiver.httpx, 'AsyncClient', client)
     return store, body, job, calls
 
 
-@pytest.mark.parametrize('response,state', [('accepted','unknown'), ('timeout','unknown'), ('mismatch','unknown'), ('completed','completed')])
+@pytest.mark.parametrize('response,state', [('accepted','unknown'), ('timeout','unknown'), ('mismatch','unknown'), ('completed','completed'), ('silent','completed'), ('empty','completed'), ('error','failed'), ('skipped','failed')])
 def test_worker_correlates_results_never_duplicates_notes_or_dispatch(tmp_path, monkeypatch, response, state):
     store, body, job, calls = worker_fixture(tmp_path, monkeypatch, response)
     asyncio.run(receiver.run_reviewer_investigation(body, job))
     assert store.reviewer.read(body['delivery_id'])['state'] == state
     asyncio.run(receiver.run_reviewer_investigation(body, job))
     assert len(calls) == 1
-    annotations = calls[0]['alerts'][0]['annotations']
-    assert annotations['reviewer_delivery_id'] == body['delivery_id']
-    assert annotations['reviewer_job_id'] == job['id']
-    assert body['feedback'] in annotations['investigation_prompt']
+    payload = calls[0]
+    assert payload['sessionKey'] == 'hook:convergence-reviewer:' + body['delivery_id']
+    assert payload['idempotencyKey'] == body['delivery_id']
+    assert body['feedback'] in payload['message'] and body['case_id'] in payload['message']
+    assert payload['waitForCompletion'] is True and payload['deliver'] is False
+    assert payload['agentId'] == 'alert' and payload['timeoutSeconds'] == 1
+    assert payload['message'].startswith('Trusted wrapper: ')
+    saved = store.db.execute('SELECT * FROM reviewer_command_receipts WHERE job_id=?', (job['id'],)).fetchone()
+    assert (saved['gateway_run_id'] is not None) == (state != 'unknown')
+    if state != 'unknown':
+        assert saved['gateway_status'] == (response if response in ('error', 'skipped') else 'ok')
+        assert saved['gateway_reply_disposition'] == (response if response in ('silent', 'empty') else 'visible')
+    assert set(store.reviewer.read(body['delivery_id'])) == {'delivery_id', 'job_id', 'state'}
     assert store.hourly_dispatches() == 1
     store.db.close()
 
@@ -228,7 +255,7 @@ def test_unknown_wait_keeps_worker_slot_until_dispatch_deadline(tmp_path, monkey
         assert store.reviewer.read(body['delivery_id'])['state'] == 'dispatched'
     monkeypatch.setattr(receiver.asyncio, 'sleep', sleep)
     asyncio.run(receiver.run_reviewer_investigation(body, job))
-    assert len(waits) == 1 and 55 < waits[0] <= 60
+    assert len(waits) == 1 and 25 < waits[0] <= 31
     assert len(calls) == 1
     assert store.reviewer.read(body['delivery_id'])['state'] == 'unknown'
     store.db.close()
@@ -248,9 +275,83 @@ def test_non_home_site_survives_hook_dispatch(tmp_path, monkeypatch):
     store, body, job, calls = worker_fixture(tmp_path, monkeypatch, 'completed', site='branch-west')
     asyncio.run(receiver.run_reviewer_investigation(body, job))
     assert len(calls) == 1
-    alert = calls[0]['alerts'][0]
-    assert alert['labels']['site'] == 'branch-west'
-    assert alert['annotations']['guardian_site'] == 'branch-west'
-    assert 'Guardian site: branch-west' in alert['annotations']['investigation_prompt']
+    assert 'Guardian site: branch-west' in calls[0]['message']
     assert store.reviewer.read(body['delivery_id'])['state'] == 'completed'
+    store.db.close()
+
+
+def test_policy_drift_fails_before_dispatch_checkpoint(tmp_path, monkeypatch):
+    store, body, job, calls = worker_fixture(tmp_path, monkeypatch)
+    monkeypatch.setenv('REVIEWER_GATEWAY_POLICY_SHA256', '0'*64)
+    with pytest.raises(ValueError, match='digest'):
+        asyncio.run(receiver.run_reviewer_investigation(body, job))
+    assert calls == [] and store.hourly_dispatches() == 0
+    assert store.reviewer.read(body['delivery_id'])['state'] == 'enqueued'
+    store.db.close()
+
+
+def test_restart_retains_pinned_deadline_without_loading_new_policy(tmp_path, monkeypatch):
+    store, body, job, calls = worker_fixture(tmp_path, monkeypatch, 'cancel')
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(receiver.run_reviewer_investigation(body, job))
+    deadline = store.db.execute('SELECT dispatch_deadline FROM reviewer_command_receipts').fetchone()[0]
+    assert 25 < deadline-time.time() <= 31
+    store.db.close()
+    recovered = JobStore(tmp_path/'jobs.db')
+    monkeypatch.setattr(receiver, 'job_store', recovered)
+    monkeypatch.setattr(receiver, 'INVESTIGATION_TIMEOUT', 900)
+    monkeypatch.setenv('REVIEWER_GATEWAY_POLICY_FILE', '/does/not/exist')
+    waits = []
+    async def wait(seconds): waits.append(seconds)
+    monkeypatch.setattr(receiver.asyncio, 'sleep', wait)
+    asyncio.run(receiver.run_reviewer_investigation(body, recovered.claim()))
+    assert len(calls) == 1 and len(waits) == 1 and 25 < waits[0] <= 31
+    assert recovered.db.execute('SELECT dispatch_deadline FROM reviewer_command_receipts').fetchone()[0] == deadline
+    assert recovered.reviewer.read(body['delivery_id'])['state'] == 'unknown'
+    recovered.db.close()
+
+
+def test_completion_metadata_and_job_are_atomic_and_terminal(tmp_path):
+    import sqlite3
+    store = JobStore(tmp_path/'jobs.db')
+    body = command()
+    store.reviewer.admit(body)
+    job = store.claim()
+    metadata = {'run_id': str(uuid4()), 'status': 'ok', 'reply_disposition': 'silent'}
+    with pytest.raises(ValueError, match='requires gateway'):
+        store.reviewer.finish(job['id'], 'completed')
+    with pytest.raises(ValueError, match='checkpoint'):
+        store.reviewer.finish(job['id'], 'completed', completion=metadata)
+    store.reviewer.checkpoint(job['id'], 10, 930)
+    with store.db:
+        store.db.execute("CREATE TRIGGER reject_finish BEFORE UPDATE ON jobs WHEN NEW.state='done' BEGIN SELECT RAISE(ABORT,'fixture'); END")
+    with pytest.raises(sqlite3.IntegrityError, match='fixture'):
+        store.reviewer.finish(job['id'], 'completed', completion=metadata)
+    row = store.db.execute('SELECT * FROM reviewer_command_receipts').fetchone()
+    assert row['state'] == 'dispatched' and row['gateway_run_id'] is None
+    assert store.counts() == {'running': 1}
+    with store.db: store.db.execute('DROP TRIGGER reject_finish')
+    store.reviewer.finish(job['id'], 'completed', completion=metadata)
+    store.reviewer.finish(job['id'], 'unknown', 'late failure')
+    row = store.db.execute('SELECT * FROM reviewer_command_receipts').fetchone()
+    assert row['state'] == 'completed' and row['gateway_run_id'] == metadata['run_id']
+    assert row['gateway_status'] == 'ok' and row['gateway_reply_disposition'] == 'silent'
+    assert store.counts() == {'done': 1}
+    store.db.close()
+
+
+def test_existing_receipt_schema_migrates_without_changing_receipt(tmp_path):
+    import sqlite3
+    path = tmp_path/'jobs.db'
+    body = command()
+    with sqlite3.connect(path) as old:
+        old.execute('CREATE TABLE reviewer_command_receipts(delivery_id TEXT PRIMARY KEY,digest TEXT,job_id TEXT,state TEXT,created REAL)')
+        old.execute('INSERT INTO reviewer_command_receipts VALUES(?,?,?,?,?)',
+                    (body['delivery_id'], command_digest(body), 'old-job', 'unknown', time.time()))
+    store = JobStore(path)
+    assert store.reviewer.read(body['delivery_id']) == {'delivery_id': body['delivery_id'], 'job_id': 'old-job', 'state': 'unknown'}
+    assert store.reviewer.admit(body)['job_id'] == 'old-job'
+    columns = {r[1] for r in store.db.execute('PRAGMA table_info(reviewer_command_receipts)')}
+    assert {'gateway_run_id','gateway_status','gateway_reply_disposition','dispatch_deadline'} <= columns
+    assert store.reviewer.admit(command())['state'] == 'enqueued'
     store.db.close()

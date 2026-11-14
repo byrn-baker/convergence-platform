@@ -80,3 +80,66 @@ No production configuration, process, queue, model call or HUD deployment change
 D5 remains open: implement the real Gateway result adapter described in
 gateway-results.md, qualify busy-RAG restart behavior and coordinate production
 receiver/relay activation before enabling reviewer investigation requests.
+
+## Gateway completion and RAG restart run
+
+D5d deployment wiring added to this run, attempt 1 of 3, coordinator-owned chart,
+schema and render tests. Inspection found the existing reviewer chart had neither
+the investigation API flag nor a relay workload. Acceptance is the deployment
+section of plan.md; no rollout is performed by rendering these artifacts.
+
+Run gateway-rag-20261114 / start 2026-11-14T19:22:05.212656+00:00 / deadline 2026-11-14T20:07:05.212656+00:00 / checkout cp-reviewer-dispatch / branch feat/reviewer-investigation-dispatch / base ed04e2b. User authorized D5b gateway completion and D5c active-RAG restart qualification toward rollout. D5b and D5c attempt1 of3. Resume completed D5a; do not repeat its implementation. Coordinator owns setup, UI, browser integration, spec/ledger and publication; gateway worker owns gateway adapter/server/reviewer receipt tests; RAG worker owns isolated restart tests and may propose scoped rag_bridge fixes. No production mutations during coding qualification. CONTRIBUTING.md, constitution and contract-suites inventory remain absent. CI/component suites govern validation.
+
+
+### Gateway/RAG qualification outcome
+
+D5b1, D5c and D5d COMPLETE on attempt 1 of 3; independent review PASS. D5b's
+production commissioning case and overall D5 activation remain open.
+
+The adapter sends one direct waiting hook request using the existing restricted
+agent/model/prompt policy. A private policy export/check and raw SHA-256 pin keep
+those choices out of browser input. Before the request, SQLite atomically records
+the dispatch and its policy-derived deadline. Terminal Gateway run ID/status/reply
+metadata and receipt state commit together. Restart uses the original deadline,
+never a new policy or another hook. UI success means agent execution finished;
+case findings still require review. Verified against installed OpenClaw 2026.10.9
+sources and actual HTTP fixtures, without a live model call.
+
+External-process RAG is contained by the supported systemd control-group stop
+policy. Normal search/snapshot restarts took 0.30–0.33 seconds in the isolated
+fixture; a child ignoring SIGTERM was killed after 90.03–90.13 seconds, before
+replacement startup. Accepted work and a seeded checkpoint survived; no hook
+was repeated. Raw Python SIGTERM leaves RAG work running and is not equivalent.
+Interrupted snapshot writes can persist partial data and retry; this is not
+exactly-once storage or vector-store repair. The rollout plan holds the receiver
+stopped for reconciliation before a replacement can automatically retry a write.
+Generated units now explicitly preserve the tested kill policy.
+
+Chart 0.5.0 adds independent default-off acceptance and relay controls. The relay
+has separate restricted database and delivery Secrets, no Service, denied ingress,
+a read-only root filesystem and no service-account token. Chart configuration is
+qualified by rendering; actual production receiver trust/reachability, grants,
+release images and a bounded attributed live canary remain rollout checks.
+
+Executed evidence:
+
+- Full receiver suite: 191 passed; independently repeated with the same result.
+- Setup/unit plus Helm: 287 passed, 3 optional PROMTOOL_BIN checks skipped;
+  independently repeated. Helm canonical asset parity passed.
+- HUD: 58 passed; independently repeated.
+- Actual Chromium → reviewer → PostgreSQL → relay → receiver → real loopback fake
+  Gateway HTTP: passed, including lost browser/receiver acknowledgements with one
+  named note, one receiver job and one counted Gateway request.
+- Active-RAG matrix: 5 passed each on Python 3.14/Uvicorn 0.54 and Python 3.12/
+  Uvicorn 0.30; independent current-runtime matrix 5 passed. CI runs the raw
+  comparison cases (2 passed); its 3 opt-in systemd cases are skipped unless the
+  user-manager fixture is enabled. Local qualification ran all 5, including the
+  90-second forced stop. All disposable services and RAG children were cleaned.
+- The candidate policy export/check matched the current helper-managed production
+  mapping. Read-only production checks reported Synced/Healthy, reviewer replicas
+  available, and the installed release unchanged at v0.1.11. No production
+  configuration, receiver restart or model call was performed by this increment.
+
+Commands and detailed review are in /tmp/gateway-rag-independent-review.md and
+owner-private ~/.local/state/convergence-gateway-rag-20261114/evidence/. The
+rollout sequence is dispatch-rollout.md. Existing native HUD telemetry is preserved.

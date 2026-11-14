@@ -1,0 +1,86 @@
+{{- $r := .Values.reviewer }}
+{{- if and $r.investigationEnabled (not $r.enabled) }}
+{{- fail "Reviewer investigation acceptance requires reviewer.enabled" }}
+{{- end }}
+{{- if $r.relay.enabled }}
+{{- if not $r.enabled }}{{ fail "Reviewer relay requires reviewer.enabled" }}{{- end }}
+{{- $secrets := list .Values.existingSecret $r.databaseSecret $r.serviceTlsSecret $r.installationTlsSecret $r.browserTlsSecret $r.relay.databaseSecret $r.relay.deliverySecret }}
+{{- if ne (len (uniq $secrets)) 7 }}
+{{- fail "Reviewer relay database and delivery Secrets must be distinct from all other application/reviewer Secrets" }}
+{{- end }}
+{{- $originParts := splitList ":" $r.relay.receiverOrigin }}
+{{- if gt (len $originParts) 2 }}
+{{- $port := int (last $originParts) }}
+{{- if or (eq $port 443) (gt $port 65535) }}
+{{- fail "Reviewer relay receiverOrigin must use a valid non-default port or no explicit port" }}
+{{- end }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-review-relay" .Release.Name }}
+  labels: {{ include "convergence.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: review-relay}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: review-relay}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: review-relay
+          image: {{ $r.apiImage | quote }}
+          imagePullPolicy: IfNotPresent
+          command: [node, reviewer-relay.js]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          env:
+            {{- range $key := list "PGHOST" "PGPORT" "PGUSER" "PGDATABASE" "PGPASSWORD" }}
+            - name: {{ $key }}
+              valueFrom: {secretKeyRef: {name: {{ $r.relay.databaseSecret | quote }}, key: {{ $key }}}}
+            {{- end }}
+            - {name: REVIEWER_DELIVERY_ENABLED, value: "1"}
+            - {name: REVIEWER_RECEIVER_ORIGIN, value: {{ $r.relay.receiverOrigin | quote }}}
+            - {name: REVIEWER_DELIVERY_TOKEN_FILE, value: /run/reviewer/delivery/token}
+            - {name: REVIEWER_RECEIVER_CA, value: /run/reviewer/delivery/ca.crt}
+          volumeMounts:
+            - {name: delivery, mountPath: /run/reviewer/delivery, readOnly: true}
+          resources: {requests: {cpu: 25m, memory: 64Mi}, limits: {cpu: "1", memory: 256Mi}}
+      volumes:
+        - name: delivery
+          secret:
+            secretName: {{ $r.relay.deliverySecret | quote }}
+            defaultMode: 0440
+            items:
+              - {key: token, path: token}
+              - {key: ca.crt, path: ca.crt}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-review-relay" .Release.Name }}
+  labels: {{ include "convergence.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: review-relay}
+  policyTypes: [Ingress]
+  ingress: []
+{{- end }}

@@ -21,4 +21,6 @@
 
 - [x] D5a: Qualify optional receiver HTTPS listener, shared lifecycle, exclusive queue ownership, existing caller compatibility and installer preflight.
 - [ ] D5b: Correlate the production gateway run and final result before enabling reviewer requests.
-- [ ] D5c: Qualify rollout/restart with active legacy RAG work, accounting for its existing executor/subprocess timeout separately from listener drain; preserve accepted work and dispatch checkpoints.
+- [x] D5b1: Implement and independently qualify the adapter against the installed Gateway protocol, pinned policy and durable recovery. D5b still requires its live commissioning case.
+- [x] D5c: Qualify rollout/restart with active external-process RAG under the supported systemd policy; preserve accepted work/checkpoints and document partial-write reconciliation.
+- [x] D5d: Provide opt-in GitOps deployment wiring for investigation acceptance and the relay, using separate restricted database/delivery credentials, before production activation.

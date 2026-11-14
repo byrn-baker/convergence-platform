@@ -47,6 +47,8 @@ jobs:
                    deploy/convergence/host-agent deploy/convergence/ids/proxmox-mirror; do
             (cd "$d" && python -m pytest -q)
           done
+      - name: RAG process lifecycle fixtures
+        run: python -m pytest -q tests/reviewer-runtime
 
   node:
     runs-on: ubuntu-24.04

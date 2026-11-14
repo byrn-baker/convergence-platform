@@ -197,18 +197,40 @@ PostgreSQL owns the actor-attributed case note. This worker never appends it aga
 or overwrites operator feedback. It reuses the ordinary reinvestigation payload
 builder and existing investigation lane/hourly budget. It verifies the fetched
 case identity and site before dispatch, then persists a checkpoint immediately
-before the hook call. The hook includes `reviewer_delivery_id` and
-`reviewer_job_id` correlation annotations and a unique delivery fingerprint.
+before the hook call. The direct Gateway request uses the delivery UUID as its
+idempotency key and in its isolated session key. SQLite binds that request to its
+job and stores the returned hook run ID, status and reply disposition atomically
+with the terminal receipt. No model output is stored in the receipt.
 
-An accepted hook is not a completed investigation. A normal202 keeps the worker
-slot until `INVESTIGATION_TIMEOUT_SECONDS`, then records `unknown` for operator
-review. Restart resumes the bounded wait without another hook. A resolved case
-alone cannot complete this receipt. A trusted synchronous200 may complete it only
-with the exact `{delivery_id, job_id, state}` response, matching this delivery and
-job, and state `completed` or `failed`. Existing asynchronous gateways generally
-do not emit that correlated result; their outcome therefore remains `unknown`.
+Reviewer work uses one `/hooks/agent` request with `waitForCompletion: true`,
+qualified against OpenClaw 2026.10.9. The selected agent, model, timeout and trusted
+prompt wrapper come from a pinned policy exported from the managed alert mapping.
+The ordinary alert/manual routes continue using their existing mapped hook.
+Gateway `completion.status=ok` means the agent run finished; it does not establish
+that a case update succeeded. Error/skipped executions are failed. An admission
+acknowledgement, malformed response, timeout or lost response remains unknown.
+The checkpoint records the wait deadline from the policy timeout plus 30 seconds
+of admission allowance. Restart uses that same deadline without loading a new
+policy or calling the hook again. Remote work may outlive a transport timeout.
 No automatic retry is made after the dispatch checkpoint. Intentional follow-up
 requires a new authorized request, not reuse of the unknown delivery.
+
+Export and check the narrow policy from the repository root:
+
+```sh
+python3 setup/reviewer_gateway.py export --policy-file /private/reviewer-gateway.json
+python3 setup/reviewer_gateway.py check --policy-file /private/reviewer-gateway.json
+```
+
+Set `REVIEWER_GATEWAY_POLICY_FILE` to that absolute path and
+`REVIEWER_GATEWAY_POLICY_SHA256` to the reported digest in the private receiver
+environment. Export does not copy credentials or change Gateway configuration.
+The receiver checks owner-only permissions and the raw digest before dispatch.
+The helper check detects managed mapping/policy drift; run it after Gateway
+configuration changes and before rollout. Runtime policy-file drift fails before
+checkpoint. The receiver still uses only `OPENCLAW_HOOK_TOKEN`; it needs no Gateway
+operator token. Gateway HTTP is permitted only on a literal loopback address;
+remote destinations need HTTPS. Redirects and environment proxies are disabled.
 
 Back up SQLite alongside the PostgreSQL outbox. Receipts are retained beyond
 normal job cleanup. A restore of one database without matching delivery history
@@ -250,6 +272,14 @@ These are listener and coroutine shutdown bounds, not a total process-exit SLA.
 Legacy RAG work dispatched with `asyncio.to_thread` may keep the executor alive
 until its existing timeout, even after its worker coroutine stops. That existing
 RAG thread lifecycle is unchanged here; those threads do not own JobStore.
+
+The supported systemd unit explicitly uses control-group termination, SIGTERM,
+and a 90-second forced-kill fallback. Isolated active-RAG tests on Python 3.12 and
+3.14 verified that no old RAG child survives replacement startup, including a
+child that ignores SIGTERM. Use the service manager for restart; raw Python
+SIGTERM and in-process RAG fallback do not have the same qualification. Interrupted
+snapshot writes can leave partial data and require reconciliation. See
+[the restart fixture](../../tests/reviewer-runtime/README.md).
 
 Supported startup acquires an exclusive advisory lock beside the resolved queue
 path (`jobs.sqlite.owner.lock`) before opening JobStore. A second receiver using

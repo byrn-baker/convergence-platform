@@ -49,7 +49,9 @@ def unit(name, env_file, venv, state, netclaw_dir=None, jev_env=None, rag_python
         lines.append(f'Environment=CONVERGENCE_JEV_ENV_FILE={jev_env}')
     if rag_python:
         lines.append(f'Environment=RAG_PYTHON={rag_python}')
-    lines += ['Restart=on-failure', 'RestartSec=5', 'NoNewPrivileges=true', 'UMask=0077', '',
+    lines += ['Restart=on-failure', 'RestartSec=5',
+              'KillMode=control-group', 'KillSignal=SIGTERM', 'SendSIGKILL=yes', 'TimeoutStopSec=90',
+              'NoNewPrivileges=true', 'UMask=0077', '',
               '[Install]', 'WantedBy=default.target', '']
     for value in (env_file, venv, state, netclaw_dir or '', jev_env or '', rag_python or ''):
         if any(c in str(value) for c in '\n\r%$"\'\\') or ' ' in str(value):
@@ -94,6 +96,13 @@ def preflight(args):
     runtime = _module('convergence_receiver_runtime', SERVICE/'receiver_runtime.py')
     settings = runtime.load_settings(environment)
     runtime.validate_tls(settings)
+    policy_path = environment.get('REVIEWER_GATEWAY_POLICY_FILE', '')
+    policy_digest = environment.get('REVIEWER_GATEWAY_POLICY_SHA256', '')
+    if policy_path or policy_digest:
+        if not policy_path or not policy_digest:
+            raise ValueError('Configure both reviewer Gateway policy path and SHA-256')
+        gateway = _module('convergence_gateway_preflight', SERVICE/'gateway_investigations.py')
+        gateway.load_policy(policy_path, policy_digest)
     return {'status': 'valid', 'env_file': str(env_file),
             'https_configured': settings.reviewer is not None}
 

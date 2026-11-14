@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from jobs import JobStore, RetryableJobError
 import rag_bridge
 import reviewer_commands
+import gateway_investigations
 from queue_owner import QueueOwner
 import hashlib
 import hmac
@@ -1949,50 +1950,47 @@ async def run_reviewer_investigation(body, job):
     event = await _fetch_guardian_event(body['case_id'], body['site_id'])
     if not event or event.get('id') != body['case_id'] or event.get('site_id') != body['site_id']:
         raise RuntimeError('Reviewer case unavailable or mismatched')
+    dispatch_policy = gateway_investigations.load_policy(
+        os.getenv('REVIEWER_GATEWAY_POLICY_FILE'), os.getenv('REVIEWER_GATEWAY_POLICY_SHA256'))
     payload = await build_reinvestigation_payload(body['case_id'], event, body['feedback'], site=body['site_id'])
-    alert = payload['alerts'][0]
-    alert['fingerprint'] = 'reviewer-' + body['delivery_id']
-    alert['annotations'].update({'reviewer_delivery_id': body['delivery_id'], 'reviewer_job_id': job['id'],
-                                 'reviewer_actor_id': body['actor_id'], 'reviewer_actor_name': body['actor_name']})
+    request = gateway_investigations.prepare_request(OPENCLAW_GATEWAY_URL, OPENCLAW_HOOK_TOKEN,
+        dispatch_policy, body['delivery_id'], payload['alerts'][0]['annotations']['investigation_prompt'])
     from investigation_policy import load_policy
     budget = int((load_policy().get('budgets') or {}).get('max_t2_per_hour', 3))
     try:
-        checkpointed = await queue_operation(job_store.reviewer.checkpoint, job['id'], budget)
+        checkpointed = await queue_operation(job_store.reviewer.checkpoint, job['id'], budget,
+            request.timeout_seconds + gateway_investigations.ADMISSION_ALLOWANCE_SECONDS)
     except OverflowError as error:
         raise RetryableJobError('Hourly investigation budget exhausted', retry_after=60) from error
     if not checkpointed:
-        await queue_operation(job_store.reviewer.finish, job['id'], 'unknown', 'Dispatch checkpoint already exists')
+        existing = job_store.db.execute('SELECT dispatched FROM jobs WHERE id=?', (job['id'],)).fetchone()
+        if existing and existing['dispatched'] is not None:
+            await settle_reviewer_unknown(job['id'], existing['dispatched'])
+        else:
+            await queue_operation(job_store.reviewer.finish, job['id'], 'unknown', 'Dispatch checkpoint unavailable')
         return
-    # From this point a timeout, restart or malformed acknowledgement is ambiguous.
-    # A normal accepted hook response is not a correlated investigation result.
-    state = 'unknown'
-    try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            response = await client.post(f"{OPENCLAW_GATEWAY_URL}/hooks/alert", json=payload,
-                headers={'Authorization': 'Bearer ' + OPENCLAW_HOOK_TOKEN, 'Content-Type': 'application/json'})
-        if response.status_code in (200, 202):
-            metrics.investigations_triggered_total += 1
-        if response.status_code == 200 and len(response.content) <= 16384:
-            result = response.json()
-            if (isinstance(result, dict) and set(result) == {'delivery_id', 'job_id', 'state'} and
-                    result['delivery_id'] == body['delivery_id'] and result['job_id'] == job['id'] and
-                    result['state'] in ('completed', 'failed')):
-                state = result['state']
-    except Exception:
-        # No downstream body, private feedback, token, or exception text is logged.
-        pass
-    if state == 'unknown':
+    # The adapter sends one direct waiting hook call. Its terminal metadata proves
+    # execution settled, not that a particular case mutation succeeded.
+    result = await gateway_investigations.dispatch(request)
+    if result.completion is not None:
+        metrics.investigations_triggered_total += 1
+    if result.state == 'unknown':
         checkpoint = job_store.db.execute('SELECT dispatched FROM jobs WHERE id=?', (job['id'],)).fetchone()
         await settle_reviewer_unknown(job['id'], checkpoint['dispatched'])
     else:
-        await queue_operation(job_store.reviewer.finish, job['id'], state,
-                              None if state == 'completed' else 'Correlated investigation failure')
+        await queue_operation(job_store.reviewer.finish, job['id'], result.state,
+                              None if result.state == 'completed' else 'Gateway execution did not complete successfully',
+                              result.completion)
 
 
 async def settle_reviewer_unknown(jid, dispatched):
     # Retain the existing worker/concurrency slot until this dispatch's deadline.
     # This is a bounded wait, not case-status polling or another model request.
-    remaining = min(INVESTIGATION_TIMEOUT, max(0, dispatched + INVESTIGATION_TIMEOUT - time.time()))
+    receipt = job_store.db.execute('SELECT dispatch_deadline FROM reviewer_command_receipts WHERE job_id=?', (jid,)).fetchone()
+    deadline = receipt['dispatch_deadline'] if receipt and receipt['dispatch_deadline'] is not None else dispatched + INVESTIGATION_TIMEOUT
+    # This durable deadline survives policy changes/restart. Remote work may still
+    # outlive a transport timeout; expiry permits review, never another dispatch.
+    remaining = min(930, max(0, deadline - time.time()))
     if remaining:
         await asyncio.sleep(remaining)
     await queue_operation(job_store.reviewer.finish, jid, 'unknown', 'Investigation outcome requires review')

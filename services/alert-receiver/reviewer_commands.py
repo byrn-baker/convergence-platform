@@ -60,11 +60,19 @@ class ReviewerCommands:
     def __init__(self, jobs):
         self.jobs = jobs
         self.db = jobs.db
+        # Serialize the additive migration with admission on other connections.
+        self.db.execute('BEGIN IMMEDIATE')
         with self.db:
             self.db.execute('''CREATE TABLE IF NOT EXISTS reviewer_command_receipts (
                 delivery_id TEXT PRIMARY KEY, digest TEXT NOT NULL, job_id TEXT UNIQUE NOT NULL,
                 state TEXT NOT NULL CHECK(state IN ('enqueued','dispatched','completed','failed','unknown')),
                 created REAL NOT NULL)''')
+            columns = {row[1] for row in self.db.execute('PRAGMA table_info(reviewer_command_receipts)')}
+            for name in ('gateway_run_id', 'gateway_status', 'gateway_reply_disposition'):
+                if name not in columns:
+                    self.db.execute('ALTER TABLE reviewer_command_receipts ADD COLUMN ' + name + ' TEXT')
+            if 'dispatch_deadline' not in columns:
+                self.db.execute('ALTER TABLE reviewer_command_receipts ADD COLUMN dispatch_deadline REAL')
 
     def read(self, delivery_id):
         row = self.db.execute('SELECT delivery_id,job_id,state FROM reviewer_command_receipts WHERE delivery_id=?',
@@ -85,12 +93,14 @@ class ReviewerCommands:
                 return {key: previous[key] for key in ('delivery_id', 'job_id', 'state')}
             self.jobs._check_capacity()
             jid = self.jobs._insert_job('reviewer:' + body['delivery_id'], 'reviewer', body)
-            self.db.execute("INSERT INTO reviewer_command_receipts VALUES (?,?,?,'enqueued',?)",
+            self.db.execute("INSERT INTO reviewer_command_receipts(delivery_id,digest,job_id,state,created) VALUES (?,?,?,'enqueued',?)",
                             (body['delivery_id'], digest, jid, time.time()))
             return {'delivery_id': body['delivery_id'], 'job_id': jid, 'state': 'enqueued'}
 
-    def checkpoint(self, jid, hourly_budget):
+    def checkpoint(self, jid, hourly_budget, timeout_seconds=None):
         """Return false if this job is already checkpointed; never re-hook it."""
+        if timeout_seconds is not None and (type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 930):
+            raise ValueError('Invalid dispatch wait budget')
         self.db.execute('BEGIN IMMEDIATE')
         with self.db:
             row = self.db.execute("SELECT * FROM jobs WHERE id=? AND kind='reviewer'", (jid,)).fetchone()
@@ -101,20 +111,34 @@ class ReviewerCommands:
             if self.jobs.hourly_dispatches() >= hourly_budget:
                 raise OverflowError('Hourly investigation budget exhausted')
             body = json.loads(row['payload'])
+            dispatched = time.time()
             self.db.execute('UPDATE jobs SET dispatched=?,event_id=?,site=? WHERE id=?',
-                            (time.time(), body['case_id'], body['site_id'], jid))
-            self.db.execute("UPDATE reviewer_command_receipts SET state='dispatched' WHERE job_id=? AND state='enqueued'", (jid,))
+                            (dispatched, body['case_id'], body['site_id'], jid))
+            self.db.execute("UPDATE reviewer_command_receipts SET state='dispatched',dispatch_deadline=? WHERE job_id=? AND state='enqueued'",
+                            (dispatched + timeout_seconds if timeout_seconds is not None else None, jid))
             return True
 
-    def finish(self, jid, state, error=None):
+    def finish(self, jid, state, error=None, completion=None):
         if state not in TERMINAL:
             raise ValueError('Expected a terminal reviewer state')
+        if state == 'completed' and completion is None:
+            raise ValueError('Completed reviewer execution requires gateway metadata')
+        if completion is not None:
+            from gateway_investigations import validate_completion
+            completion = validate_completion(completion)
+            if state != ('completed' if completion['status'] == 'ok' else 'failed'):
+                raise ValueError('Gateway completion does not match terminal state')
         self.db.execute('BEGIN IMMEDIATE')
         with self.db:
             row = self.db.execute('SELECT state FROM reviewer_command_receipts WHERE job_id=?', (jid,)).fetchone()
             if not row or row['state'] in TERMINAL:
                 return
-            self.db.execute('UPDATE reviewer_command_receipts SET state=? WHERE job_id=?', (state, jid))
+            if completion is not None and row['state'] != 'dispatched':
+                raise ValueError('Gateway completion requires a dispatch checkpoint')
+            metadata = completion or {}
+            self.db.execute('''UPDATE reviewer_command_receipts SET state=?,gateway_run_id=?,
+                gateway_status=?,gateway_reply_disposition=? WHERE job_id=?''',
+                (state, metadata.get('run_id'), metadata.get('status'), metadata.get('reply_disposition'), jid))
             self.db.execute('UPDATE jobs SET state=?,error=? WHERE id=?',
                             ('done' if state == 'completed' else 'failed', error, jid))
 

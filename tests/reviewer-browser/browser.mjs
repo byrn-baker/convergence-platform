@@ -268,7 +268,7 @@ test(
     assert.equal((await db.query('SELECT 1 FROM reviewer_investigations')).rowCount,1);
     assert.equal((await db.query('SELECT investigation_notes FROM events WHERE id=$1',[caseId])).rows[0].investigation_notes,notes);
     await operator.page.getByRole('button',{name:'Check investigation request',exact:true}).click();
-    await operator.page.locator('#investigation-status').getByText(/Investigation completed/).waitFor();
+    await operator.page.locator('#investigation-status').getByText(/Agent run finished/).waitFor();
 
     const cross = await operator.page.evaluate(
       async ({ caseId }) => (await fetch('/review/sites/blue/cases/' + caseId)).status,
