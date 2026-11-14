@@ -15,6 +15,7 @@ import { chromium } from 'playwright';
 const serviceDir = process.env.REVIEWER_API_DIR;
 const viewDir = fileURLToPath(new URL('../../ui/convergence-hud/', import.meta.url));
 const { Pool } = createRequire(path.join(serviceDir, 'package.json'))('pg');
+const {createRelay, createReceiverClient} = createRequire(path.join(serviceDir,'package.json'))('./src/reviewer/relay');
 const fixture = process.env.REVIEWER_FIXTURE_DIR;
 const file = (key) => path.join(fixture, key);
 const url = new URL(process.env.REVIEWER_TEST_DATABASE_URL);
@@ -38,8 +39,8 @@ function command(cwd, args, input) {
   const r = spawnSync(process.execPath, args, { cwd, env: baseEnv, input, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
 }
-async function launch(t, cwd, args, env) {
-  const worker = spawn(process.execPath, args, {
+async function launch(t, cwd, args, env, runtime = process.execPath) {
+  const worker = spawn(runtime, args, {
     cwd,
     env: { ...baseEnv, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -116,6 +117,7 @@ test(
     const origin = 'https://reviewer.test:' + uiPort;
     await launch(t, serviceDir, ['reviewer-service.js'], {
       REVIEWER_SERVICE_PORT: '' + apiPort,
+      REVIEWER_INVESTIGATION_ENABLED: '1',
       REVIEWER_CLIENT_CA: file('root.pem'),
       REVIEWER_TLS_CERT: file('localhost.pem'),
       REVIEWER_TLS_KEY: file('localhost.key'),
@@ -209,6 +211,61 @@ test(
       .getByText(/responder/)
       .first()
       .waitFor();
+    assert.equal(await reader.page.getByRole('button', {name:'Request investigation',exact:true}).isVisible(), false);
+    await operator.page.getByLabel('Investigation question').fill('Inspect the synthetic counters and preserve the original observation');
+    const requestWire = await operator.ctx.newCDPSession(operator.page);
+    await requestWire.send('Fetch.enable', {patterns:[{urlPattern:'*/investigation',requestStage:'Response'}]});
+    const lostRequest = once(requestWire,'Fetch.requestPaused').then(async ([event]) => {
+      await requestWire.send('Fetch.failRequest',{requestId:event.requestId,errorReason:'Failed'});
+      return {status:event.responseStatusCode,id:JSON.parse(event.request.postData).operationId};
+    });
+    await operator.page.getByRole('button',{name:'Request investigation',exact:true}).click();
+    const acceptedRequest = await lostRequest; await requestWire.detach();
+    assert.equal(acceptedRequest.status,200);
+    await operator.page.locator('#investigation-status').getByText(/outcome is unknown/).waitFor();
+    await operator.page.reload(); await openCase(operator.page);
+    await operator.page.locator('#investigation-status').getByText(/Requested by responder/).waitFor();
+    assert.equal(await operator.page.locator('#investigation-operation').innerText(),acceptedRequest.id);
+    assert.equal((await db.query('SELECT 1 FROM reviewer_investigations')).rowCount,1);
+    assert.equal((await db.query('SELECT 1 FROM reviewer_investigation_outbox')).rowCount,1);
+    const notes=(await db.query('SELECT investigation_notes FROM events WHERE id=$1',[caseId])).rows[0].investigation_notes;
+    assert.equal(notes.split(acceptedRequest.id).length-1,1);
+    assert.match(notes,/responder/);
+    const stored=await operator.page.evaluate(()=>Object.entries(sessionStorage));
+    assert.ok(!JSON.stringify(stored).includes('synthetic counters'));
+
+    const receiverPort = await availablePort();
+    await launch(t, fileURLToPath(new URL('.',import.meta.url)), ['receiver_fixture.py'], {
+      REVIEWER_FIXTURE_DIR:fixture, REVIEWER_RECEIVER_TEST_PORT:String(receiverPort),
+    },process.env.REVIEWER_RECEIVER_PYTHON || 'python3');
+    const receiver = createReceiverClient({origin:'https://localhost:'+receiverPort,token:'x'.repeat(40),ca:fs.readFileSync(file('root.pem'))});
+    t.after(()=>receiver.close());
+    let admissions=0;
+    const relay=createRelay(db,{
+      async submit(envelope) {
+        const reply=await receiver.submit(envelope);
+        if(++admissions===1)throw Error('Synthetic lost receiver acknowledgement');
+        return reply;
+      },
+      read:id=>receiver.read(id),
+    },{retryMs:1,pollMs:1});
+    let delivery;
+    for(let attempt=0;attempt<200;attempt++) {
+      await relay.tick();
+      delivery=(await db.query('SELECT * FROM reviewer_investigation_outbox')).rows[0];
+      if(delivery.state==='completed')break;
+      await pause(25);
+    }
+    assert.equal(delivery.state,'completed');assert.equal(admissions,2);
+    const hooks=JSON.parse(fs.readFileSync(file('hook-calls.json')));
+    assert.equal(hooks.length,1);assert.equal(hooks[0].delivery_id,delivery.delivery_id);
+    assert.equal(hooks[0].job_id,delivery.job_id);assert.equal(hooks[0].actor_name,'responder');
+    assert.equal(hooks[0].site_id,'red');
+    assert.equal((await db.query('SELECT 1 FROM reviewer_investigations')).rowCount,1);
+    assert.equal((await db.query('SELECT investigation_notes FROM events WHERE id=$1',[caseId])).rows[0].investigation_notes,notes);
+    await operator.page.getByRole('button',{name:'Check investigation request',exact:true}).click();
+    await operator.page.locator('#investigation-status').getByText(/Investigation completed/).waitFor();
+
     const cross = await operator.page.evaluate(
       async ({ caseId }) => (await fetch('/review/sites/blue/cases/' + caseId)).status,
       { caseId },
@@ -246,7 +303,7 @@ test(
     );
     assert.equal((await db.query('SELECT 1 FROM reviewer_case_dispositions')).rowCount, 1);
     t.diagnostic(
-      'Real CLI startup, named accounts, trusted HTTPS, mTLS and PostgreSQL. Independent mobile viewer and desktop operator. Committed request with a lost response recovered the same receipt after reload, with one audit row and a named actor. Cross-site, native routes and hostile origin denied; separate logout.',
+      'Real CLI startup, named accounts, trusted HTTPS, mTLS and PostgreSQL. Independent mobile viewer and desktop operator. Committed request with a lost response recovered the same receipt after reload, with one audit row and a named actor. Cross-site, native routes and hostile origin denied; separate logout. Lost investigation browser response and receiver acknowledgement recovered one PostgreSQL note, one SQLite job and one counted correlated synthetic hook through the real HTTPS relay.',
     );
   },
 );

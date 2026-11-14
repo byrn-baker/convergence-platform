@@ -37,6 +37,19 @@ class JobStore:
         self.db.execute('CREATE INDEX IF NOT EXISTS jobs_key_created ON jobs(key,created DESC)')
         self.db.execute('CREATE INDEX IF NOT EXISTS jobs_state_created ON jobs(state,created)')
         self.db.commit()
+        from reviewer_commands import ReviewerCommands
+        self.reviewer = ReviewerCommands(self)
+
+    def _check_capacity(self):
+        if self.db.execute("SELECT count(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0] >= self.capacity:
+            raise OverflowError('Investigation inbox full')
+
+    def _insert_job(self, key, kind, payload):
+        """Caller owns the admission transaction and its capacity check."""
+        jid = str(uuid.uuid4())
+        self.db.execute("INSERT INTO jobs(id,key,kind,payload,created,available) VALUES(?,?,?,?,?,?)",
+                        (jid, key, kind, json.dumps(payload), time.time(), time.time()))
+        return jid
 
     def enqueue(self, key, kind, payload, repeat=False, retry_failed=False):
         with self.db:
@@ -50,18 +63,14 @@ class JobStore:
                         raise OverflowError('Investigation inbox full')
                     self.db.execute("UPDATE jobs SET state='queued',attempts=0,available=? WHERE id=? AND state='failed'", (time.time(), previous['id']))
                 return previous['id']
-            if self.db.execute("SELECT count(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0] >= self.capacity:
-                raise OverflowError('Investigation inbox full')
-            jid = str(uuid.uuid4())
-            self.db.execute("INSERT INTO jobs(id,key,kind,payload,created,available) VALUES(?,?,?,?,?,?)",
-                            (jid,key,kind,json.dumps(payload),time.time(),time.time()))
-            return jid
+            self._check_capacity()
+            return self._insert_job(key, kind, payload)
 
     def claim(self, lane='investigation'):
         kinds = {
             'ingest': "kind IN ('alert','resolved')",
             'maintenance': "kind = 'snapshot'",
-            'investigation': "kind IN ('investigate','manual')",
+            'investigation': "kind IN ('investigate','manual','reviewer')",
             'review': "kind = 'jev_review'",
         }[lane]
         with self.db:

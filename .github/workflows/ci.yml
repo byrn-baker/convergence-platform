@@ -115,9 +115,46 @@ jobs:
           npx playwright install --with-deps chromium
           node qualify.mjs "$HUD_ARTIFACT"
 
+  reviewer-integration:
+    runs-on: ubuntu-24.04
+    services:
+      reviewer-postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fixture
+          POSTGRES_DB: reviewer_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd pg_isready --health-interval 3s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install isolated receiver and browser dependencies
+        run: |
+          pip install -r services/alert-receiver/requirements.txt
+          sudo apt-get update
+          sudo apt-get install -y libnss3-tools
+          npm ci --prefix ui/convergence-api
+          npm ci --prefix tests/reviewer-browser
+          cd tests/reviewer-browser
+          npx playwright install --with-deps chromium
+      - name: Verify named requests through HTTPS, PostgreSQL, relay and SQLite
+        env:
+          FIXTURE_PORT: ${{ job.services.reviewer-postgres.ports[5432] }}
+        run: |
+          export REVIEWER_TEST_DATABASE_URL="postgres://postgres:fixture@127.0.0.1:${FIXTURE_PORT}/reviewer_test"
+          tests/reviewer-browser/run.sh
+
   images:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [python, node, hud-integration]
+    needs: [python, node, hud-integration, reviewer-integration]
     runs-on: ubuntu-24.04
     permissions:
       contents: read

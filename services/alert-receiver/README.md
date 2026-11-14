@@ -170,3 +170,47 @@ See `alertmanager-snippet.yaml` for the config to add to your OBS VM Alertmanage
 Either:
 - Add the device to Nautobot (preferred — single source of truth)
 - Add an entry to `inventory.yaml` (quick fallback for devices not yet in SoT)
+
+## Attributed reviewer investigations
+
+The opt-in `/reviewer/commands` POST and `/reviewer/commands/{delivery_id}` GET
+use a **separate** `REVIEWER_DELIVERY_TOKEN`. Both methods require it; the ordinary
+machine token cannot submit or inspect reviewer deliveries. Empty or reused
+machine credentials leave these routes disabled. They require HTTPS and reject
+browser cookies/origins and forwarding headers. Configure native TLS on the
+receiver listener (for example uvicorn's `--ssl-certfile` and `--ssl-keyfile`),
+with a certificate trusted by the relay. The ordinary plaintext launcher does
+not enable reviewer delivery. Do not launch a second receiver process against
+the same SQLite inbox; it is owned by one receiver process.
+
+The [v1 contract](../../specs/1015-embedded-hud-sign-in/dispatch-contract.md)
+defines the bounded immutable envelope. Each PostgreSQL-assigned delivery ID
+admits one job and receipt atomically under the existing inbox capacity. Two
+requests for the same case remain distinct. Replaying the same envelope returns
+the same job even after restart or terminal-job cleanup. A changed envelope with
+the same delivery ID returns409. Capacity exhaustion returns503 without creating
+a receipt or job.
+
+PostgreSQL owns the actor-attributed case note. This worker never appends it again
+or overwrites operator feedback. It reuses the ordinary reinvestigation payload
+builder and existing investigation lane/hourly budget. It verifies the fetched
+case identity and site before dispatch, then persists a checkpoint immediately
+before the hook call. The hook includes `reviewer_delivery_id` and
+`reviewer_job_id` correlation annotations and a unique delivery fingerprint.
+
+An accepted hook is not a completed investigation. A normal202 keeps the worker
+slot until `INVESTIGATION_TIMEOUT_SECONDS`, then records `unknown` for operator
+review. Restart resumes the bounded wait without another hook. A resolved case
+alone cannot complete this receipt. A trusted synchronous200 may complete it only
+with the exact `{delivery_id, job_id, state}` response, matching this delivery and
+job, and state `completed` or `failed`. Existing asynchronous gateways generally
+do not emit that correlated result; their outcome therefore remains `unknown`.
+No automatic retry is made after the dispatch checkpoint. Intentional follow-up
+requires a new authorized request, not reuse of the unknown delivery.
+
+Back up SQLite alongside the PostgreSQL outbox. Receipts are retained beyond
+normal job cleanup. A restore of one database without matching delivery history
+requires reconciliation before resuming relay delivery. Disabling the service token
+stops new admission; already accepted jobs remain commissioned and may run.
+Pause the receiver deliberately if those jobs must also be held. Legacy manual
+and JEV routes keep their existing behavior; JEV is not a reviewer command.

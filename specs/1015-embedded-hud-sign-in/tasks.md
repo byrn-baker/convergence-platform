@@ -11,3 +11,10 @@
 - [ ] Test a real disposition on a synthetic case through both HUD entry points and confirm the database audit actor, site and case.
 - [x] Propose single-owner note and delivery semantics and reproduce the existing retry gap in isolation.
 - [ ] Verify idempotent queued work and recovery from an ambiguous response before enabling JEV review or reinvestigation.
+
+- [x] D1: Implement atomic named request acceptance, immutable receipt, leased relay and restricted database grants.
+- [x] D2: Implement authenticated durable receiver admission, distinct requests and safe checkpoint recovery using existing budgets.
+- [x] D3: Add reviewer request/receipt UI with session-safe recovery and stable operation identity.
+- [x] D4: Qualify PostgreSQL→relay→receiver→synthetic hook and browser failures, obtain independent review and document rollout.
+
+- [ ] D5: Prepare and qualify the production receiver HTTPS migration with existing caller compatibility, real gateway job/result correlation, and coordinated relay rollout before enabling investigation requests.

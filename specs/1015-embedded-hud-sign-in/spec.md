@@ -12,3 +12,7 @@ An operator viewing a case in a trusted local NetClaw HUD or its dedicated HTTPS
 Two people on separate workstations can review the same investigation using their own accounts. A disposition records the acting user. The dedicated network origin exposes only the review view and its scoped operations. Reviewer sessions cannot reach local HUD owner issuance, consoles, chat, model settings or any general-purpose proxy. Claiming, assignment and handoff are separate case-management features.
 
 The initial write for qualification is a security disposition. Reinvestigation and JEV review enqueue external work and require separate retry and audit qualification before activation.
+
+## Approved next increment: attributed reinvestigation
+
+Implement the reinvestigation command under [dispatch-contract.md](dispatch-contract.md), including durable acceptance, relay, receiver deduplication, explicit ambiguous outcomes and browser recovery. Keep JEV disabled. Preserve reviewer authentication boundaries and existing machine/manual callers.

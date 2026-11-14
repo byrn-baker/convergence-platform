@@ -365,3 +365,83 @@ test('a HUD case link is stripped, waits for sign-in and only selects a granted 
     assert.deepEqual(api.calls.map(c => c.path), ['/review/session', '/review/sign-in']);
   }
 });
+
+async function until(predicate) {
+  for (let i=0;i<100;i++) { if (predicate()) return; await wait(10); }
+  assert.ok(predicate(), 'expected workspace state');
+}
+
+test('investigation lost response recovers after reload with same actor and no stored question', async t => {
+  const storage = new Map(), posts = [];
+  let saved;
+  const question = 'Verify this private packet path again';
+  const configure = window => Object.defineProperty(window, 'sessionStorage', {value: {
+    getItem: k => storage.get(k) ?? null, setItem: (k,v) => storage.set(k,v), removeItem: k => storage.delete(k),
+  }});
+  const handler = (path, options) => {
+    if (path === '/review/session') return response(200,{csrf:'requester',user:identity});
+    if (path === casePath) return response(200,{...caseData,investigation_enabled:true});
+    if (path === casePath+'/investigation') {
+      const input=JSON.parse(options.body);posts.push(input);
+      saved={operation_id:input.operationId,feedback:input.feedback,case_id:id,site_id:'red',requested_by:identity.id,
+        requested_by_name:identity.name,state:'accepted',delivery_id:randomUUID(),job_id:null};
+      throw Error('accepted but response lost');
+    }
+    assert.equal(path,casePath+'/investigation/'+saved.operation_id);
+    return response(200,saved);
+  };
+  const first=endpoint(t,handler,configure);
+  await wait();first.open();await until(()=>!first.byId('investigation-panel').hidden);
+  first.byId('investigation-form').elements.feedback.value=question;first.submit('investigation-form');
+  await until(()=>first.byId('investigation-status').textContent.includes('outcome is unknown'));
+  assert.equal(posts.length,1);assert.equal(first.byId('investigation-retry').hidden,true);
+  assert.equal(storage.size,1);
+  for(const [key,value] of storage) {
+    assert.match(key,/^investigation:[a-f0-9]{64}$/);
+    for(const secret of [question,id,identity.id,identity.name,'red']) assert.equal((key+value).includes(secret),false);
+  }
+  const second=endpoint(t,handler,configure);await wait();second.open();
+  await until(()=>second.byId('investigation-status').textContent.includes('Requested by '+identity.name));
+  assert.equal(posts.length,1);assert.equal(second.byId('investigation-operation').textContent,saved.operation_id);
+  assert.equal(second.byId('investigation-form').elements.feedback.value,'');
+  assert.equal(second.byId('investigation-new').hidden,false);
+});
+
+test('absent investigation receipt permits exact retry only; deliberate second request gets a fresh key', async t => {
+  const posts=[];let absent=true;const question='Check the current interface counters';
+  const handler=(path,options)=>{
+    if(path==='/review/session')return response(200,{csrf:'r',user:identity});
+    if(path===casePath)return response(200,{...caseData,investigation_enabled:true});
+    if(options.method==='POST'){
+      const input=JSON.parse(options.body);posts.push(input);
+      if(absent)throw Error('not delivered');
+      return response(200,{operation_id:input.operationId,feedback:input.feedback,case_id:id,site_id:'red',requested_by:identity.id,requested_by_name:identity.name,state:'enqueued'});
+    }
+    return response(404,{});
+  };
+  const api=endpoint(t,handler);await wait();api.open();await until(()=>!api.byId('investigation-panel').hidden);
+  api.byId('investigation-form').elements.feedback.value=question;api.submit('investigation-form');
+  await until(()=>!api.byId('investigation-check').hidden);api.byId('investigation-check').click();
+  await until(()=>!api.byId('investigation-retry').hidden);absent=false;api.byId('investigation-retry').click();
+  await until(()=>!api.byId('investigation-new').hidden);assert.deepEqual(posts[0],posts[1]);
+  api.byId('investigation-new').click();api.byId('investigation-form').elements.feedback.value=question;api.submit('investigation-form');
+  await until(()=>posts.length===3);assert.notEqual(posts[2].operationId,posts[0].operationId);
+});
+
+test('viewer and disabled installation cannot submit, and late investigation receipt is cleared on logout', async t => {
+  let session={csrf:'op',user:{...identity,role:'viewer'}}, enabled=true, resolvePost;
+  const api=endpoint(t,(path,options)=>{
+    if(path==='/review/session')return response(200,session);
+    if(path==='/review/sign-out'){session={csrf:'out',user:null};return response(204)}
+    if(path===casePath)return response(200,{...caseData,investigation_enabled:enabled});
+    if(path===casePath+'/investigation')return new Promise(resolve=>{resolvePost=()=>{const i=JSON.parse(options.body);resolve(response(200,{operation_id:i.operationId,feedback:i.feedback,case_id:id,site_id:'red',requested_by:identity.id,requested_by_name:identity.name,state:'accepted'}))}});
+    throw Error('unexpected route');
+  });
+  await wait();api.open();await wait();assert.equal(api.byId('investigation-panel').hidden,true);
+  session={csrf:'op',user:identity};enabled=false;api.window.dispatchEvent(new api.window.Event('focus'));await wait();api.open();await wait();
+  assert.equal(api.byId('investigation-panel').hidden,true);
+  enabled=true;api.open();await until(()=>!api.byId('investigation-panel').hidden);
+  api.byId('investigation-form').elements.feedback.value='Investigate the recent observation';api.submit('investigation-form');await until(()=>Boolean(resolvePost));
+  api.byId('logout').click();await until(()=>!api.byId('login').hidden);resolvePost();await wait();
+  assert.equal(api.byId('investigation-panel').hidden,true);assert.equal(api.byId('investigation-status').textContent,'');assert.equal(api.byId('investigation-operation').textContent,'');
+});

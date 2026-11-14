@@ -9,7 +9,7 @@ export function reviewerAssets() {
   return new Map([
     ['/', asset('index.html', 'text/html; charset=utf-8')],
     ['/reviewer.css', asset('reviewer.css', 'text/css; charset=utf-8')],
-    ['/reviewer.js', asset('reviewer.js', 'text/javascript; charset=utf-8')],
+    ...['reviewer.js', 'pending-operations.js', 'investigation.js'].map(file => ['/' + file, asset(file, 'text/javascript; charset=utf-8')]),
   ]);
 }
 

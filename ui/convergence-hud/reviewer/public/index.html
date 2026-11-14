@@ -51,6 +51,21 @@
             <button type="button" id="retry" hidden>Retry same operation</button>
           </div>
         </section>
+        <section id="investigation-panel" hidden>
+          <h3>Request an investigation</h3>
+          <p>Ask for additional evidence. Each submitted request is attributed to your account.</p>
+          <form id="investigation-form">
+            <label>Investigation question<textarea name="feedback" rows="3" required minlength="10" maxlength="4000"></textarea></label>
+            <button type="submit">Request investigation</button>
+          </form>
+          <p id="investigation-status" role="status" aria-live="polite"></p>
+          <code id="investigation-operation"></code>
+          <div class="actions">
+            <button type="button" id="investigation-check" hidden>Check investigation request</button>
+            <button type="button" id="investigation-retry" hidden>Retry same investigation request</button>
+            <button type="button" id="investigation-new" hidden>New investigation request</button>
+          </div>
+        </section>
       </article>
     </section>
   </main>
