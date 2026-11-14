@@ -54,6 +54,15 @@ export function startReviewer(document, browser = document.defaultView) {
   let session = null, generation = 0, sessionRequest = 0, authBusy = false;
   let current = null, currentKey = null, operation = null, expiryTimer = null, expiresAt = 0;
   let logoutNonce = null, preparing = false, suspendedDraft = null, recoveryUnavailable = false;
+  // Consume the case reference once. This only fills in the lookup after sign-in.
+  const reference = new URLSearchParams(browser.location.hash.slice(1));
+  let linkedCase = null;
+  if (reference.has('case') || reference.has('site')) {
+    browser.history.replaceState(null, '', browser.location.pathname + browser.location.search);
+    if (reference.size === 2 && UUID.test(reference.get('case')) && reference.get('site')) {
+      linkedCase = {id: reference.get('case').toLowerCase(), site: reference.get('site')};
+    }
+  }
   const pointers = receiptPointers(browser);
   const changes = typeof browser.BroadcastChannel === 'function' ? new browser.BroadcastChannel('review-session') : null;
   if (changes) changes.onmessage = () => { if (!logoutNonce) { ++sessionRequest; purgeSession(); refreshSession(); } };
@@ -132,6 +141,16 @@ export function startReviewer(document, browser = document.defaultView) {
     if (changed && user) {
       site.replaceChildren(...user.sites.map(name => new browser.Option(name, name)));
       if (!user.sites.length) text('status', 'You have no sites available for review.');
+      if (linkedCase) {
+        if (user.sites.includes(linkedCase.site)) {
+          site.value = linkedCase.site;
+          caseId.value = linkedCase.id;
+          text('status', 'Open the selected case to review it.');
+        } else {
+          text('status', 'Your account does not have access to the linked site.');
+        }
+        linkedCase = null;
+      }
     }
     if (user && next.expiresAt) setExpiry(next.expiresAt);
     if (resume && user) {
