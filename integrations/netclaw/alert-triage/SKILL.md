@@ -1,7 +1,7 @@
 ---
 name: alert-triage
 description: Investigate a Convergence alert case that the alert receiver assigned to NetClaw. Reads the case, checks current state and history with the read-only tools this agent is allowed, classifies the cause, records evidence and a conclusion on the same case, and escalates when uncertain. Never remediates. Also answers an operator asking NetClaw to look into a Convergence case.
-version: 1.1.1
+version: 1.1.2
 license: MIT
 tags: [convergence, alerts, investigation, triage]
 compatibility: "Uses the network only through MCP tools: the Convergence case API (convergence-case-mcp) and any read-only telemetry or device tools the operator allows this agent."
@@ -29,6 +29,37 @@ the procedure below.
 - **Cite evidence.** For each finding give the source, the query or tool, and the time
   window. Separate facts, hypotheses and missing data.
 - **Escalate when unsure.** A cleared alert does not prove a cause.
+
+## Code-mode tool selection
+
+Apply this procedure to every MCP call on a code-mode gateway, including routing,
+waiting, case reads and updates, and the final readback:
+
+1. Discover the tool with `catalog.search`. Results are callable handles with
+   `callableName`, `toolName`, `apiPath` and `describe()`. Search rank indicates
+   relevance; select by the full, exact `callableName` and require one match.
+   If the exact handle is missing or ambiguous, stop that call and report the tool
+   unavailable. Preserve the last confirmed member state.
+2. Inspect the selected handle's schema with `await handle.describe()`, or read its
+   virtual declaration with `await API.read(handle.apiPath)`. An `apiPath` belongs
+   to the code-mode API, not the workspace filesystem. Confirm the parameter names
+   and required fields before calling the handle with one object argument.
+3. For case readback, after confirming the `caseGet` schema, use the assigned case
+   ID as `caseId` and select the exact handle:
+
+```javascript
+const callableName = "MCP.convergenceCaseMcp.caseGet";
+const matches = (await catalog.search(callableName)).filter(
+  tool => tool.callableName === callableName
+);
+if (matches.length !== 1) throw new Error("Exact case reader unavailable");
+const caseReader = matches[0];
+text(await caseReader({event_id: caseId}));
+```
+
+Read the returned case before reporting its recorded outcome. A member's completed
+result and an unsuccessful readback are separate facts: report both, retaining the
+readback error until it is resolved with the exact tool and valid arguments.
 
 ## Procedure
 
@@ -126,7 +157,6 @@ When you have `n2n_route`, delegate every case; do not investigate it yourself:
    `interrupted`), when it returns `not_found`, or after about 12 minutes in all. The
    member investigates with its own tools and records the evidence and conclusion on the
    case.
-   On a code-mode gateway, resolve the exact tool name in catalog search results.
    A pending tool call has its own run ID. Resume that run with `wait` until the MCP
    result arrives, then use the member state and task ID to decide whether to wait
    again. If only `n2n_task_status` is available, poll it for the same task ID.

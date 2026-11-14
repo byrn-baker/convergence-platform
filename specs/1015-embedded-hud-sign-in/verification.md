@@ -179,3 +179,50 @@ a named reviewer's live commissioning case and restart/deduplication checks.
 D5b1/D5c/D5d are COMPLETE; D5b live commissioning and overall D5 stay open.
 No live model call was made, and these release checks do not claim production
 activation. This documentation-only follow-up does not change the release images.
+
+### Follow-up CI finding (open)
+
+Documentation-only commit 35e9e92 triggered run 43635448528. Node, Python and
+reviewer-integration passed; hud-integration timed out after 12 seconds waiting
+for `Browser review case` in the Classic local-owner fixture at
+tests/hud-browser/qualify.mjs:206. The implementation and release CI runs had
+both passed this same test; the intervening diff changes only this ledger.
+A timing-dependent fixture/UI issue is a hypothesis, not an established cause.
+Failure logs are in the private evidence/documentation-ci-failure.log.
+Diagnostic attempt 2 reruns only the failed job without code/test changes. Its
+result remains pending at this entry; inspect it before rollout. This finding
+does not invalidate the observed Gateway/RAG tests, but current-head CI must not
+be described as green. Live cutover has not begun.
+
+## Authorized production cutover continuation
+
+Run gateway-rollout-20261114 / start 2026-11-14T22:57:21.530762+00:00 / checkout cp-reviewer-dispatch / release f90b5aa. User explicitly authorizes rollout and exceeding 45 minutes; no fixed wall-clock deadline applies to this continuation. Preserve prior attempt counts; rollout attempt 1 of 3. D5b/D5 acceptance is the live attributed case, terminal Gateway metadata, duplicate replay and supported restart preservation. Production modifications limited to receiver, reviewer API/HUD/relay, additive schema/grants/Secrets and associated GitOps. Native HUD fork and other workloads stay in place. Independent release reviewer inspects staging read-only; browser worker prepares private commissioning helper without production writes.
+
+Follow-up CI 43635448528 attempt 2 completed SUCCESS without source/test changes. Original Classic fixture timeout remains recorded as an intermittent finding; the current head is green. Release image and migration qualification evidence is retained.
+
+### Rollout attempt 1: tracked agent failure; acceptance paused
+
+Production receiver, reviewer API/HUD and restricted relay deployed; database
+migration, backups, relay effective privileges and actual Pod TLS checks passed.
+One named synthetic request was accepted, replayed with the same operation and
+dispatched once. The investigator persisted a finding and resolved the synthetic
+case. Parent Gateway run ba9d416e-15fe-4e97-bc43-cd6c9d16ce49 returned status error:
+its readback called the first fuzzy catalog result (flowEvidence) with case_get
+arguments twice, then reported AUTOMATION_FAILED. This was correctly preserved
+as a failed receipt. New acceptance was disabled through GitOps. Native Classic
+and dashboard HUD health rendering and ordinary alert ingestion remained healthy.
+
+D5e attempt 1 of 3: dispatch_api owns setup/netclaw.py, integrations/netclaw/alert-triage/SKILL.md and an isolated catalog selection fixture. Correct guidance through
+the existing procedure; no adapter/state semantic changes, runtime workaround or
+automatic redelivery. Coordinator owns spec, ledger, release and production.
+After independent review and targeted checks, rollout attempt 2 will use a new
+explicit synthetic operation while retaining the failed first operation.
+
+D5e guidance qualification: independent PASS on attempt 1. The documented
+JavaScript was executed against callable decoys ranked before caseGet and against
+missing/ambiguous exact matches; only the unique exact handle was invoked.
+Writer affected suites: 62 passed; independent focused suites: 46 passed. Installed
+OpenClaw source confirms callableName/describe/API.read and event_id schema.
+No receiver/API/HUD execution or error semantics changed. A corrected managed
+wrapper requires deploying the skill and regenerating/pinning policy together.
+Live attempt 2 remains pending; retain the first failed acceptance/receipt.

@@ -24,3 +24,5 @@
 - [x] D5b1: Implement and independently qualify the adapter against the installed Gateway protocol, pinned policy and durable recovery. D5b still requires its live commissioning case.
 - [x] D5c: Qualify rollout/restart with active external-process RAG under the supported systemd policy; preserve accepted work/checkpoints and document partial-write reconciliation.
 - [x] D5d: Provide opt-in GitOps deployment wiring for investigation acceptance and the relay, using separate restricted database/delivery credentials, before production activation.
+
+- [ ] D5e: Correct exact callable selection in existing triage guidance, qualify a decoy-first/missing/ambiguous catalog, and repeat deliberate production commissioning without changing terminal receipt semantics.

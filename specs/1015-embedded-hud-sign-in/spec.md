@@ -20,3 +20,14 @@ Implement the reinvestigation command under [dispatch-contract.md](dispatch-cont
 ## Receiver transport increment
 
 Add the optional single-process HTTPS listener and shared queue lifecycle described in [receiver-https.md](receiver-https.md), preserving existing HTTP callers.
+
+## Live commissioning correction: exact tool selection
+
+The first production commissioning reached the investigator and persisted findings,
+but the parent readback selected a fuzzy catalog result by position. Keep Gateway
+error/receipt semantics unchanged. Clarify the existing alert-triage procedure and
+managed hook wrapper so every code-mode MCP call resolves the exact callableName
+and inspects its schema; the case-read example must reject a missing/ambiguous
+match without calling another tool. Qualify this procedure with a decoy-first
+catalog fixture and a subsequent deliberate synthetic commissioning request.
+Preserve the original failed receipt and its case evidence.
