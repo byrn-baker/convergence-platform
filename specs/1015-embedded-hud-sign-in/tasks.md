@@ -30,3 +30,5 @@
 - [x] D5e: Correct exact callable selection in existing triage guidance, qualify a decoy-first/missing/ambiguous catalog, and repeat deliberate production commissioning without changing terminal receipt semantics.
 
 Release consolidation and the remaining maintenance/native-HUD/JEV work are tracked in [follow-up.md](follow-up.md).
+
+- [x] N1: Permit external top-level navigation to the public sign-in document while retaining cross-site API, frame, mutation and identity denials.

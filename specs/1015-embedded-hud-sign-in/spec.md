@@ -15,6 +15,11 @@ The initial write for qualification is a security disposition. Reinvestigation a
 
 ## Approved next increment: attributed reinvestigation
 
+Public navigation correction (2026-11-15): a top-level browser navigation from an
+external link may load the public sign-in document at `/`. This grants no session
+or data access. Cross-site fetches, frames, session/API requests and mutations
+remain denied; canonical Host and untrusted forwarding checks remain in force.
+
 Implement the reinvestigation command under [dispatch-contract.md](dispatch-contract.md), including durable acceptance, relay, receiver deduplication, explicit ambiguous outcomes and browser recovery. Keep JEV disabled. Preserve reviewer authentication boundaries and existing machine/manual callers.
 
 ## Receiver transport increment
