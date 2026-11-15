@@ -8,6 +8,11 @@ hypervisor-side VM observation. NetClaw connects to it through the read-only
 Convergence grew inside the [netclaw-convergence](https://github.com/byrn-baker/netclaw-convergence)
 fork and now lives here; its design history is in [specs/](specs).
 
+New feature work is frozen while the existing HTTPS deployment is stabilized.
+Follow the [tracked stabilization checklist](specs/1017-production-stabilization/tasks.md)
+and its [verification ledger](specs/1017-production-stabilization/verification.md).
+Clean installation and isolated recovery are the first gates; production stays running.
+
 ## Ways to run it
 
 | Path | For | Start here |
