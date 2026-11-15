@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 import httpx
 
 from store import Store
+from async_storage import AsyncStorage, StorageBusy
 import host_events
 import hypervisor_events
 from telemetry import archive_body, render_metrics
@@ -26,7 +27,11 @@ from ip_context import IPContext
 log = logging.getLogger('ids-ingest')
 
 
-def create_app(config, store, client_factory=httpx.AsyncClient):
+class EnrollmentExpired(Exception):
+    pass
+
+
+def create_app(config, store, client_factory=httpx.AsyncClient, *, owns_store=False):
     sensors = config['sensors']
     if len({s['id'] for s in sensors}) != len(sensors):
         raise ValueError('Sensor IDs must be unique')
@@ -47,14 +52,16 @@ def create_app(config, store, client_factory=httpx.AsyncClient):
     if config.get('victorialogs_url'):
         store.enable_archive()
 
+    storage = AsyncStorage()
+
     async def deliver(target):
         backoff = 1
         async with client_factory(timeout=15) as client:
             while True:
                 try:
                     if target == 'archive':
-                        store.schedule_backfill()
-                    rows = store.pending(target, limit=128 if target == 'case' else 512)
+                        await storage.run(store.schedule_backfill)
+                    rows = await storage.run(store.pending, target, limit=128 if target == 'case' else 512)
                     if not rows:
                         await asyncio.sleep(0.2)
                         continue
@@ -72,7 +79,7 @@ def create_app(config, store, client_factory=httpx.AsyncClient):
                             for key, values in streams.items()]}
                         response = await client.post(config['loki_url'].rstrip('/')+'/loki/api/v1/push', json=payload)
                         response.raise_for_status()
-                        store.acknowledge(target, [r['id'] for r in rows])
+                        await storage.run(store.acknowledge, target, [r['id'] for r in rows])
                     elif target == 'archive':
                         response = await client.post(config['victorialogs_url'].rstrip('/')+'/insert/elasticsearch/_bulk',
                             params={'_stream_fields': 'job,site,sensor,event_type'},
@@ -83,7 +90,7 @@ def create_app(config, store, client_factory=httpx.AsyncClient):
                         if (ack.get('errors') is not False or len(items) != len(rows) or
                             any(not 200 <= item.get('create', {}).get('status', 0) < 300 for item in items)):
                             raise RuntimeError('VictoriaLogs did not acknowledge complete batch')
-                        store.acknowledge(target, [r['id'] for r in rows])
+                        await storage.run(store.acknowledge, target, [r['id'] for r in rows])
                     else:
                         groups = {}
                         for row in rows:
@@ -99,7 +106,7 @@ def create_app(config, store, client_factory=httpx.AsyncClient):
                             if ack.get('status') != 'accepted' or ack.get('alerts_received') != len(payload['alerts']):
                                 raise RuntimeError('Case receiver did not acknowledge the complete batch')
                             # Partial admission is replayable via stable incident keys.
-                            store.acknowledge(target, [row['id'] for row in group])
+                            await storage.run(store.acknowledge, target, [row['id'] for row in group])
                     backoff = 1
                     await asyncio.sleep(0.05)
                 except Exception as exc:
@@ -111,9 +118,20 @@ def create_app(config, store, client_factory=httpx.AsyncClient):
                     backoff = min(60, backoff*2)
 
     async def prune():
+        backoff = 1
         while True:
-            more = store.prune()
-            hypervisor_store.prune()
+            try:
+                more = await storage.run(store.prune)
+                await storage.run(hypervisor_store.prune)
+            except StorageBusy:
+                await asyncio.sleep(0.2)
+                continue
+            except (sqlite3.OperationalError, OSError) as exc:
+                log.warning('Storage maintenance failed (%s); retry in %ss', type(exc).__name__, backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(60, backoff*2)
+                continue
+            backoff = 1
             await asyncio.sleep(0.2 if more else 3600)
 
     @asynccontextmanager
@@ -121,11 +139,21 @@ def create_app(config, store, client_factory=httpx.AsyncClient):
         targets = ['log', 'case'] + (['archive'] if store.archive_enabled else [])
         tasks = [asyncio.create_task(deliver(target)) for target in targets]
         tasks.append(asyncio.create_task(prune()))
-        yield
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        hypervisor_store.db.close()
+        try:
+            yield
+        finally:
+            for task in tasks:
+                task.cancel()
+            def close_stores():
+                hypervisor_store.db.close()
+                if owns_store:
+                    if store.enricher:
+                        store.enricher.close()
+                    store.db.close()
+            try:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            finally:
+                await storage.close(close_stores)
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -134,7 +162,12 @@ def create_app(config, store, client_factory=httpx.AsyncClient):
         return hashlib.sha256(header[7:].encode()).hexdigest() if header.startswith('Bearer ') else ''
 
     app.state.hypervisor_store = hypervisor_store
-    hypervisor_events.install_routes(app, config, hypervisors, hypervisor_store, token_hash)
+    app.state.storage = storage
+    hypervisor_events.install_routes(app, config, hypervisors, hypervisor_store, token_hash, storage)
+
+    @app.exception_handler(StorageBusy)
+    async def storage_busy(request, error):
+        return JSONResponse({'error': 'Storage busy; retain and retry'}, status_code=503)
 
     @app.get('/healthz')
     async def health():
@@ -144,23 +177,25 @@ def create_app(config, store, client_factory=httpx.AsyncClient):
     async def metrics(request: Request):
         if not hmac.compare_digest(token_hash(request), config['status_token_sha256']):
             return JSONResponse({'error': 'Unauthorized'}, status_code=401)
-        return PlainTextResponse(render_metrics(store, sensors),
+        return PlainTextResponse(await storage.run(render_metrics, store, sensors),
                                  media_type='text/plain; version=0.0.4; charset=utf-8')
 
     @app.get('/v1/status')
     async def status(request: Request, site: str):
         if not hmac.compare_digest(token_hash(request), config['status_token_sha256']):
             return JSONResponse({'error': 'Unauthorized'}, status_code=401)
-        data = store.status(sensors, site)
-        if store.enricher:
-            data['ipEnrichment'] = store.enricher.status()
-        return data
+        def read_status():
+            data = store.status(sensors, site)
+            if store.enricher:
+                data['ipEnrichment'] = store.enricher.status()
+            return data
+        return await storage.run(read_status)
 
     @app.get('/v1/host-status')
     async def host_status(request: Request, site: str):
         if not hmac.compare_digest(token_hash(request), config['status_token_sha256']):
             return JSONResponse({'error': 'Unauthorized'}, status_code=401)
-        return store.host_status(agents, site)
+        return await storage.run(store.host_status, agents, site)
 
     @app.post('/v1/host-events')
     async def ingest_host(request: Request):
@@ -184,9 +219,17 @@ def create_app(config, store, client_factory=httpx.AsyncClient):
             payload = json.loads(body, object_pairs_hook=host_events.strict_object,
                                  parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Invalid number')))
             host_events.validate_batch(payload, agent, now)
-            if shutil.disk_usage(config['state_dir']).free < 512*1024*1024:
-                raise OverflowError('Receiver disk reserve reached')
-            accepted = store.accept_host(agent, payload, now)
+            def accept_host():
+                # Queue wait is another authority boundary after upload.
+                if shutil.disk_usage(config['state_dir']).free < 512*1024*1024:
+                    raise OverflowError('Receiver disk reserve reached')
+                admitted_at = time.time()
+                if not host_events.enrollment_active(agent, admitted_at):
+                    raise EnrollmentExpired()
+                return store.accept_host(agent, payload, admitted_at)
+            accepted = await storage.run(accept_host)
+        except EnrollmentExpired:
+            return JSONResponse({'error': 'Unauthorized'}, status_code=401)
         except host_events.EventConflict as exc:
             return JSONResponse({'error': str(exc)}, status_code=409)
         except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
@@ -243,9 +286,11 @@ def create_app(config, store, client_factory=httpx.AsyncClient):
                     raise ValueError('Invalid capture source VLANs')
                 if any(not key.isdigit() or not 0 <= int(key) <= 4094 or not valid_stamp(value) for key, value in vlans.items()):
                     raise ValueError('Invalid capture source VLAN observation')
-            if shutil.disk_usage(config['state_dir']).free < 512*1024*1024:
-                raise OverflowError('Receiver disk reserve reached')
-            accepted = store.accept(sensor, events, heartbeat)
+            def accept_eve():
+                if shutil.disk_usage(config['state_dir']).free < 512*1024*1024:
+                    raise OverflowError('Receiver disk reserve reached')
+                return store.accept(sensor, events, heartbeat)
+            accepted = await storage.run(accept_eve)
         except (ValueError, TypeError, AttributeError, KeyError) as exc:
             return JSONResponse({'error': str(exc)}, status_code=400)
         except OverflowError:
@@ -260,4 +305,4 @@ def configured_app():
     Path(config['state_dir']).mkdir(parents=True, exist_ok=True, mode=0o700)
     store = Store(str(Path(config['state_dir'])/'eve.sqlite'), config.get('queue_capacity', 250000),
                   enricher=IPContext(config.get('ip_enrichment')))
-    return create_app(config, store)
+    return create_app(config, store, owns_store=True)

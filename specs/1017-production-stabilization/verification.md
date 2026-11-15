@@ -174,3 +174,99 @@ Operational smoke already in flight was collected and the lab Gateway stopped.
 Next: design controlled full-history acquisition and separate blocking SQLite work
 from async request handling before another source-load rehearsal; complete
 Convergence canary/replay and remaining compatibility/browser/profile gates.
+
+## Run stabilization-storage-repair-20261115-03
+StartUTC:2026-11-15T20:39:23Z; deadlineUTC:2026-11-15T21:24:23Z.
+Owner requested continued fixes and one final consolidated PR; PR27 closed without
+merge. Branchstabilization/vm115-rehearsal at003aee3; starting treeclean. Prior
+run/evidence retained. Scope: IDS storage latency regression and isolated fix;
+controlled recovery design/fixture qualification. No production deployment or
+unbounded clone retry. Coordinator owns specs/integration/live operations.
+Attempts:IDS-storage=1;recovery-IO=1, max3 each. Acceptance: deterministic real
+request/background storage-delay repro fails before/pass after, unchanged security
+and transaction contracts, shutdown/cancellation safe, regression suites pass and
+independent review. Recovery acceptance needs proven pacing/abort and safe original
+material; research alone cannot close full recovery. Workers may not publish.
+
+IDS-storage attempt1: shared-loop regression failed for both request and delivery
+storage on the unmodified source, independently repeated on clean VM117 (2failed,
+health timed out while storage gate remained held). Implemented a bounded serialized
+worker for all runtime SQLite/disk paths, with queue admission503, cancellation
+slots retained through physical drain, active transaction completion, enrollment
+expiry rechecked at admission and ordered connection shutdown. Transient maintenance
+storage errors retry with backoff. Docker packaging includes the new module.
+Worker validation:25new regressions;436host/receiver tests+20subtests passed. Root
+VM117 full IDS suite217passed on separately copied candidate sources; original
+pinned checkout preserved. Initial VM harness lacked fixture scripts and PyYAML;
+corrected only harness prerequisites, then reran full suite. Built candidate image
+started asUID10001 with networknone/read-onlyroot/capdrop, authenticated storage and
+health passed, and lifespan shutdown passed. Sourcehashmanifest matches build.
+Independent reviewer reran217IDS tests and found no product blocker.
+
+Recovery-IO attempt1: source/manager/engine evidence shows no supported V1 native
+clone bandwidth cap. A specifically pinned retained base raw snapshot is readable
+without another native clone. Private O_DIRECT/pacing/lease helper passed11fixtures
+locally and on VM117; no production image bytes read yet. Raw receiver tested
+against1MiBsynthetic input plus short/oversized/existingdestination negatives; it
+never promotes partial data. Independent integration review found NaN health
+values could pass comparisons; recovery-IO attempt2 adds finite/nonnegative/range
+checks and exact localhost listener PID/argv/socket ownership. Five numeric negative
+checks and live dry-run guards pass. Full source export remains unqualified.
+
+Grok first code-review request timed out180s; no acceptance inferred. Smaller
+Build-fast request completed and supplied three useful negative-test groups:
+no directIO fallback, invalid/expired leases, incomplete/mismatched completion.
+Coordinator mapped these to existing fixtures and rawreceiver negatives. This is
+secondary test coverage review, not runtime or production approval.
+
+Recovery probe admission and cleanup, 21:10–21:18 UTC: actual reader Pod matched
+the reviewed UID, image, exact read-only file mounts, non-root security context,
+immutable helper hashes and deny-all network policy. Separate control Pods reached
+both public HTTPS and the private Kubernetes API; the exporter was denied both.
+The initial private endpoint was not reachable from the positive control, so that
+result was rejected and replaced with the demonstrated reachable API endpoint.
+Control Pods and their narrowly selected allow policy were removed.
+
+The 64 MiB execution request stopped in its initial baseline check, before source
+or receiver processes launched: TLS handshake exceeded 750 ms. A subsequent dry
+check also exceeded the health latency limit. No image bytes were read, no target
+probe material was created, and limits were not relaxed. The reader was deleted
+with its exact UID precondition; helper ConfigMap removed; namespace has no Pods.
+The exact retained health port-forward process was stopped. Source snapshot and
+production volumes were retained. This is a blocked acquisition check, not a
+successful transfer or evidence that baseline latency was caused by the reader.
+
+Final operational evidence: all 20 production Pod summaries (including the
+completed Job) match the before-run identity/image/readiness/restart baseline;
+all 19 running Pods are ready. Argo reports Synced/Healthy; four host user units
+are active. IDS scrape is up, oldest delivery age is zero, latest sensor age is
+about 24 seconds, and capture drops remain 32675385/0. No production application
+deployment occurred. This does not qualify the new candidate in production.
+
+Outcome: IDS-storage COMPLETE for isolated implementation/regression acceptance;
+recovery-IO BLOCKED at the baseline health gate, with helper/confinement evidence
+retained. Attempts: IDS-storage=1, recovery-IO=2. Full S03/S04/S08 gates remain open.
+No additional PR was created. Next: determine baseline health latency, qualify the
+candidate under isolated storage/load conditions, then qualify bounded/sustained
+source acquisition before attempting full recovery. Actual investigation/replay,
+upgrade/rollback, lifecycle, operational alerts and stable-release soak remain open.
+
+Private evidence root:
+`~/.local/state/convergence-stabilization-storage-repair-20261115/`.
+Key receipts: `image-smoke.json`, `ids-candidate-sha256.json`,
+`probe-cni-proof-02.json`, `probe-outcome.json`, `probe-cleanup-delete.json`,
+`production-after.json`, `production-after-metrics.json`, `grok-short-review.json`.
+Worker commands/results:
+`~/.local/state/convergence-stabilization-20261115/ids-storage-repair/results.md`.
+VM117 candidate suite:
+`/srv/convergence-lab/logs/ids-candidate-suite.txt`.
+The private probe helpers are specific to the retained snapshot and are not a
+supported backup product; full acquisition tooling still needs qualification.
+
+Final independent evidence/documentation review PASS: verified all 20 Pod summaries
+equal baseline, 19 running Pods ready, Argo/host services healthy, no exporter Pods
+or helper ConfigMap, no retained health-forward process, and no probe destination
+on VM117. Reviewed checked subitems as narrowly scoped; no full-recovery or
+production-deployment claim. All 18 tested candidate code/test/Docker hashes still
+match the reviewed build inputs. Run closed before its original deadline with
+the repair accepted and acquisition blocked; future work retains these findings.

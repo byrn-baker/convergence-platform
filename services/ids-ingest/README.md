@@ -17,6 +17,24 @@ health. Delivery retries without expiring pending records. Use one Uvicorn worke
 and durable local storage. Credentials and TLS keys are generated outside source
 control by `deploy/convergence/ids/prepare-ingest.py`.
 
+Blocking storage operations share one serialized worker outside the async request
+loop. At most 64 operations, including background delivery/maintenance and cancelled
+queue entries that have not drained, may be admitted. Saturated requests return 503;
+callers retain their batch and retry. Database transaction methods remain atomic.
+Host enrollment is checked again when queued admission actually executes.
+
+A cancelled queued operation is skipped; an already running transaction finishes
+before its slot is released. Shutdown rejects new storage work, drains admitted
+operations, then closes owned connections. Maintenance retries transient storage
+errors with backoff. Health remains schedulable during a disk stall; metrics and
+status still read actual storage and may wait or fail. A live `/healthz` response
+is therefore not proof that ingestion, capture or delivery is progressing: monitor
+scrape freshness, sensor timestamps, queue age, storage headroom and errors.
+
+These controls do not throttle backup I/O. Recovery copying must have its own
+measured pacing and application-health abort controls before running against live
+storage.
+
 For distributed switch capture, configure each sensor's `capture_sources`
 using the reviewed source inventory. Each entry needs `id`, `ip`, `sessionId`,
 `name` and `scope`; copy the same array to the sensor's `capture-sources.json`.
@@ -31,7 +49,7 @@ payload decryption is explicitly disabled.
 Run tests from the repository root:
 
 ```bash
-.venv/bin/python -m unittest discover -s services/ids-ingest -v
+.venv/bin/python -m pytest services/ids-ingest -q
 ```
 
 ## Host telemetry prototype (spec 1013)

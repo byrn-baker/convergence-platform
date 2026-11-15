@@ -36,3 +36,32 @@ production. Other stores and cross-store reconciliation remain separate gates.
 Existing Codex subscription access is authorized for bounded synthetic model tests
 on the lab through native OpenClaw authentication, with empty fallback chains and
 no API keys. JEV's separate provider contract remains unqualified by that path.
+
+## Publication policy and stabilization repair continuation
+
+Owner instruction: keep all stabilization repairs on this working branch and make
+one consolidated PR only when the agreed stabilization work is fixed and verified.
+PR27 closed without merge. Local commits and private evidence remain permitted;
+do not create incremental PRs. Production deployment remains a separate decision.
+
+Next repairs: reproduce storage-delay health starvation in an isolated IDS server,
+introduce a shared serialized asynchronous boundary around blocking storage work
+with safe cancellation/shutdown, and verify every route/background storage path.
+The coordinator explained this internal refactor before implementation. Preserve
+storage transaction semantics, authentication, enrollment and delivery receipts.
+Investigate a bounded recovery acquisition method separately; no repeat native
+Longhorn clone against production until measured IO controls and aborts are proven.
+
+Recovery candidate for qualification: the retained Longhorn snapshot is currently
+an unencrypted base raw image with no parent/backing image. A separately reviewed
+export process may read that exact immutable file through a read-only file mount
+as UID10001, with all capabilities dropped and no network/service-account access.
+No engine may attach to or modify the production replica. Explicit O_DIRECT reads,
+aligned1MiB blocks and pacing without catch-up bursts avoid page-cache read-ahead
+and same-disk copy writes. Unsupported direct IO must fail, never silently fall
+back. Source volume/snapshot/replica identity, purge/rebuild state, file identity,
+application health and telemetry must remain valid throughout; any uncertainty
+aborts and retains incomplete target material. Source stat checks detect changes,
+not provide an exclusive lock. Qualify small bounded reads before considering full
+transfer. This is a specifically validated snapshot-format recovery, not a general
+Longhorn backup service or proof of consistency before filesystem/SQLite checks.
