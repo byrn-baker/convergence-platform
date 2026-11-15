@@ -325,3 +325,23 @@ netclaw-hud-ui stayed active, /api/home/status was configured, and
 /api/home/health?site=home reported unavailable=false. The receiver unit stayed
 active, untouched, and continued accepting ordinary Alertmanager webhooks. No model
 call, account change or receipt mutation was made.
+
+### 2026-11-15 setup preserves agent model fallbacks
+
+Reproduced with fixtures: a re-apply over this tool's own alert agent, after the
+operator added fallbacks, patched `model.fallbacks` to null when `--model` named the
+same primary, and deleted `model` entirely without `--model`. Cause: plan() rebuilt
+the entry keeping only workspace/agentDir and replacing() nulls every other key.
+
+Fix (setup/netclaw.py `agent_model`, inside the existing planner): model policy is
+the operator's. Without `--model` the existing setting is unchanged; with it only the
+primary is set, so fallbacks and other model keys survive both a same-primary
+re-apply and a primary change (the plan says "fallbacks kept"). A plain-string model
+keeps its form. A `--replace-existing` takeover keeps fallbacks too; `remove` still
+restores the recorded entry exactly. Tool allow/deny/workspaceOnly stay tool-owned,
+the case token stays out of the config patch, and the restore record is unchanged.
+
+Live read-only comparison against the installation's OpenClaw config and state:
+the old planner proposed `fallbacks: null` (with `--model openai/gpt-6-luna`) or
+`model: null` (without); the fixed planner proposes the live model unchanged in
+both cases. Validation: tests/unit 235 passed; ruff findings unchanged from main.

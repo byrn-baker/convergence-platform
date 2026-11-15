@@ -281,7 +281,8 @@ def test_replace_existing_takes_over_exactly(tmp_path):
     after = merge(config, result['patch'])
     agent = after['agents']['entries']['alert']
     assert agent == {'workspace': '/ws', 'name': 'Convergence alert triage', 'skills': ['alert-triage', 'home'],
-                     'model': {'primary': 'openai/m2'},
+                     # Model policy is the operator's: a takeover sets the primary, keeps fallbacks.
+                     'model': {'primary': 'openai/m2', 'fallbacks': ['openai/m1']},
                      'tools': {'allow': ['read', 'convergence-case-mcp__*', 'n2n-mcp__n2n_route'],
                                'deny': netclaw.DENY_TOOLS, 'fs': {'workspaceOnly': True}}}
     mappings = after['hooks']['mappings']
@@ -347,6 +348,56 @@ def test_remove_restores_replaced_entries_and_skill(tmp_path, monkeypatch):
     assert runs == []  # an adopted agent is restored, never deleted
     assert target.read_text() == 'the old alert-triage'
     assert netclaw.read_env(home/'.env') == {'OPENCLAW_HOOKS_TOKEN': 't'}
+
+
+FALLBACK_MODEL = {'primary': 'openai/m1', 'fallbacks': ['openai/m1', 'openai/m0']}
+
+
+def installed(tmp_path, existing=FALLBACK_MODEL):
+    """An earlier apply of this tool whose agent the operator later gave fallbacks."""
+    config = legacy(tmp_path)
+    first = netclaw.plan(config, {'OPENCLAW_HOOKS_TOKEN': 't'}, opts(replace_existing=True, model='openai/m1'),
+                         tmp_path, SKILL)
+    config = merge(config, first['patch'])
+    config['agents']['entries']['alert']['model'] = existing
+    return config, opts(state={'agent_created': False, 'previous': first['previous']})
+
+
+def reapplied_model(tmp_path, model, **existing):
+    config, options = installed(tmp_path, **existing)
+    result = netclaw.plan(config, {'OPENCLAW_HOOKS_TOKEN': 't'}, {**options, 'model': model}, tmp_path, SKILL)
+    assert result['conflicts'] == []
+    return merge(config, result['patch'])['agents']['entries']['alert'].get('model'), result
+
+
+def test_reapply_with_the_same_primary_keeps_model_fallbacks(tmp_path):
+    model, _ = reapplied_model(tmp_path, 'openai/m1')
+    assert model == FALLBACK_MODEL
+
+
+def test_reapply_without_model_leaves_the_operators_model_alone(tmp_path):
+    model, _ = reapplied_model(tmp_path, None)
+    assert model == FALLBACK_MODEL
+
+
+def test_changing_the_primary_keeps_fallbacks_and_says_so(tmp_path):
+    model, result = reapplied_model(tmp_path, 'openai/m2')
+    assert model == {'primary': 'openai/m2', 'fallbacks': ['openai/m1', 'openai/m0']}
+    assert any('model openai/m2 (fallbacks kept: openai/m1, openai/m0)' in a for a in result['actions'])
+
+
+def test_a_plain_string_model_keeps_its_form(tmp_path):
+    assert reapplied_model(tmp_path/'same', 'openai/m1', existing='openai/m1')[0] == 'openai/m1'
+    assert reapplied_model(tmp_path/'changed', 'openai/m2', existing='openai/m1')[0] == 'openai/m2'
+
+
+def test_model_preservation_keeps_tool_restrictions_and_restore_record(tmp_path):
+    config, options = installed(tmp_path)
+    result = netclaw.plan(config, {'OPENCLAW_HOOKS_TOKEN': 't'}, {**options, 'model': 'openai/m1'}, tmp_path, SKILL)
+    agent = merge(config, result['patch'])['agents']['entries']['alert']
+    assert agent['tools'] == {'allow': netclaw.BASE_TOOLS, 'deny': netclaw.DENY_TOOLS, 'fs': {'workspaceOnly': True}}
+    assert result['previous'] == {} and options['case_token'] not in json.dumps(result['patch'])
+    assert options['state']['previous']['agent'] == LEGACY_AGENT
 
 
 def test_alert_hook_selects_dispatcher_or_local_investigation(tmp_path):

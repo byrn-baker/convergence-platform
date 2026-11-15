@@ -55,7 +55,7 @@ preparing this checklist.
 
 ## 2. Fix maintenance gaps
 
-- [ ] Preserve existing agent model fallback configuration in setup/netclaw.py.
+- [x] Preserve existing agent model fallback configuration in setup/netclaw.py.
   First reproduce the full-install plan's unwanted fallback removal with a fixture;
   define preservation when the primary model stays the same and when it changes.
   Keep the fix in the existing configuration-planning module. Confirm existing
