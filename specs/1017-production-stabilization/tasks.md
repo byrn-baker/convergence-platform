@@ -36,3 +36,15 @@ S01/S02 COMPLETE with independent review PASS. S03 PARTIAL: clean stock componen
 - [x] S04b — Offline RAG index readback and configuration/PKI material checks.
 - [ ] S04c — Provision isolated full-history recovery target from the concrete resource/network plan.
 - [ ] S04d — Restore remaining history/queues and prove consistency, pending-work recovery and safe service activation.
+
+## VM117 continuation
+
+- [x] S04c1 — Preserve active VM115; provision clean VM117 with separate1TiB disk, unique identity, pinned SSH and independently verified host/hypervisor isolation.
+- [x] S03c1 — Fresh pinned runtime and selected stock GAIT/RAG/read-connector install; synthetic audit and persisted RAG retrieval passed without hosted inference.
+- [ ] S03c2 — Repeat installation, final runtime/browser dependency qualification and actual Gateway readiness.
+- [ ] S04d1 — Qualify a full-history acquisition method with acceptable production IO impact. First online Longhorn clone was aborted after IDS readiness/scrape failures; retained snapshot is not a completed backup.
+- [ ] S03d1 — Authenticate the isolated runtime through the existing Codex subscription and prove one bounded synthetic investigation plus replay.
+
+The new target removes the capacity blocker. It does not close full recovery:
+source-side IO interference is now a demonstrated blocker. Production recovered
+without Pod restarts, but the rehearsal did cause a readiness/metrics interruption.

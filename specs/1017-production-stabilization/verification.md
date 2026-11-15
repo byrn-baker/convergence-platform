@@ -51,3 +51,110 @@ Final documentation-delta review: Grok completed exit0/end_turn with grok-4.7-bu
 Run outcome: authorized stabilization kickoff COMPLETE (plan/freeze/inventory and bounded first rehearsals), with S03 PARTIAL and S04 PARTIAL/BLOCKED retained as open release gates. This is not completion of stabilization. Next work: exact isolated full-history target/network plan and complete fresh-host runtime installation, then full recovery/activation. No new product feature or production promotion occurred.
 
 Cleanup: both disposable lab runtimes stopped, four lab-only port-forwards terminated, transient check containers removed and temporary copied Grok login state deleted. Private backups/evidence and stopped lab data retained for follow-up. Production was preserved; unrelated dirty files remained untouched. Publication records are the documentation/qualification branch and operations handoff commits.
+
+## Run stabilization-vm115-20261115-02
+Start UTC:2026-11-15T19:44:34Z
+Deadline UTC:2026-11-15T20:29:34Z (45minutes, including delegates)
+Checkout:/home/ubuntu/github-projects/cp-stabilization
+Branch:stabilization/vm115-rehearsal
+Starting commit:6beaf467d234965f89112f00f81ec91579c24dcc
+Prior run:stabilization-20261115-01 completed kickoff; S03/S04 remain open.
+
+Owner authorization: proceed through gates; Proxmox test VMs permitted, prefer
+existing VM115 after inspection; existing Codex subscriptions authorized for
+bounded isolated synthetic AI tests. Keep production running. Fresh run budget
+starts from this continuation; prior attempt history is retained above.
+
+Acceptance for this run: inspect/protect VM115, establish concrete isolated test
+target/resource/rollback plan, execute supported fresh-install/recovery steps,
+qualify native subscription auth/provider path before model tests, retain evidence
+and update only proven checklist gates. No broad billing/credential fallback.
+Attempts:S03c=1,S03d=1,S04c=1,S04d=0; max3 per task. Coordinator owns specs/ledger
+and VM mutations. Workers own read-only research initially; no delegation of
+production actions. Private evidence:~/.local/state/convergence-stabilization-vm115-20261115.
+Before:main clean at6beaf46, no existing changes in this checkout. Existing
+NetClaw HUD/research and unrelated operations files remain untouched.
+
+VM115 was already an active qualification environment. Preserved it and provisioned
+VM117 from its clean-OS snapshot: Ubuntu24.04.5,4vCPU,8GiB RAM,48GiB OS plus a
+separate1TiB raw data disk, IP192.168.3.22, onboot disabled. Regenerated machine/SSH
+identity before connecting the NIC. Recovery materials are root-only and separate
+from the dedicated non-sudo netclaw-lab account. Production credentials are absent.
+
+Independent preexecution review found reversed Proxmox rule insertion and a
+receiver mount/identity mismatch. NIC was disconnected while correcting rules;
+guest UFW had retained its correct deny order. Corrected readback and actual
+public/DNS/private-path tests passed. A temporary Proxmox-only DROP of public
+1.1.1.1:443 caused timeout; removing it restored connectivity. IPv6 eth0 disabled.
+No VM container path is claimed tested before a container runtime exists.
+Receiver now checks root, exact mounted path/markers/DMI,300GiB headroom and
+root0700 materials;11 negative/static fixture checks passed. Independent re-review
+pending. S04c attempt2 covers these setup corrections.
+
+Fresh install OS stage passed. Pinned Node/OpenClaw/source stage is running; no
+Gateway or hosted model call started. Codex native subscription investigation path
+is supported by installed OpenClaw design, but fresh-VM authentication/entitlement
+and real completion remain unqualified. JEV uses a separate typed assessment
+provider contract; a Codex Gateway test cannot close that gate or justify a URL
+substitution. No provider adapter feature is added during the freeze.
+
+Grok Build-fast supplied-text review completed via existing subscription. Accepted
+findings: keep JEV and full multi-store/cross-store recovery explicitly open. Its
+broader list of untested production/API-key paths is coverage commentary, not a
+requirement to restart production or introduce billed fallback. This review is
+not runtime evidence. Private grok-review.json retains original response.
+
+Recovery snapshot created at2026-11-15T20:16:47Z, source UID pinned, readyToUse=true,
+size99,468,701,696bytes. First port-forward attempt failed before mutation because
+manager does not listen on localhost; authenticated Kubernetes service proxy used
+instead. Immediate post-create status absence was handled by polling without
+creating a duplicate. Source remains attached/healthy; clone and transfer pending.
+
+The45-minute coding/review budget still ends20:29:34UTC; it is not reset. Already
+authorized installation and data recovery are operational work under
+workspace/skills/convergence-setup/SKILL.md and continue with bounded per-stage
+commands, ongoing source-health checks and retained evidence. This is not license
+to continue a coding/refactor loop past its deadline. Product changes remain frozen.
+
+Independent corrected preexecution review PASS. Both prior blockers resolved by
+live readback; actual receiver target validation passed. Exporter runtime isolation
+remained a future gate. Clone started20:19:07UTC. Production IDS readiness/liveness
+failures appeared20:19:39onward and metric scrape became0. Coordinator aborted
+this attempt20:22UTC by deleting only the exact UID-checked unbound disposable
+clone, preserving source volume and snapshot. No exporter/transfer was started.
+Worker observed41GiB copied and source/clone both placed on macmini SSD2; node IO
+pressure some43.57%/full27.90% avg10 supports shared-disk contention as the likely
+cause. This was production impact, despite zero application restarts; do not claim
+uninterrupted preservation. After cancellation, clone volume/engine/replica and
+process disappeared; IDS Ready recovered20:22:28, scrapeup1, restartCount0. Further
+source monitoring is required. No further clone attempts this run. Next recovery
+method must avoid unthrottled same-disk copying and demonstrate resource isolation.
+
+Fresh stock component install and first validation passed: newly installed GAIT,
+RAG CPU dependencies and Convergence read connector; synthetic RAG write recorded
+GAIT audit and persisted across a second process; no hosted provider calls. Repeat
+installation is now running. Real Gateway/subscription completion remains open.
+
+Repeat stock install and component validation both passed20:25UTC; persisted RAG
+record survived reinstall, GAIT audit retained, empty fallback chain verified.
+Native Codex device login requested on VM117; user browser authorization pending.
+No production auth tokens copied and no model canary executed yet.
+
+Post-abort20:25metrics: both captures running; drop counters unchanged from baseline
+(home-ids-01=32675385,home-ids-proxmox-01=0), oldest delivery queue~0.15seconds.
+All20Pod identity/image/restart/readiness summaries match baseline again; this
+does not erase the observed interim readiness failure. Independent evidence:
+sourcehealth200/45ms,sourcevolumehealthy/snapshotready, allcloneprocesses gone.
+Live source contains synchronous SQLite calls inside async handlers; this is a
+plausible amplification mechanism for IO stalls, not a captured stack proof.
+
+Final independent evidence review PASS for the recorded partial outcome: six
+install/validation stages exited0, persisted audit/RAG proof retained, VM117
+isolation/identity verified, source IDS recovered and snapshot retained. Current
+attempt counts:S03c=1,S03d=1,S04c=2,S04d=1 (earlier entry is initial count).
+No gate closure is inferred for full runtime, telemetry, recovery or later stages.
+
+At20:27UTC owner completed independent VM Codex device authorization. Login exit0;
+OpenClaw native Codex doctor check ok with no findings, selected
+openai/gpt-6.1-sol advertised available/providerready. Authentication and catalog
+readiness are not an executed model or Convergence investigation completion.
