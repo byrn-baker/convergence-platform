@@ -52,6 +52,9 @@ CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 CREATE INDEX IF NOT EXISTS idx_events_severity ON events(severity);
 CREATE INDEX IF NOT EXISTS idx_events_alert ON events(alert_name);
 CREATE INDEX IF NOT EXISTS idx_events_escalated ON events(status) WHERE status = 'escalated';
+-- Rare categories (wan) among many security rows: lets the WAN case list combine this
+-- with idx_events_alert instead of walking every row of the site newest-first.
+CREATE INDEX IF NOT EXISTS idx_events_category ON events(category);
 
 -- Trigger to update updated_at
 CREATE OR REPLACE FUNCTION update_updated_at()
