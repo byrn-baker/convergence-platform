@@ -60,12 +60,16 @@ preparing this checklist.
   define preservation when the primary model stays the same and when it changes.
   Keep the fix in the existing configuration-planning module. Confirm existing
   tool restrictions, secrets and removal/restore ownership are preserved.
-- [ ] Design and implement certificate renewal/reload for the existing deployment:
+- [x] Design and implement certificate renewal/reload for the existing deployment:
   browser TLS is renewed by cert-manager but the HUD loads it only at startup;
   receiver TLS uses a separate private CA and currently needs manual renewal.
   Cover renewal failure, key/certificate mismatch, trust rollover and recovery.
 - [ ] Validate expiry monitoring and renew/reload using short-lived test certificates
   before changing live automation; retain per-user session and rollback behavior.
+  Renew/reload is validated in isolation (#19, #20; see verification.md). Still open:
+  ship the reload-capable release, merge the operations branch
+  `convergence-tls-monitoring` in that same rollout (it rolls eight workloads),
+  confirm the `tls_expiry` probe reports expiry, then install the timer.
 
 Completion: reinstall does not silently change fallbacks, and certificate renewal
 plus service reload is exercised with evidence. See the private operations runbook
