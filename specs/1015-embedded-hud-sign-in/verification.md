@@ -412,3 +412,23 @@ receiver-https (365). The renewal timer is installed from the installed checkout
 service ran under systemd with every leaf at "none" (364-365 days) and pushed metrics,
 which VictoriaMetrics scraped. No TLS alert fired. Reviewers must sign in again once,
 because of the HUD restart. Rollback pins are recorded in the private runbook.
+
+### 2026-11-15 public sign-in navigation correction
+
+A browser following an external link reached the service but received HTTP 403
+Access denied. Production reproduction: GET / with Sec-Fetch-Site: cross-site,
+Sec-Fetch-Mode: navigate and Sec-Fetch-Dest: document returned 403; the same URL
+with direct navigation returned 200 and valid TLS. The regression test reproduced
+403 versus expected 200 before the code change.
+
+The origin gate now permits only literal GET / top-level document navigation.
+The public asset returns no session cookie and makes no service call. Host,
+Origin, Authorization, forwarding, body and duplicate-header checks remain.
+Cross-site session/case requests, fetches, frames and submissions remain denied.
+
+Executed node --test ui/convergence-hud/test/reviewer-server.mjs
+ui/convergence-hud/test/reviewer-tls-reload.mjs: 15 passed, none skipped.
+Independent verifier repeated that command and reviewed the final diff: PASS.
+No database/schema or credential change. Rollback restores the previous reviewer
+HUD image; deployment restarts its in-memory sessions and requires sign-in again.
+Live rollout and external-link browser verification remain pending.

@@ -30,7 +30,11 @@ function originGate(req, origin) {
   if (req.headers.host !== origin.host || (req.headers.origin !== undefined && req.headers.origin !== origin.origin)) {
     throw failure(403);
   }
-  if (req.headers['sec-fetch-site'] === 'cross-site' || req.headers.authorization !== undefined ||
+  // A link from another site must be able to open the public sign-in document.
+  // This exception cannot bootstrap a session, fetch data, submit or frame it.
+  const publicNavigation = req.method === 'GET' && req.url === '/' &&
+    req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document';
+  if ((req.headers['sec-fetch-site'] === 'cross-site' && !publicNavigation) || req.headers.authorization !== undefined ||
       req.headers.forwarded !== undefined || Object.keys(req.headers).some(name => name.startsWith('x-forwarded-'))) {
     throw failure(403);
   }

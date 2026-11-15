@@ -148,6 +148,27 @@ test('HTTPS reviewer routes only release protected data to the current authorize
     assert.equal(calls.length,0);
   });
 
+  await t.test('external top-level links can open the public sign-in shell only', async () => {
+    const navigation = {'sec-fetch-site':'cross-site', 'sec-fetch-mode':'navigate', 'sec-fetch-dest':'document'};
+    const before = calls.length;
+    const shell = await request('/', {headers:navigation});
+    assert.equal(shell.status,200);
+    assert.equal(shell.cookie,undefined);
+    assert.equal(calls.length,before);
+    for (const target of ['/review/session',caseURL]) {
+      assert.equal((await request(target,{headers:navigation})).status,403);
+    }
+    for (const headers of [
+      {...navigation,'sec-fetch-mode':'cors','sec-fetch-dest':'empty'},
+      {...navigation,'sec-fetch-dest':'iframe'},
+      {...navigation,host:'foreign.test'},
+      {...navigation,origin:'https://foreign.test'},
+      {...navigation,'x-forwarded-for':'127.0.0.1'},
+    ]) assert.equal((await request('/',{headers})).status,403);
+    assert.equal((await request('/review/sign-in',{method:'POST',headers:navigation,data:{}})).status,403);
+    assert.equal(calls.length,before);
+  });
+
   await t.test('two accounts remain separate and only an authorized operator can act', async () => {
     const alice = await authenticated('alice');
     const bob = await authenticated('bob');
