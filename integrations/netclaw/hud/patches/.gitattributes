@@ -1,0 +1,2 @@
+# Unified diff context preserves upstream whitespace, including empty context lines.
+*.patch text eol=lf -whitespace

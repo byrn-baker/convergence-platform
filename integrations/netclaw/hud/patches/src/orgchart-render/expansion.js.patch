@@ -1,0 +1,17 @@
+diff --git a/src/orgchart-render/expansion.js b/src/orgchart-render/expansion.js
+index d813c8a1f8f184cf143eecdbbfe1c954d4a256f4..12f403b13a3197c126433d074b3d653717cab28c 100644
+--- a/src/orgchart-render/expansion.js
++++ b/src/orgchart-render/expansion.js
+@@ -98,6 +98,12 @@ export function isExpanded(nodeId) {
+   return expanded.has(nodeId);
+ }
+ 
++export function updateExpansionPosition(nodeId, position) {
++  const group = expanded.get(nodeId);
++  if (!group || !position) return;
++  group.position.set(position.x, position.y, (position.z || 0) + 4);
++}
++
+ export function collapseAll(parentGroup) {
+   for (const id of [...expanded.keys()]) collapse(parentGroup, id);
+ }

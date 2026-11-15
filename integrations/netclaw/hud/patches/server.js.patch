@@ -1,0 +1,248 @@
+diff --git a/server.js b/server.js
+index cfe5a4228a90195b5c1f6614ff239c7bee57871e..0924b839100956bc0ea0097674d668693c75f087 100644
+--- a/server.js
++++ b/server.js
+@@ -1,3 +1,5 @@
++// FORK-LOCAL: resolve model references from the selected runtime environment.
++import { readModelConfig } from './src/fork-local/model-config.js';
+ import { mountMobileEnrollment, createLocalEnrollmentClient } from './src/hud-server/mobile-enrollment.js';
+ import { resolveRemoteHudBackend, remoteHudBackendBoundary } from './src/hud-server/remote-hud.js';
+ import { peerChatBody } from './src/hud-server/cloud-federation.js';
+@@ -46,6 +48,7 @@ import fs from 'fs';
+ import os from 'os';
+ import path from 'path';
+ import yaml from 'js-yaml';
++import { loadModules, registerModuleIndex } from './module-loader.js';
+ import { execFile } from 'child_process';
+ import { fileURLToPath } from 'url';
+ import { hudPorts, createLocalAccess, localAccessMiddleware } from './src/security/local-access.js';
+@@ -171,7 +174,7 @@ app.get('/api/runtime', async (_req, res) => {
+   let readiness = { ready: false, code: 'runtime_stopped' };
+   if (hermesRuntime) { try { readiness = await hermesRuntime.call('status'); } catch(error) {readiness.code=error.code || 'runtime_unavailable';} }
+   else readiness = { ready: fs.existsSync(installation.configPath), executionVerified: false };
+-  res.set('Cache-Control', 'no-store').json({ kind: installation.kind, installationId: installation.installationId, label: installation.kind === 'hermes' ? 'Hermes' : 'OpenClaw', readiness, capabilities: { mobileEnrollment: {schema:1}, protectedOperations: protectedOperations.enabled, convergence: convergenceEnabled({ ...parseEnvFile(), ...process.env }), attachments: !hermesRuntime, modelSelection: !hermesRuntime, effort: !hermesRuntime, federation: !hermesRuntime || (await federationReadiness(installation,BGP_API)).ready, hostedAvatar: !hermesRuntime, writes: !hermesRuntime } });
++  res.set('Cache-Control', 'no-store').json({ kind: installation.kind, installationId: installation.installationId, label: installation.kind === 'hermes' ? 'Hermes' : 'OpenClaw', readiness, capabilities: { mobileEnrollment: {schema:1}, protectedOperations: protectedOperations.enabled, siteOperations: installation.kind === 'openclaw' && Boolean(process.env.CONVERGENCE_API_URL || process.env.CONVERGENCE_REVIEWER_ORIGIN), convergence: convergenceEnabled({ ...parseEnvFile(), ...process.env }), attachments: !hermesRuntime, modelSelection: !hermesRuntime, effort: !hermesRuntime, federation: !hermesRuntime || (await federationReadiness(installation,BGP_API)).ready, hostedAvatar: !hermesRuntime, writes: !hermesRuntime } });
+ });
+ app.get('/api/hud/management', async (req, res) => {
+   try { hudBindings.read(cookieFrom(req)); } catch { return res.status(401).json({error:'An owned HUD session is required.'}); }
+@@ -209,6 +212,52 @@ registerIntentExecutionRoutes(app, { getGatewayConfig, listDevices: listTerminal
+   createActivityReader: options => createTranscriptActivityReader({ ...options, directory: path.join(OPENCLAW_HOME, 'agents', getGatewayConfig().agentId, 'sessions') }),
+ });
+ 
++// ── FORK PATCH (security): gate the credential + config-write surface ────────
++// This API has no authentication and listen(port) binds all interfaces, yet
++// /api/env/* enumerates every key in .env, PUT /api/env writes them, and
++// PUT /api/testbed/raw can repoint pyATS at another host. Default posture:
++// allow loopback + RFC1918/link-local only, so a public exposure or a tunnel
++// (ngrok, port-forward) cannot reach it. Nothing on a normal LAN changes.
++//   HUD_TRUSTED_IPS=10.0.0.5,192.168.3.0/24   narrow further (exact or /CIDR)
++//   HUD_API_TOKEN=...                          accept Authorization: Bearer
++// Real auth belongs at the ingress; this only removes the free-for-all.
++function requireTrustedClient(req, res, next) {
++  const token = process.env.HUD_API_TOKEN;
++  if (token) {
++    const got = (req.get('authorization') || '').replace(/^Bearer\s+/i, '');
++    if (got && got === token) return next();
++  }
++  const raw = (req.ip || req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
++  const allow = (process.env.HUD_TRUSTED_IPS || '')
++    .split(',').map((s) => s.trim()).filter(Boolean);
++  const inCidr = (ip, cidr) => {
++    const [net, bitsRaw] = cidr.split('/');
++    const bits = Number(bitsRaw);
++    const toInt = (a) => a.split('.').reduce((n, o) => (n << 8) + (Number(o) & 255), 0) >>> 0;
++    if (!/^\d+\.\d+\.\d+\.\d+$/.test(ip) || !/^\d+\.\d+\.\d+\.\d+$/.test(net)) return false;
++    if (!Number.isInteger(bits) || bits < 0 || bits > 32) return false;
++    const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
++    return (toInt(ip) & mask) === (toInt(net) & mask);
++  };
++  const ok = allow.length
++    ? allow.some((a) => (a.includes('/') ? inCidr(raw, a) : a === raw))
++    : (raw === '127.0.0.1' || raw === '::1'
++       || /^10\./.test(raw) || /^192\.168\./.test(raw)
++       || /^172\.(1[6-9]|2\d|3[01])\./.test(raw) || /^169\.254\./.test(raw)
++       || /^(fe80|fc|fd)/i.test(raw));
++  if (ok) return next();
++  console.warn(`[security] blocked ${req.method} ${req.path} from ${raw || 'unknown'}`);
++  return res.status(403).json({
++    error: 'Forbidden: untrusted client for credential/config endpoint',
++    hint: 'Set HUD_TRUSTED_IPS or HUD_API_TOKEN, or reach this API from a trusted network.',
++  });
++}
++app.use(['/api/env', '/api/testbed/raw', '/api/models'], requireTrustedClient);
++
++// FORK PATCH: last chat turn's token usage, set in /api/chat and read by
++// server.local.js for the footer strip. Declared here so both sites see it.
++let forkLastChatUsage = null;
++
+ const server = http.createServer(app);
+ const wss = new WebSocketServer({
+   server, path: '/ws', maxPayload: 64 * 1024,
+@@ -641,7 +690,7 @@ function pickDeviceConnection(device) {
+ 
+ function parseConfig() {
+   try {
+-    return installation.kind === 'hermes' ? yaml.load(readText(installation.configPath)) : JSON.parse(readText(OPENCLAW_CONFIG));
++    return installation.kind === 'hermes' ? yaml.load(readText(installation.configPath)) : readModelConfig(OPENCLAW_CONFIG);
+   } catch {
+     return null;
+   }
+@@ -751,7 +800,7 @@ app.get('/api/hud/tokenomics', (_req, res) => {
+ app.get('/api/hud/runtime', (_req, res) => {
+   res.setHeader('Cache-Control', 'no-store');
+   try {
+-    const config = JSON.parse(readText(OPENCLAW_CONFIG));
++    const config = readModelConfig(OPENCLAW_CONFIG);
+     res.json({ available: true, ...runtimeInventory(config), controlUi: controlUiLocation(config), generatedAt:new Date().toISOString() });
+   } catch { res.status(503).json({ available:false, error:'Runtime configuration unavailable' }); }
+ });
+@@ -1242,6 +1291,9 @@ app.put('/api/env', (req, res) => {
+     return res.status(400).json({ error: 'Expected { updates: { KEY: "value", ... } }' });
+   }
+ 
++  if (Object.keys(updates).some(key => hudDeploymentKeys.has(key))) {
++    return res.status(403).json({error: 'This setting is managed by the service administrator'});
++  }
+   try {
+     writeEnvFile(updates);
+     // Broadcast config change to all WS clients
+@@ -1550,7 +1602,7 @@ function textFromChatContent(content) {
+ // Read OpenClaw gateway config for auth
+ function getGatewayConfig() {
+   try {
+-    const config = JSON.parse(readText(OPENCLAW_CONFIG));
++    const config = readModelConfig(OPENCLAW_CONFIG);
+     return {
+       agentId: gatewayAgentId(config),
+       port: config?.gateway?.port || 18789,
+@@ -1636,11 +1688,11 @@ app.post('/api/terminal/terra', async (req, res) => {
+ 
+ const readChatUsage = createUsageReader();
+ const chatRuntime = createChatRuntime();
+-if (!hermesRuntime) mountChatHistory(app, { bindings: hudBindings, config: () => JSON.parse(readText(OPENCLAW_CONFIG)), configPath: OPENCLAW_CONFIG, runtime: chatRuntime });
++if (!hermesRuntime) mountChatHistory(app, { bindings: hudBindings, config: () => readModelConfig(OPENCLAW_CONFIG), configPath: OPENCLAW_CONFIG, runtime: chatRuntime });
+ app.post('/api/chat/usage', async (req, res) => {
+   res.set('Cache-Control', 'no-store');
+   try {
+-    const config = JSON.parse(readText(OPENCLAW_CONFIG));
++    const config = readModelConfig(OPENCLAW_CONFIG);
+     const agentId = gatewayAgentId(config);
+     const selectedModel = resolveChatModel(config, req.body?.chatModel ?? '', await chatRuntime.catalog(config, OPENCLAW_CONFIG));
+     let key = null;
+@@ -1655,7 +1707,7 @@ app.post('/api/chat/usage', async (req, res) => {
+ 
+ app.get('/api/chat/models', async (_req, res) => {
+   res.set('Cache-Control', 'no-store');
+-  try { const config = JSON.parse(readText(OPENCLAW_CONFIG));
++  try { const config = readModelConfig(OPENCLAW_CONFIG);
+     res.json(publicChatModels(config, await chatRuntime.catalog(config, OPENCLAW_CONFIG))); }
+   catch { res.status(503).json({ error: 'Configured models are unavailable.' }); }
+ });
+@@ -1664,7 +1716,7 @@ app.post('/api/chat', async (req, res) => {
+   let selectedModel, selectedEffort;
+   if (req.body?.chatModel !== undefined || req.body?.chatEffort !== undefined) {
+     try {
+-      const config = JSON.parse(readText(OPENCLAW_CONFIG));
++      const config = readModelConfig(OPENCLAW_CONFIG);
+       const discovered = await chatRuntime.catalog(config, OPENCLAW_CONFIG);
+       selectedModel = resolveChatModel(config, req.body.chatModel, discovered);
+       selectedEffort = resolveChatEffort(config, req.body.chatModel, req.body.chatEffort, discovered);
+@@ -1749,6 +1801,23 @@ app.post('/api/chat', async (req, res) => {
+       const candidate = gwData.choices?.[0]?.message?.content || gwData.choices?.[0]?.text || '';
+       responseText = typeof candidate === 'string' ? candidate.trim() : '';
+       fromGateway = Boolean(responseText);
++      // FORK PATCH: capture the OpenAI-compat usage block. Backs the footer
++      // "Last Turn" field (#footer-tokens-last) and lastTurn in
++      // /api/tokens/summary. Nothing upstream reads this; if a merge conflicts
++      // here, dropping these lines only blanks that one field.
++      const u = gwData.usage || {};
++      const inTok = Number(u.prompt_tokens ?? u.input_tokens ?? u.input ?? 0) || 0;
++      const outTok = Number(u.completion_tokens ?? u.output_tokens ?? u.output ?? 0) || 0;
++      if (inTok || outTok) {
++        forkLastChatUsage = {
++          input: inTok,
++          output: outTok,
++          total: Number(u.total_tokens ?? inTok + outTok) || inTok + outTok,
++          model: gwData.model || 'openclaw',
++          at: new Date().toISOString(),
++        };
++      }
++
+       if (!fromGateway) gatewayFallback = 'OpenClaw returned an empty chat response. Check the gateway before retrying.';
+     } else {
+       gatewayFallback = `OpenClaw rejected the chat request (HTTP ${gwRes.status}). Check the gateway terminal for details.`;
+@@ -2480,6 +2549,74 @@ wss.on('connection', (socket, request) => {
+   });
+ });
+ 
++// ── Optional HUD modules ─────────────────────────────────────────────────────
++// Registered last, so first-party routes above always take precedence over a
++// module's. No-ops when modules/ is empty or absent. See modules/README.md.
++//
++// ctx is the published surface modules may rely on — deliberately small, so it
++// can stay stable. Adding to it is a compatibility promise; prefer an issue over
++// quietly widening it.
++// Browser-editable runtime .env files cannot select a credential destination or reviewer origin.
++const hudDeploymentKeys = new Set(['CONVERGENCE_HUD_LOCAL_OWNER', 'CONVERGENCE_HUD_READ_TOKEN',
++  'CONVERGENCE_SITE', 'CONVERGENCE_API_URL', 'CONVERGENCE_REVIEWER_ORIGIN']);
++const moduleEnvLookup = (key) => {
++  if (hudDeploymentKeys.has(key)) return process.env[key] || '';
++  if (process.env[key] !== undefined && process.env[key] !== '') return String(process.env[key]);
++  for (const f of ENV_FILES) {
++    const v = parseOneEnvFile(f)[key];
++    if (v !== undefined && v !== '') return String(v);
++  }
++  return '';
++};
++
++const ownerContext = {
++  installation, hudBindings, allowedLocalRequest, protectedProfile, openLabWorkspace,
++  hudHost: process.env.HUD_HOST || '127.0.0.1', ports, env: moduleEnvLookup,
++};
++
++const loadedModules = await loadModules(app, {
++  ...ownerContext,
++  ROOT,
++  TESTBED_FILE,
++  parseEnvFile,
++  readText,
++  broadcastWS,
++  getGatewayConfig,
++  env: moduleEnvLookup,
++}, moduleEnvLookup);
++registerModuleIndex(app, loadedModules);
++
++// ── FORK-LOCAL HOOK ─────────────────────────────────────────────────────────
++// The only fork modification to this file besides the ${VAR} fix in
++// getGatewayConfig(). All fork-specific routes and static serving live in
++// server.local.js so upstream pulls cannot conflict with them. Registered here
++// (last, before listen) so upstream's own routes always take precedence and the
++// SPA fallback ends up at the very bottom of the stack.
++// Disable with HUD_LOCAL_EXTENSIONS=0, or by deleting server.local.js.
++if (process.env.HUD_LOCAL_EXTENSIONS !== '0') {
++  try {
++    const local = await import('./server.local.js');
++    const info = local.register(app, {
++      ROOT, OPENCLAW_ENV, ROOT_ENV, RAG_DATA_DIR, RAG_INTAKE_DIR,
++      broadcastWS, callRagTool, parseEnvFile, parseOneEnvFile,
++      ragStartProgressPolling, readText,
++      ownerContext,
++      getLastChatUsage: () => forkLastChatUsage,
++    });
++    console.log(
++      `[local] fork extensions loaded (${info.routes.length} route groups, `
++      + `frontend: ${info.servesFrontend ? 'dist/' : 'not built'})`,
++    );
++  } catch (err) {
++    if (err?.code === 'ERR_MODULE_NOT_FOUND' && /server\.local\.js/.test(err.message || '')) {
++      console.log('[local] server.local.js absent — running as pristine upstream');
++    } else {
++      // Do not silently degrade: a broken extension must be visible.
++      console.error('[local] fork extensions FAILED to load:', err.message);
++    }
++  }
++}
++
+ const PORT = ports.api;
+ server.listen(PORT, '127.0.0.1', () => {
+   console.log(`NetClaw visual API listening on http://localhost:${PORT}`);

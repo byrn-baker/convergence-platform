@@ -46,12 +46,19 @@ Both the HUD Security view and the installed dashboard display guest-reported VM
 heartbeat freshness, queue/drop health and enrollment expiry. Reporting is
 visibility, not a host safety verdict or trusted network capture.
 
-Synthetic API/DOM checks (after `npm ci` in the API and HUD directories):
+Run the synthetic API and DOM checks from the repository root after installing
+the test dependencies in both packages.
 
 ```bash
+npm --prefix ui/convergence-api ci
+npm --prefix ui/convergence-hud ci
 bash tests/convergence-host-status/run-tests.sh
 ```
 
 ## Spec
 
 See `specs/080-convergence/`.
+
+## Embedded case review
+
+The private mTLS reviewer service supports individually authenticated case review, revocable grants and transactional disposition history. [Setup and API](REVIEWER.md)

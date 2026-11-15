@@ -1,0 +1,12 @@
+diff --git a/src/dashboard/hermes-ui.test.js b/src/dashboard/hermes-ui.test.js
+index 1242eeb32859edebec61aedd667b85a19d5e2cc1..76f52a720b561fe952c212ed79b3bdbadd65c954 100644
+--- a/src/dashboard/hermes-ui.test.js
++++ b/src/dashboard/hermes-ui.test.js
+@@ -15,6 +15,7 @@ test('Hermes chat restores uncertain draft, recovers without replay, and shares
+  w.eval(built.outputFiles[0].text);await wait();t.after(()=>{w.closeChat();w.close();});
+  const doc=w.document;await until(()=>doc.querySelector('textarea') && doc.querySelector('#standard-chat-model')?.disabled);let input=doc.querySelector('textarea');assert.ok(input,JSON.stringify({errors,html:doc.body.innerHTML}));assert.equal(doc.querySelector('#standard-chat-model').disabled,true);
+  Object.getOwnPropertyDescriptor(w.HTMLTextAreaElement.prototype,'value').set.call(input,'Remember my branch');input.dispatchEvent(new w.Event('input',{bubbles:true}));await wait();input.closest('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await wait();
++ await until(()=>doc.querySelector('[role=alert]')?.textContent.includes('Outcome unknown'));
+  assert.match(doc.querySelector('[role=alert]').textContent,/Outcome unknown/);assert.equal(input.value,'Remember my branch');assert.equal(calls.filter(([u,o])=>u==='/api/chat/requests'&&o.method==='POST').length,1);
+  Object.getOwnPropertyDescriptor(w.HTMLTextAreaElement.prototype,'value').set.call(input,'UNSENT new question');input.dispatchEvent(new w.Event('input',{bubbles:true}));await wait();
+  w.remountChat();await until(()=>doc.querySelector('textarea'));input=doc.querySelector('textarea');assert.equal(input.value,'UNSENT new question');

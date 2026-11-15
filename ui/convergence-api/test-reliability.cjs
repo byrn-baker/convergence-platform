@@ -92,3 +92,44 @@ test('Alertmanager failure reports unknown counts and degraded source',async()=>
  const r=response();await handlers['get /']({site:'home'},r);
  assert.equal(r.body.alertCount.firing,null);assert.equal(r.body.unavailable,true);assert.equal(r.body.sources.alertmanager,'unavailable');
 });
+
+test('device inventory applies an exact site matcher inside every metrics selector', async () => {
+  const queries = [];
+  const read = async expression => { queries.push(expression); return []; };
+  const {handlers} = routes('devices.js', {
+    '../lib/queryEngine': {instantQuery: read, vmInstantQuery: read},
+    '../lib/config': require('./src/lib/config'),
+    '../lib/formatters': require('./src/lib/formatters'),
+  });
+  const site = 'test-"west';
+  const res = response();
+  await handlers['get /']({site}, res);
+  assert.equal(res.code, 200);
+  assert.equal(res.body.site, site);
+  assert.ok(queries.some(query => query.includes('probe_success')));
+  assert.ok(queries.some(query => query.includes('ifOperStatus')));
+  assert.ok(queries.some(query => query.includes('interface_status')));
+  for (const query of queries) {
+    const selectors = [...query.matchAll(/\{([^}]+)\}/g)];
+    assert.ok(selectors.length, query);
+    for (const [, labels] of selectors) {
+      assert.match(labels, /(?:^|,\s*)site="test-\\"west"(?:,|$)/, query);
+    }
+  }
+});
+
+test('device inventory rejects a missing site before querying unlabelled metrics', async () => {
+  let reads = 0;
+  const read = async () => { reads++; return []; };
+  const {handlers} = routes('devices.js', {
+    '../lib/queryEngine': {instantQuery: read, vmInstantQuery: read},
+    '../lib/config': require('./src/lib/config'),
+    '../lib/formatters': require('./src/lib/formatters'),
+  });
+  for (const site of [undefined, '', []]) {
+    const res = response();
+    await handlers['get /']({site}, res);
+    assert.equal(res.code, 400);
+  }
+  assert.equal(reads, 0);
+});

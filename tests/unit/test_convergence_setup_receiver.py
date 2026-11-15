@@ -21,6 +21,8 @@ def test_unit_uses_checkout_bundle_and_private_state():
     assert 'Environment=NETCLAW_DIR=/n' in text and 'Environment=CONVERGENCE_JEV_ENV_FILE=/n/.env' in text
     assert 'RAG_PYTHON' not in text
     assert 'WantedBy=default.target' in text and 'User=' not in text
+    assert 'KillMode=control-group' in text and 'KillSignal=SIGTERM' in text
+    assert 'SendSIGKILL=yes' in text and 'TimeoutStopSec=90' in text
 
 
 def test_unit_records_rag_python():
@@ -85,3 +87,87 @@ def test_install_requires_a_private_complete_env(tmp_path):
     env.chmod(0o600)
     with pytest.raises(ValueError, match='NETWORK_GUARDIAN_TOKEN'):
         receiver.install(args)
+
+
+def private_environment(tmp_path, extra=''):
+    env = tmp_path/'receiver.env'
+    env.write_text('ALERT_RECEIVER_TOKEN=ordinary-fixture\nNETWORK_GUARDIAN_URL=http://cases\nNETWORK_GUARDIAN_TOKEN=fixture\n' + extra)
+    env.chmod(0o600)
+    return env
+
+
+def test_preflight_is_read_only_and_ignores_invoking_shell_settings(tmp_path, monkeypatch):
+    env = private_environment(tmp_path)
+    monkeypatch.setenv('REVIEWER_HTTPS_PORT', 'bad')
+    before = set(tmp_path.iterdir())
+    result = receiver.preflight(receiver.argparse.Namespace(env_file=str(env)))
+    assert result == {'status':'valid', 'env_file':str(env), 'https_configured':False}
+    assert set(tmp_path.iterdir()) == before
+
+
+def test_partial_gateway_policy_rejected_before_install(tmp_path):
+    env = private_environment(tmp_path, 'REVIEWER_GATEWAY_POLICY_FILE=/missing/policy.json\n')
+    with pytest.raises(ValueError, match='both'):
+        receiver.preflight(receiver.argparse.Namespace(env_file=str(env)))
+
+
+def test_gateway_policy_integrity_is_checked_by_preflight(tmp_path):
+    import hashlib
+    import json
+    policy = tmp_path/'gateway.json'
+    policy.write_text(json.dumps({'version':1,'agent_id':'alert','model':'fixture/model','timeout_seconds':900,
+                                 'message_template':'Untrusted context: {{alerts[0].annotations.investigation_prompt}}'}))
+    policy.chmod(0o600)
+    digest = hashlib.sha256(policy.read_bytes()).hexdigest()
+    env = private_environment(tmp_path, f'REVIEWER_GATEWAY_POLICY_FILE={policy}\nREVIEWER_GATEWAY_POLICY_SHA256={digest}\n')
+    assert receiver.preflight(receiver.argparse.Namespace(env_file=str(env)))['status'] == 'valid'
+    policy.write_text(policy.read_text()+' ')
+    with pytest.raises(ValueError):
+        receiver.preflight(receiver.argparse.Namespace(env_file=str(env)))
+
+
+def test_partial_tls_rejected_before_installer_mutations(tmp_path, monkeypatch):
+    env = private_environment(tmp_path, 'REVIEWER_HTTPS_PORT=9443\n')
+    monkeypatch.setattr(receiver.subprocess, 'run', lambda *a, **k: pytest.fail('Must not run commands on invalid TLS'))
+    monkeypatch.setenv('XDG_STATE_HOME', str(tmp_path/'state'))
+    args = receiver.argparse.Namespace(env_file=str(env))
+    with pytest.raises(ValueError):
+        receiver.install(args)
+    assert not (tmp_path/'state').exists()
+
+
+def test_preflight_reads_literal_values_without_expansion_or_execution(tmp_path):
+    marker = tmp_path/'unexpected'
+    env = private_environment(tmp_path, f'UNRELATED="$(touch {marker})"\n')
+    assert receiver.preflight(receiver.argparse.Namespace(env_file=str(env)))['status'] == 'valid'
+    assert not marker.exists()
+
+
+def test_invalid_env_does_not_echo_credentials(tmp_path):
+    secret = 'fixture-value-must-not-appear'
+    env = private_environment(tmp_path, "UNRELATED='" + secret + '\n')
+    with pytest.raises(ValueError) as failure:
+        receiver.preflight(receiver.argparse.Namespace(env_file=str(env)))
+    assert secret not in str(failure.value)
+
+
+def test_tls_preflight_validates_real_pair_without_changing_environment(tmp_path):
+    import subprocess
+    cert = tmp_path/'receiver cert.pem'
+    key = tmp_path/'receiver key.pem'
+    other = tmp_path/'other key.pem'
+    subprocess.run(['openssl','req','-x509','-newkey','ec','-pkeyopt','ec_paramgen_curve:P-256',
+                    '-nodes','-days','1','-subj','/CN=localhost','-keyout',str(key),'-out',str(cert)],
+                   check=True, capture_output=True)
+    subprocess.run(['openssl','genpkey','-algorithm','EC','-pkeyopt','ec_paramgen_curve:P-256','-out',str(other)],
+                   check=True, capture_output=True)
+    extra = ('REVIEWER_HTTPS_HOST=127.0.0.1\nREVIEWER_HTTPS_PORT=9443\n'
+             f'REVIEWER_HTTPS_CERT_FILE="{cert}"\nREVIEWER_HTTPS_KEY_FILE="{key}"\n'
+             'REVIEWER_DELIVERY_TOKEN=' + 'x'*40 + '\n')
+    env = private_environment(tmp_path, extra)
+    initial = env.read_bytes()
+    assert receiver.preflight(receiver.argparse.Namespace(env_file=str(env)))['https_configured']
+    assert env.read_bytes() == initial
+    env.write_text(initial.decode().replace(str(key), str(other)))
+    with pytest.raises((ValueError, OSError)):
+        receiver.preflight(receiver.argparse.Namespace(env_file=str(env)))

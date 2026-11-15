@@ -19,3 +19,5 @@ makes no additional completion claim.
 
 Record the actual environment, commands and outcomes when these checks are run.
 Unavailable infrastructure or model credentials remain gaps, not passing checks.
+
+- [x] V002 Verify site isolation of the devices inventory across shared metric backends.

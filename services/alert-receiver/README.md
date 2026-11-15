@@ -170,3 +170,140 @@ See `alertmanager-snippet.yaml` for the config to add to your OBS VM Alertmanage
 Either:
 - Add the device to Nautobot (preferred — single source of truth)
 - Add an entry to `inventory.yaml` (quick fallback for devices not yet in SoT)
+
+## Attributed reviewer investigations
+
+The opt-in `/reviewer/commands` POST and `/reviewer/commands/{delivery_id}` GET
+use a **separate** `REVIEWER_DELIVERY_TOKEN`. Both methods require it; the ordinary
+machine token cannot submit or inspect reviewer deliveries. Empty or reused
+machine credentials leave these routes disabled. They require HTTPS and reject
+browser cookies/origins and forwarding headers. Run `python server.py` with all
+four `REVIEWER_HTTPS_HOST`, `REVIEWER_HTTPS_PORT`, `REVIEWER_HTTPS_CERT_FILE` and
+`REVIEWER_HTTPS_KEY_FILE` settings to add the dedicated trusted HTTPS listener.
+The existing `ALERT_RECEIVER_HOST/PORT` HTTP listener continues serving legacy
+callers and always rejects reviewer commands. Both listeners share one process,
+application lifespan, SQLite inbox and worker pool. Do not launch a second
+receiver process to add HTTPS.
+
+The [v1 contract](../../specs/1015-embedded-hud-sign-in/dispatch-contract.md)
+defines the bounded immutable envelope. Each PostgreSQL-assigned delivery ID
+admits one job and receipt atomically under the existing inbox capacity. Two
+requests for the same case remain distinct. Replaying the same envelope returns
+the same job even after restart or terminal-job cleanup. A changed envelope with
+the same delivery ID returns409. Capacity exhaustion returns503 without creating
+a receipt or job.
+
+PostgreSQL owns the actor-attributed case note. This worker never appends it again
+or overwrites operator feedback. It reuses the ordinary reinvestigation payload
+builder and existing investigation lane/hourly budget. It verifies the fetched
+case identity and site before dispatch, then persists a checkpoint immediately
+before the hook call. The direct Gateway request uses the delivery UUID as its
+idempotency key and in its isolated session key. SQLite binds that request to its
+job and stores the returned hook run ID, status and reply disposition atomically
+with the terminal receipt. No model output is stored in the receipt.
+
+Reviewer work uses one `/hooks/agent` request with `waitForCompletion: true`,
+qualified against OpenClaw 2026.10.9. The selected agent, model, timeout and trusted
+prompt wrapper come from a pinned policy exported from the managed alert mapping.
+The ordinary alert/manual routes continue using their existing mapped hook.
+Gateway `completion.status=ok` means the agent run finished; it does not establish
+that a case update succeeded. Error/skipped executions are failed. An admission
+acknowledgement, malformed response, timeout or lost response remains unknown.
+The checkpoint records the wait deadline from the policy timeout plus 30 seconds
+of admission allowance. Restart uses that same deadline without loading a new
+policy or calling the hook again. Remote work may outlive a transport timeout.
+No automatic retry is made after the dispatch checkpoint. Intentional follow-up
+requires a new authorized request, not reuse of the unknown delivery.
+
+Export and check the narrow policy from the repository root:
+
+```sh
+python3 setup/reviewer_gateway.py export --policy-file /private/reviewer-gateway.json
+python3 setup/reviewer_gateway.py check --policy-file /private/reviewer-gateway.json
+```
+
+Set `REVIEWER_GATEWAY_POLICY_FILE` to that absolute path and
+`REVIEWER_GATEWAY_POLICY_SHA256` to the reported digest in the private receiver
+environment. Export does not copy credentials or change Gateway configuration.
+The receiver checks owner-only permissions and the raw digest before dispatch.
+The helper check detects managed mapping/policy drift; run it after Gateway
+configuration changes and before rollout. Runtime policy-file drift fails before
+checkpoint. The receiver still uses only `OPENCLAW_HOOK_TOKEN`; it needs no Gateway
+operator token. Gateway HTTP is permitted only on a literal loopback address;
+remote destinations need HTTPS. Redirects and environment proxies are disabled.
+
+Back up SQLite alongside the PostgreSQL outbox. Receipts are retained beyond
+normal job cleanup. A restore of one database without matching delivery history
+requires reconciliation before resuming relay delivery. Disabling the service token
+stops new admission; already accepted jobs remain commissioned and may run.
+Pause the receiver deliberately if those jobs must also be held. Legacy manual
+and JEV routes keep their existing behavior; JEV is not a reviewer command.
+
+### Receiver listener lifecycle
+
+With no nonempty `REVIEWER_HTTPS_*` settings, `python server.py` runs legacy
+HTTP only. Partial configuration fails startup. HTTPS requires a numeric bind IP,
+a different port from HTTP, a separate nonempty delivery token, and absolute
+certificate/key paths (a leading `~` is expanded). The certificate and unencrypted
+private key must match; encrypted keys fail without an interactive prompt. The
+server requires TLS 1.2 or newer. The relay still verifies the server's hostname
+and certificate chain; server preflight does not establish client trust.
+
+The TLS boundary exposes only reviewer command/receipt routes and a minimal
+`GET /health` returning `{"status":"ok"}`. Legacy routes, admin operations,
+metrics, documentation and WebSockets are not exposed there. Neither listener
+interprets proxy headers. The runtime validates configuration and pre-binds both
+sockets before queue startup. A bind/configuration failure therefore cannot leave
+an HTTP-only half-started receiver with live workers.
+
+The runtime alone owns SIGINT/SIGTERM. Stopping or failing either listener shuts
+down both, and new ASGI requests receive 503 once draining begins. Existing
+requests receive a 10-second graceful interval. Remaining transports, including
+incomplete TLS handshakes, are then closed; request tasks are canceled and joined
+before the application lifespan ends. Request cancellation has a 2-second window,
+and worker-coroutine cancellation has a 5-second window. A task that still refuses
+to stop causes a static diagnostic and process exit 70 **before** database/queue
+ownership cleanup. The operating system then releases resources together; this
+prevents an old handler from writing after a new receiver acquires the queue.
+A closed stderr cannot bypass that fail-stop behavior. Durable jobs and dispatch
+checkpoints survive restart.
+
+These are listener and coroutine shutdown bounds, not a total process-exit SLA.
+Legacy RAG work dispatched with `asyncio.to_thread` may keep the executor alive
+until its existing timeout, even after its worker coroutine stops. That existing
+RAG thread lifecycle is unchanged here; those threads do not own JobStore.
+
+The supported systemd unit explicitly uses control-group termination, SIGTERM,
+and a 90-second forced-kill fallback. Isolated active-RAG tests on Python 3.12 and
+3.14 verified that no old RAG child survives replacement startup, including a
+child that ignores SIGTERM. Use the service manager for restart; raw Python
+SIGTERM and in-process RAG fallback do not have the same qualification. Interrupted
+snapshot writes can leave partial data and require reconciliation. See
+[the restart fixture](../../tests/reviewer-runtime/README.md).
+
+Supported startup acquires an exclusive advisory lock beside the resolved queue
+path (`jobs.sqlite.owner.lock`) before opening JobStore. A second receiver using
+the same queue fails before it can reset running jobs. The lock file remains on
+disk; the OS lock is released only after workers/database stop or the process
+exits. Do not delete the file to bypass ownership. This protects supported
+receiver startup on POSIX hosts, not arbitrary SQLite tools. The first upgrade
+from an older unlocked receiver still requires stopping that process first.
+
+From the repository root, validate an operator environment before installation:
+
+```sh
+python3 setup/receiver.py preflight --env-file /private/path/receiver.env
+```
+
+This reads the environment and certificate/key without changing files or binding
+ports. The install command with `--start` reuses this validation before mutation.
+
+Installers can import the standard-library-only `receiver_runtime` module and
+call `load_settings(mapping)` followed by `validate_tls(settings)` before making
+changes. `prepare_listeners(settings)` additionally reserves both sockets and
+must be closed after a preflight. Production uses `run(app)`; isolated tests may
+await `serve(app, settings, stop_event=..., handle_signals=False)`. A raw
+`uvicorn server:app` command bypasses dual-listener orchestration and is not the
+supported launch command for this feature. Configure the relay and reviewer
+submission separately after end-to-end qualification; adding TLS does not enable
+reviewer UI submission by itself.

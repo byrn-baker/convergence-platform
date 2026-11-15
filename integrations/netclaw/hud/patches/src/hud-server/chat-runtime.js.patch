@@ -1,0 +1,32 @@
+diff --git a/src/hud-server/chat-runtime.js b/src/hud-server/chat-runtime.js
+index 87b4cf0e17be0a9a8d8c8c0383c35ff2cb01eadd..f5f8e0258d6699be9b72bc76c448c3d155bf402a 100644
+--- a/src/hud-server/chat-runtime.js
++++ b/src/hud-server/chat-runtime.js
+@@ -3,6 +3,8 @@ import { promisify } from 'node:util';
+ import { readFile, access } from 'node:fs/promises';
+ import { constants } from 'node:fs';
+ import path from 'node:path';
++// FORK-LOCAL: use selected-state dotenv credentials for CLI discovery.
++import { readModelConfig, runtimeEnvironment } from '../fork-local/model-config.js';
+ import { gatewayAgentId } from './gateway-agent.js';
+ const execute = promisify(execFile);
+ export function gatewayCallTimeout(method, env = process.env) {
+@@ -32,7 +34,8 @@ export function gatewayEnvironment(config, port, configPath, env = process.env,
+     OPENCLAW_GATEWAY_TOKEN: token || '', OPENCLAW_GATEWAY_PASSWORD: password || '' };
+ }
+ export async function gatewayCall(method, params, port, configPath) {
+-  const config = JSON.parse(await readFile(configPath, 'utf8'));
++  const env = runtimeEnvironment(configPath);
++  const config = readModelConfig(configPath, env);
+   // Resolve the owner's CLI before pinning Node in the child PATH. Otherwise
+   // a sibling openclaw executable can shadow a configured wrapper/installation.
+   let executable='openclaw';
+@@ -48,7 +51,7 @@ export async function gatewayCall(method, params, port, configPath) {
+   const timeout = gatewayCallTimeout(method);
+   const { stdout } = await execute(executable, ['gateway', 'call', method, '--params', JSON.stringify(params),
+     '--timeout', '10000', '--json'],
+-  { env: gatewayEnvironment(config, port, configPath), timeout, maxBuffer: 4 * 1024 * 1024, windowsHide: true });
++  { env: gatewayEnvironment(config, port, configPath, env), timeout, maxBuffer: 4 * 1024 * 1024, windowsHide: true });
+   return JSON.parse(stdout.slice(stdout.indexOf('{')));
+ }
+ export function createChatRuntime(call = gatewayCall) {

@@ -1,0 +1,17 @@
+diff --git a/src/dashboard/StandardChat.jsx b/src/dashboard/StandardChat.jsx
+index 41e88d75e3ff291359809cc331bf6dbe65042767..0fef7cbf742b03fc21b222bd1bfeb5f0dbe1ead8 100644
+--- a/src/dashboard/StandardChat.jsx
++++ b/src/dashboard/StandardChat.jsx
+@@ -38,6 +38,12 @@ export default function StandardChat({ preview = false, active = true, pal = fal
+   const [catalog, setCatalog] = useState(null);
+   const [modelError, setModelError] = useState('');
+   const [modelRefresh, setModelRefresh] = useState(0);
++  // FORK-LOCAL: Convergence applies model settings without remounting Chat.
++  useEffect(() => {
++    const refresh = () => setModelRefresh(value => value + 1);
++    window.addEventListener('netclaw:models-updated', refresh);
++    return () => window.removeEventListener('netclaw:models-updated', refresh);
++  }, []);
+   useEffect(() => {
+     if (preview) return;
+     const controller = new AbortController();

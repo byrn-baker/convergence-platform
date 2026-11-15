@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
   const allSites = getAllSiteIds();
 
   // Filter to sites the user is authorized for
-  const authorizedSites = user.role === 'admin'
+  const authorizedSites = user.role === 'admin' && user.directory !== 'postgres'
     ? allSites
     : allSites.filter(s => user.sites.includes(s));
 

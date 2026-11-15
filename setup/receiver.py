@@ -6,6 +6,7 @@ is connected (setup/netclaw.py), hands admitted cases to it. Docker and K3s bund
 both write its environment as receiver.env; this installs the receiver for that file:
 
   python3 setup/receiver.py install --env-file BUNDLE/receiver.env --start
+  python3 setup/receiver.py preflight --env-file BUNDLE/receiver.env
   python3 setup/receiver.py status
   python3 setup/receiver.py remove
 
@@ -16,10 +17,14 @@ the skill catalog for skill scoping come from that checkout (the selector ships 
 (an existing executable, only together with --netclaw-dir) so those RAG calls run in
 NetClaw's RAG runtime: the command of mcp.servers["rag-mcp"] in ~/.openclaw/openclaw.json.
 A local device inventory goes in the env file as ALERT_RECEIVER_INVENTORY=/path/inventory.yaml.
+Optional reviewer HTTPS uses the four REVIEWER_HTTPS settings documented in the
+receiver README. Preflight validates the selected private environment and TLS
+key pair without installing dependencies, opening the inbox or binding ports.
 A user service runs at boot only with lingering enabled (`loginctl enable-linger`); status reports it.
 """
 import argparse
 import getpass
+import importlib.util
 import json
 import os
 import re
@@ -44,7 +49,9 @@ def unit(name, env_file, venv, state, netclaw_dir=None, jev_env=None, rag_python
         lines.append(f'Environment=CONVERGENCE_JEV_ENV_FILE={jev_env}')
     if rag_python:
         lines.append(f'Environment=RAG_PYTHON={rag_python}')
-    lines += ['Restart=on-failure', 'RestartSec=5', 'NoNewPrivileges=true', 'UMask=0077', '',
+    lines += ['Restart=on-failure', 'RestartSec=5',
+              'KillMode=control-group', 'KillSignal=SIGTERM', 'SendSIGKILL=yes', 'TimeoutStopSec=90',
+              'NoNewPrivileges=true', 'UMask=0077', '',
               '[Install]', 'WantedBy=default.target', '']
     for value in (env_file, venv, state, netclaw_dir or '', jev_env or '', rag_python or ''):
         if any(c in str(value) for c in '\n\r%$"\'\\') or ' ' in str(value):
@@ -65,14 +72,45 @@ def systemctl(*args, check=True):
     return result.stdout.strip()
 
 
-def install(args):
+def _module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def preflight(args):
+    """Validate the exact environment and TLS material without installing anything."""
     env_file = Path(args.env_file).expanduser().resolve()
     if env_file.stat().st_mode & 0o077:
         raise ValueError(f'{env_file} must be private (chmod 600)')
-    keys = {line.partition('=')[0] for line in env_file.read_text().splitlines() if '=' in line}
-    missing = {'ALERT_RECEIVER_TOKEN', 'NETWORK_GUARDIAN_URL', 'NETWORK_GUARDIAN_TOKEN'} - keys
+    parser = _module('convergence_receiver_env', ROOT/'scripts/write-env.py')
+    try:
+        environment = parser.values(env_file.read_text())
+    except ValueError:
+        raise ValueError('Receiver environment contains an invalid assignment') from None
+    missing = {'ALERT_RECEIVER_TOKEN', 'NETWORK_GUARDIAN_URL', 'NETWORK_GUARDIAN_TOKEN'} - environment.keys()
     if missing:
         raise ValueError(f'{env_file} lacks {", ".join(sorted(missing))}')
+    runtime = _module('convergence_receiver_runtime', SERVICE/'receiver_runtime.py')
+    settings = runtime.load_settings(environment)
+    runtime.validate_tls(settings)
+    policy_path = environment.get('REVIEWER_GATEWAY_POLICY_FILE', '')
+    policy_digest = environment.get('REVIEWER_GATEWAY_POLICY_SHA256', '')
+    if policy_path or policy_digest:
+        if not policy_path or not policy_digest:
+            raise ValueError('Configure both reviewer Gateway policy path and SHA-256')
+        gateway = _module('convergence_gateway_preflight', SERVICE/'gateway_investigations.py')
+        gateway.load_policy(policy_path, policy_digest)
+    return {'status': 'valid', 'env_file': str(env_file),
+            'https_configured': settings.reviewer is not None}
+
+
+def install(args):
+    # Reject incomplete TLS and mismatched key pairs before venv/unit mutations.
+    checked = preflight(args)
+    env_file = Path(checked['env_file'])
     netclaw = Path(args.netclaw_dir).expanduser().resolve() if args.netclaw_dir else None
     if netclaw and not (netclaw/'mcp-servers/jev-mcp/core.py').is_file():
         raise ValueError(f'{netclaw} is not a NetClaw checkout with mcp-servers/jev-mcp')
@@ -135,7 +173,7 @@ def remove(args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('command', choices=('install', 'status', 'remove'))
+    parser.add_argument('command', choices=('install', 'preflight', 'status', 'remove'))
     parser.add_argument('--name', default='convergence-alert-receiver')
     parser.add_argument('--env-file', help="the bundle's receiver.env")
     parser.add_argument('--venv', help='virtualenv for the receiver (default: under the state directory)')
@@ -149,10 +187,10 @@ def main(argv=None):
     if not NAME.fullmatch(args.name):
         parser.error('invalid --name')
     try:
-        if args.command == 'install':
+        if args.command in ('install', 'preflight'):
             if not args.env_file:
-                parser.error('install needs --env-file')
-            result = install(args)
+                parser.error(args.command + ' needs --env-file')
+            result = install(args) if args.command == 'install' else preflight(args)
         else:
             result = {'status': status, 'remove': remove}[args.command](args)
         print(json.dumps(result, indent=2))

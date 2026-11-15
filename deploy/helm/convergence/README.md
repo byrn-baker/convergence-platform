@@ -27,3 +27,73 @@ Secret values are never included in Helm values. StatefulSet PVCs are retained o
 uninstall; do not delete their namespace or original credentials when retaining data.
 See [operations](../../../docs/convergence/operations.md) for backups, upgrades and
 existing shared Grafana. Old home profiles describe one deployment, not defaults.
+
+## Optional HTTPS reviewer workloads
+
+After preparing the private Convergence API database and accounts, enable the dedicated review API and HUD in a separate values overlay. Both images need a build containing the reviewer entry points. Use verified release digests in production. Configure a canonical HTTPS DNS hostname whose final label starts with a letter.
+
+```yaml
+reviewer:
+  enabled: true
+  publicOrigin: https://review.example.org
+  apiImage: registry.example.org/convergence-api:review-candidate
+  hudImage: registry.example.org/convergence-reviewer-hud:review-candidate
+  databaseSecret: review-database
+  serviceTlsSecret: review-api-tls
+  installationTlsSecret: review-installation-tls
+  browserTlsSecret: review-browser-tls
+```
+
+Create four independent Secrets using your normal credential management process. The database Secret holds PGHOST, PGPORT, PGDATABASE, PGUSER and PGPASSWORD for a restricted runtime role. The service TLS Secret contains tls.crt, tls.key, ca.crt (client CA) and enrolled.json (installation IDs mapped to SHA-256 client certificate fingerprints). The HUD installation Secret contains tls.crt, tls.key and ca.crt (service CA). The browser TLS Secret contains tls.crt and tls.key for publicOrigin. The service certificate needs a SAN matching the configured service DNS name, RELEASE-review-api.NAMESPACE.svc. File contents stay outside values and release history.
+
+Run the schema migration once with schema-owner credentials before starting the API, using the same image and database as the deployment:
+
+```sh
+node reviewer-service.js migrate
+```
+
+An administrator can run this command in an isolated one-off workload with access to the target database. Apply the [reviewer DB permissions](https://github.com/byrn-baker/convergence-platform/pull/10), then use the separate provisioning role to create individually scoped reviewer accounts. The runtime role needs INSERT on event_history and USAGE on event_history_sequence_seq because the existing event update trigger writes a history row. The supplied permissions script includes both. Readiness checks for the migrated schema and runtime database access. Neither pod needs schema-owner or provisioning credentials.
+
+The chart creates ClusterIP services RELEASE-review-api:3443 and RELEASE-review-hud:3444. The backend has a NetworkPolicy admitting connections only from the same release's HUD pods. Check that the cluster CNI enforces NetworkPolicy. Site-specific routing must expose only the review HUD over trusted HTTPS. Use dedicated TCP/TLS passthrough to preserve the browser's origin and the HUD certificate. The HUD rejects forwarded identity, scheme and address headers. An ordinary HTTP Ingress with default forwarding headers cannot serve this contract.
+
+The reviewer HUD has one replica with Recreate strategy because browser sessions are process-local. Rollout ends existing sign-ins. Named user grants, case dispositions and history are durable in PostgreSQL. Certificate changes require process restarts: enroll both client fingerprints and roll API pods, rotate the HUD credentials and roll its pod, then remove the retired enrollment and roll the API again. Renewing the browser certificate also requires restarting the HUD. Disabling reviewer removes its manifests from rendered output. Reconcile removal using the release's normal prune or decommission procedure. Preserve database history.
+
+### Optional investigation delivery
+
+After the dispatch migration and restricted role grants described in
+[REVIEWER-DISPATCH.md](../../../ui/convergence-api/REVIEWER-DISPATCH.md), add:
+
+```yaml
+reviewer:
+  investigationEnabled: false # enable only after receiver/relay qualification
+  relay:
+    enabled: true
+    databaseSecret: review-relay-database
+    deliverySecret: review-relay-delivery
+    receiverOrigin: https://receiver.example.org:8446
+```
+
+The relay uses `reviewer.apiImage`, runs `reviewer-relay.js` as a separate non-root
+workload and exposes no Service. Its ingress NetworkPolicy denies all incoming
+connections. Outgoing database, DNS and receiver access must be permitted by the
+installation's network policy; this chart does not add an egress allowlist.
+The separate database Secret contains PGHOST, PGPORT, PGDATABASE, PGUSER and
+PGPASSWORD for the restricted relay role. The delivery Secret contains `token`
+and `ca.crt`, the trust root for the receiver server certificate. Neither Secret
+may reuse the ordinary API or any other reviewer Secret. The receiver origin
+must be exact HTTPS with a DNS name or canonical IPv4 address and no path.
+
+The relay needs no reviewer password, grant, client certificate or schema-owner
+credential. Rotate its delivery token and CA through the Secret and a deliberate
+relay restart. Recreate strategy leaves no overlapping relay process during
+ordinary upgrades; durable leases also recover after unexpected interruption.
+Its process startup checks database permissions, but a Running/Ready Pod alone
+does not establish delivery health. Verify one bounded attributed canary through
+the receiver and inspect its durable receipt before enabling general submission.
+
+Set `investigationEnabled: true` separately to expose the operator action. For
+rollback set it false first; the relay can continue handling already accepted
+work. Set `relay.enabled: false` to render its removal, then follow the deployment's
+pruning policy to stop delivery. Neither flag deletes the outbox or receiver
+receipts. Keep the upgraded receiver stopped before downgrading to an older
+SQLite schema reader; never restore a stale queue over accepted live work.
