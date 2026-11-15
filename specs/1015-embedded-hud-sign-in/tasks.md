@@ -41,7 +41,7 @@ Release consolidation and the remaining maintenance/native-HUD/JEV work are trac
   with private-state disposal, scoped assets and preserved attributed case actions.
 - [x] H4: Qualify two-user browser behavior, telemetry preservation, revocation,
   source failure, permissions and real image assembly; independently review.
-- [ ] H5: Prepare reviewed release/rollout/rollback and bounded live comparison
+- [x] H5: Prepare reviewed release/rollout/rollback and bounded live comparison
   before enabling the expanded site. Ordinary remote NetClaw owner work is deferred.
 
 ### Shared JEV assessment requests
@@ -53,6 +53,6 @@ Release consolidation and the remaining maintenance/native-HUD/JEV work are trac
   restricted grants, separate enablement, and browser replay recovery.
 - [x] J4: Qualify simultaneous callers, budgets, restarts, ambiguous outcomes,
   publication failures and current authority using a synthetic provider.
-- [ ] J5: Independently review, release, and perform bounded live commissioning.
+- [x] J5: Independently review, release, and perform bounded live commissioning.
 
 - [x] N1: Permit external top-level navigation to the public sign-in document while retaining cross-site API, frame, mutation and identity denials.

@@ -516,3 +516,67 @@ Live rollout and external-link browser verification remain pending.
 Integration: merged origin/main 5702e57, retaining both append-only task/verification records. Public navigation source/test are identical to the deployed hotfix. User confirmed the live site opens; hotfix rollout details are in the private operations handoff.
 
 H4/J4 release integration attempt 2: PR #24 CI failed because the newly real JEV browser fixture requires NETCLAW_DIR, absent in that job. Local integration supplied it and passed. Added the same sparse JEV-core checkout and environment used by the existing Python job; no production behavior change. Node and Python CI passed; browser rerun required.
+
+
+### Release and installation qualification — 2026-11-15
+
+Coding run native-hud-20261115 completed before its original deadline. Attempt 2
+fixed the browser CI dependency, independently reviewed PASS. PR #24 merged as
+96877967f7311894b6559d9655a5aef6972669d5. All four CI jobs passed on the PR and
+release v0.1.15; release run 43739960965 published amd64/arm64 API, HUD and IDS
+images. The released HUD image loaded all 23 required static assets offline.
+
+The subsequent installation phase follows convergence-setup and the existing
+user-authorized rollout continuation, which explicitly permits exceeding 45
+minutes. It does not reset the coding run or its attempt counts. The private
+operations handoff records that authorization and concrete rollback pins.
+
+Independent rollout review PASS: only the three reviewer Deployments change;
+selected IDS credential keys and CA are referenced explicitly; role grants remain
+separated. Full server-side dry-run passed with test hooks excluded, matching Argo.
+Fresh production PostgreSQL backup restored in isolation; the exact migration and
+runtime/relay grants applied atomically twice with existing event/history/receipt
+counts unchanged. Live atomic migration succeeded and reviewer role statement
+timeout is 12 seconds. Receiver SQLite backup and two isolated migrations passed
+integrity checks and retained all existing jobs/results. Receiver stopped with no
+active jobs or surviving process group; stopped backup, release preflight and
+restart health passed. Existing runtime and model configuration were preserved.
+
+Live HTTPS versus native HUD comparison covered 11 telemetry resources and one
+identical case: health, Wi-Fi, devices, IDS/security, VM/heartbeat, security history,
+events, escalated events, alerts, traffic and provider catalog. Data and coverage
+agreed; moving counters differ only across collection times. Desktop and mobile
+Chromium checks passed health, VM/heartbeat, case navigation, logout and private
+state disposal with no page errors. Sources are live, not synthetic. An existing
+expired guest enrollment remains accurately labeled inactive; no claim of healthy
+host coverage is inferred. Other Kubernetes workload identities/restart counts
+were unchanged. Argo reported Synced/Healthy with exact release digests.
+
+H5 COMPLETE. J5 qualification completed below.
+Private operational evidence stays outside Git; no credentials or case content
+are included in this record.
+
+
+J5 live commissioning: two distinct operations from two sessions of the same
+existing authorized reviewer created two attributed receipts. Both reused one
+previously completed canonical assessment and its retained legacy job. The real
+browser displayed the retained typed result. Reload and exact replay returned
+unchanged receipts. Receiver and relay restarts completed; repeating recovery and
+replay preserved both receipt records exactly. The complete JEV job-ID set and
+budget ledger were unchanged: zero new provider calls or spend. Distinct people
+sharing one synthetic evaluation were already qualified in isolation; this live
+check does not claim two provisioned human reviewers or a new evaluation.
+
+The commissioning helper initially stopped before any request on two incorrect
+fixture assumptions: expecting cached evidence in the case-review projection,
+and expecting a case-link fragment to submit the lookup. It was corrected to use
+the authenticated telemetry event read and actual case lookup UI. No product code
+or runtime configuration changed for those corrections. Both successful runs
+signed out their sessions and retained all request/assessment audit records.
+
+Final PostgreSQL audit: two correctly attributed JEV requests, two completed/reused
+outbox rows, one assessment and one legacy job; original disposition and investigation
+receipt counts unchanged. Temporary isolated database containers were removed;
+private backups and qualification artifacts remain available for rollback/audit.
+
+Final independent evidence audit: H5 PASS and J5 PASS. J5 COMPLETE for the approved shared-assessment request increment. Sanitized PostgreSQL proof is retained with the private receipt and budget-ledger evidence. No acceptance gaps remain for this increment; the deferred native-owner migration remains a separate scope.

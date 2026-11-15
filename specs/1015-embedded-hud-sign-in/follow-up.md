@@ -83,16 +83,17 @@ increment; native verified-owner disposition acceptance remains deferred.
 
 - [x] Recheck current upstream NetClaw changes against accepted design PR #357.
   Keep the generic host/session extension upstream and Convergence views here.
-- [ ] Define the authenticated per-user telemetry path for the user's actual remote
+- [x] Define the authenticated per-user telemetry path for the user's actual remote
   workstation, preserving live dashboard, VM Security and Host Heartbeat behavior.
-- [ ] Build an isolated candidate and verify Classic and dashboard views, case
+- [x] Build an isolated candidate and verify Classic and dashboard views, case
   reads/actions, owner/reviewer boundaries, CSRF, revocation and stale responses.
-- [ ] Compare against the working native fork, then prepare a concrete cutover and
+- [x] Compare against the working native fork, then prepare a concrete cutover and
   rollback. Migrate only after the telemetry and identity acceptance checks pass.
 
-Completion: authenticated native review works from the intended workstation with
-live telemetry intact. The earlier native migration removed that telemetry and was
-rolled back; the working fork remains a live dependency until this is proven.
+Completion: the dedicated HTTPS site carries authenticated telemetry and case
+review. The owner confirmed workstation access; live desktop/mobile browser and
+source-comparison checks passed for v0.1.15. The ordinary native HUD remains in
+place; native verified-owner migration is outside this approved increment.
 
 ## 4. Add reviewer JEV actions
 
@@ -100,12 +101,13 @@ Approved contract: [jev-requests.md](jev-requests.md). Separate attributed reque
 share a canonical site/case assessment and the existing daily/per-case budget.
 J2–J5 in tasks.md track implementation, qualification and rollout.
 
-- [ ] Specify command ownership, reviewer/site authorization, operation identity,
+- [x] Specify command ownership, reviewer/site authorization, operation identity,
   immutable audit and shared JEV budget behavior using the existing dispatch seam.
-- [ ] Implement modularly without conflating investigation execution with JEV
+- [x] Implement modularly without conflating investigation execution with JEV
   assessment, case disposition or automatic remediation.
-- [ ] Qualify replay, lost responses, restart, budget exhaustion and partial failures
-  in isolation, then perform bounded production commissioning before activation.
+- [x] Qualify replay, lost responses, restart, budget exhaustion and partial failures
+  in isolation, then perform bounded production commissioning. Release v0.1.15
+  live cached reuse, exact replay and restart checks passed with no provider spend.
 
 Completion: one attributed operation yields the intended budgeted JEV assessment
 without duplicate work or widening reviewer authority.
