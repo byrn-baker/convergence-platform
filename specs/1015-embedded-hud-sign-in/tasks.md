@@ -54,3 +54,5 @@ Release consolidation and the remaining maintenance/native-HUD/JEV work are trac
 - [x] J4: Qualify simultaneous callers, budgets, restarts, ambiguous outcomes,
   publication failures and current authority using a synthetic provider.
 - [ ] J5: Independently review, release, and perform bounded live commissioning.
+
+- [x] N1: Permit external top-level navigation to the public sign-in document while retaining cross-site API, frame, mutation and identity denials.

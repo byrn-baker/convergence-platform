@@ -492,3 +492,25 @@ H2/H3/H4 and J2/J3/J4 coding/isolated qualification COMPLETE. H5/J5 deployment
 and live comparison/commissioning remain pending. No broad native HUD cutover.
 Sanitized test logs and synthetic screenshots live outside Git under /tmp;
 private operations evidence is in ~/.local/state/convergence-codex-20261115/.
+
+### 2026-11-15 public sign-in navigation correction
+
+A browser following an external link reached the service but received HTTP 403
+Access denied. Production reproduction: GET / with Sec-Fetch-Site: cross-site,
+Sec-Fetch-Mode: navigate and Sec-Fetch-Dest: document returned 403; the same URL
+with direct navigation returned 200 and valid TLS. The regression test reproduced
+403 versus expected 200 before the code change.
+
+The origin gate now permits only literal GET / top-level document navigation.
+The public asset returns no session cookie and makes no service call. Host,
+Origin, Authorization, forwarding, body and duplicate-header checks remain.
+Cross-site session/case requests, fetches, frames and submissions remain denied.
+
+Executed node --test ui/convergence-hud/test/reviewer-server.mjs
+ui/convergence-hud/test/reviewer-tls-reload.mjs: 15 passed, none skipped.
+Independent verifier repeated that command and reviewed the final diff: PASS.
+No database/schema or credential change. Rollback restores the previous reviewer
+HUD image; deployment restarts its in-memory sessions and requires sign-in again.
+Live rollout and external-link browser verification remain pending.
+
+Integration: merged origin/main 5702e57, retaining both append-only task/verification records. Public navigation source/test are identical to the deployed hotfix. User confirmed the live site opens; hotfix rollout details are in the private operations handoff.
