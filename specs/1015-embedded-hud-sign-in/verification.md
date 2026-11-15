@@ -514,3 +514,5 @@ HUD image; deployment restarts its in-memory sessions and requires sign-in again
 Live rollout and external-link browser verification remain pending.
 
 Integration: merged origin/main 5702e57, retaining both append-only task/verification records. Public navigation source/test are identical to the deployed hotfix. User confirmed the live site opens; hotfix rollout details are in the private operations handoff.
+
+H4/J4 release integration attempt 2: PR #24 CI failed because the newly real JEV browser fixture requires NETCLAW_DIR, absent in that job. Local integration supplied it and passed. Added the same sparse JEV-core checkout and environment used by the existing Python job; no production behavior change. Node and Python CI passed; browser rerun required.

@@ -132,6 +132,12 @@ jobs:
           --health-cmd pg_isready --health-interval 3s --health-timeout 3s --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Browser JEV fixture exercises the real shared budget/provider adapter.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: automateyournetwork/netclaw
+          path: netclaw
+          sparse-checkout: mcp-servers/jev-mcp
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -149,6 +155,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Verify named requests through HTTPS, PostgreSQL, relay and SQLite
         env:
+          NETCLAW_DIR: ${{ github.workspace }}/netclaw
           FIXTURE_PORT: ${{ job.services.reviewer-postgres.ports[5432] }}
         run: |
           export REVIEWER_TEST_DATABASE_URL="postgres://postgres:fixture@127.0.0.1:${FIXTURE_PORT}/reviewer_test"
