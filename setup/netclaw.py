@@ -155,6 +155,17 @@ def replacing(old, new):
     return patch
 
 
+def agent_model(existing, model):
+    """The agent's model after apply. Model policy belongs to the operator: --model sets only the
+    primary, so fallbacks and other model settings survive a re-apply or a primary change, and
+    without --model the existing setting is left exactly as it is."""
+    if not model:
+        return existing
+    if isinstance(existing, dict):
+        return {**existing, 'primary': model}
+    return model if isinstance(existing, str) else {'primary': model}
+
+
 def plan(config, env, opts, home, skill_text):
     """Return what apply would do. Pure: reads nothing but its arguments and the workspace."""
     agent, conflicts, actions = opts['agent_id'], [], []
@@ -257,8 +268,10 @@ def plan(config, env, opts, home, skill_text):
              'tools': {'allow': BASE_TOOLS+[t for t in extra if t not in BASE_TOOLS], 'deny': DENY_TOOLS,
                        # `read` stays inside the agent's workspace: never ~/.openclaw/.env.
                        'fs': {'workspaceOnly': True}}}
-    if model:
-        entry['model'] = {'primary': model}
+    entry_model = agent_model(old_entry.get('model'), model)
+    if entry_model is not None:
+        entry['model'] = entry_model
+    fallbacks = entry_model.get('fallbacks') if model and isinstance(entry_model, dict) else None
     patch = {'hooks': hooks_patch,
              'mcp': {'servers': {MCP_NAME: replacing(servers.get(MCP_NAME), server)}},
              'agents': {'entries': {agent: replacing(entries.get(agent), entry)}}}
@@ -284,7 +297,8 @@ def plan(config, env, opts, home, skill_text):
     verb = 'create' if agent not in entries else 'replace' if 'agent' in previous else 'update'
     actions += [f'{verb} agent "{agent}" (skills: {", ".join(entry["skills"])}; '
                 f'tools: {", ".join(entry["tools"]["allow"])}'
-                + (f'; model {model}' if model else '') + ')',
+                + (f'; model {model}' if model else '')
+                + (f' (fallbacks kept: {", ".join(map(str, fallbacks))})' if fallbacks else '') + ')',
                 f'install skill alert-triage into {target.parent}',
                 f'{"replace" if "mcp" in previous else "register"} MCP server {MCP_NAME} for '
                 f'{opts["api_url"]} site {opts["site"]} (venv {runtime})',
