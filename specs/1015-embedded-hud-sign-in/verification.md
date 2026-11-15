@@ -384,3 +384,31 @@ chart's shared config checksum would roll api, blackbox, vmalert, agent, alertma
 collector, loki and postgres, so it ships with the next release rollout. The cluster
 cannot reach the browser LoadBalancer (source ranges), so that endpoint is probed on
 the Service's in-cluster name.
+
+### 2026-11-15 v0.1.13 production rollout
+
+The user asked for the rollout. v0.1.13 tags main 2136228 (#18, #19, #20); release run
+43673603812 passed and published multi-arch images. There are no SQL, dependency,
+Dockerfile or chart changes since v0.1.12, so no migration or grant step was needed.
+
+Before the rollout: a custom-format PostgreSQL dump (verified with pg_restore --list;
+the `convergence` database with all reviewer tables) and the global roles; the
+pre-rollout GitOps files; the receiver SQLite queue, backed up through the SQLite API
+while the receiver was stopped (integrity check ok). All are in an owner-only rollout
+directory. The receiver queue was drained of running work.
+
+Operations commits 2b51f3b (TLS monitoring) and b29428a (reviewer API/HUD/relay images
+to v0.1.13 digests, chart to 2136228) synced Synced/Healthy. The shared config checksum
+rolled the eight expected workloads. The new review-api and relay pods started while
+PostgreSQL restarted, failed their startup database check three times, and have been
+stable since. The receiver was stopped through systemd (process group gone, no
+children), its checkout moved to v0.1.13, the v0.1.13 preflight passed, and it
+restarted; queued alerts were processed. Both reviewer receipts are unchanged.
+
+Checks after the rollout: receiver HTTP health 200; :8446 serves the configured
+certificate; reviewer HTTPS 200; native netclaw-hud/ui active with health
+unavailable=false. Probes report expiry for reviewer-browser (89 days) and
+receiver-https (365). The renewal timer is installed from the installed checkout; its
+service ran under systemd with every leaf at "none" (364-365 days) and pushed metrics,
+which VictoriaMetrics scraped. No TLS alert fired. Reviewers must sign in again once,
+because of the HUD restart. Rollback pins are recorded in the private runbook.
