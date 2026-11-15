@@ -1,6 +1,6 @@
 # Embedded Convergence sign-in for the HUD
 
-**Status** Proposed for design review.
+**Status** Dedicated HTTPS review and attributed reinvestigation are deployed and qualified. Native verified-owner HUD integration remains open.
 
 An operator viewing a case in a trusted local NetClaw HUD or its dedicated HTTPS reviewer entry point should be able to sign in to Convergence and record a disposition without changing applications. For local owners NetClaw checks the owner session and installation. On the dedicated HTTPS reviewer origin the HUD authenticates its installation to Convergence and binds a separate browser session to the reviewer after sign-in. Convergence verifies the user, permitted sites and role on both paths.
 

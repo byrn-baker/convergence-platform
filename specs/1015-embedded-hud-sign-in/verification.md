@@ -274,3 +274,17 @@ receipts-after-restart.json, relay-pod-proof-after-restart.json and the
 commissioning-2/ browser artifacts. Private operations documentation records
 credentials by location only, backups, policy checks, certificate renewal and
 rollback. No native HUD migration or JEV browser submission was enabled.
+
+### 2026-11-15 checklist reconciliation and Claude handoff
+
+User requested starting the post-rollout list and handing continuation to Claude.
+Read-only production check remains Synced/Healthy. Current remote ancestry shows
+all eight older PR heads (#6 through #13) already included in
+release/reviewer-production f7a7715; #15 adds the dispatch work. Main 160cbae is an
+ancestor of rc2. No merge, stable tag, model call or runtime change was made here.
+Corrected stale checkbox wording using completed HTTPS production and dispatch
+evidence; native owner integration and JEV remain open. follow-up.md records the
+ordered backlog, dependencies and acceptance criteria. Private operations handoff
+provides Claude with paths, verified state, known traps and the first action.
+Validation: remote ancestry commands, live Argo status, documentation diff/link
+checks. This is documentation preparation, not a new implementation qualification.
