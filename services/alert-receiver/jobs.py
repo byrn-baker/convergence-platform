@@ -40,6 +40,8 @@ class JobStore:
             self.db.commit()
             from reviewer_commands import ReviewerCommands
             self.reviewer = ReviewerCommands(self)
+            from jev_assessments import JevAssessments
+            self.assessments = JevAssessments(self)
         except BaseException:
             self.db.close()
             raise
@@ -120,7 +122,9 @@ class JobStore:
 
     def save_result(self, jid, result):
         with self.db:
-            self.db.execute('UPDATE jobs SET result=? WHERE id=?', (json.dumps(result), jid))
+            encoded = json.dumps(result)
+            self.assessments.save_result(jid, encoded)
+            self.db.execute('UPDATE jobs SET result=? WHERE id=?', (encoded, jid))
 
     def counts(self):
         return {r[0]:r[1] for r in self.db.execute('SELECT state,count(*) FROM jobs GROUP BY state')}

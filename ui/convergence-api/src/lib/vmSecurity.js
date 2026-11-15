@@ -1,4 +1,5 @@
 'use strict';
+const {readSignal} = require('../services/read-context');
 const {isIP} = require('node:net');
 const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const text = v => typeof v === 'string' && v.length > 0 && v.length <= 512 && !/[\x00-\x1f]/.test(v);
@@ -123,7 +124,7 @@ async function vmSecurity(site) {
   try{
     const url=new URL('/v1/vm-security',base);need(['https:','http:'].includes(url.protocol)&&!url.username&&!url.password);
     url.searchParams.set('site',site);
-    const response=await fetch(url,{headers:{Authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(5000)});
+    const response=await fetch(url,{headers:{Authorization:`Bearer ${token}`},redirect:'error',signal:readSignal(5000)});
     need(response.ok);
     return assess(await readJSON(response),site,false);
   }catch{return unavailable();}

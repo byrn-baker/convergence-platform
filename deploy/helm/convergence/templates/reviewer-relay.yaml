@@ -1,4 +1,10 @@
 {{- $r := .Values.reviewer }}
+{{- if and (or $r.telemetryEnabled $r.jevEnabled) (not $r.enabled) }}
+{{- fail "Reviewer telemetry and JEV acceptance require reviewer.enabled" }}
+{{- end }}
+{{- if and $r.relay.jevEnabled (not $r.relay.enabled) }}
+{{- fail "Reviewer JEV delivery requires reviewer.relay.enabled" }}
+{{- end }}
 {{- if and $r.investigationEnabled (not $r.enabled) }}
 {{- fail "Reviewer investigation acceptance requires reviewer.enabled" }}
 {{- end }}
@@ -58,6 +64,7 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ $r.relay.databaseSecret | quote }}, key: {{ $key }}}}
             {{- end }}
             - {name: REVIEWER_DELIVERY_ENABLED, value: "1"}
+            - {name: REVIEWER_JEV_DELIVERY_ENABLED, value: {{ ternary "1" "0" $r.relay.jevEnabled | quote }}}
             - {name: REVIEWER_RECEIVER_ORIGIN, value: {{ $r.relay.receiverOrigin | quote }}}
             - {name: REVIEWER_DELIVERY_TOKEN_FILE, value: /run/reviewer/delivery/token}
             - {name: REVIEWER_RECEIVER_CA, value: /run/reviewer/delivery/ca.crt}

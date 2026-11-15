@@ -28,7 +28,7 @@ test('HTTPS reviewer routes only release protected data to the current authorize
   const grants = new Map();
   const deadlines = new Map();
   const calls = [];
-  let pauseLogin, pauseRead, pauseRevoke, failRevoke, wrongResult;
+  let pauseLogin, pauseRead, pauseRevoke, failRevoke, wrongResult, telemetryEnabled = true;
   const client = {
     async issue(credentials) {
       calls.push('issue');
@@ -46,13 +46,18 @@ test('HTTPS reviewer routes only release protected data to the current authorize
     async current(token) {
       calls.push('current');
       if (!grants.has(token)) throw Object.assign(new Error('revoked token ' + token),{status:401});
-      return {...grants.get(token), ...deadlines.get(token)};
+      return {...grants.get(token), ...deadlines.get(token), capabilities:{telemetry:telemetryEnabled}};
     },
     async revoke(token) {
       calls.push('revoke');
       if (pauseRevoke) { pauseRevoke.started.resolve(); await pauseRevoke.resume.promise; }
       if (failRevoke) throw new Error('private backend offline details');
       grants.delete(token);
+    },
+    async readTelemetry(token,site,resource,query) {
+      calls.push('telemetry:' + resource);
+      if (pauseRead) { pauseRead.started.resolve(); await pauseRead.resume.promise; }
+      return wrongResult || {site, resource, query, healthScore:{value:97}};
     },
     async readCase(token,site) {
       calls.push('read');
@@ -69,6 +74,14 @@ test('HTTPS reviewer routes only release protected data to the current authorize
       return wrongResult || {case_id:id,site_id:site,operation_id:data.operationId.toLowerCase(),requested_by:grants.get(token).id};
     },
     async readInvestigationReceipt(token,site,id,operationId) {
+      return wrongResult || {case_id:id,site_id:site,operation_id:operationId.toLowerCase(),requested_by:grants.get(token).id};
+    },
+    async requestJevReview(token,site,id,data) {
+      calls.push('jev');
+      if (grants.get(token)?.role === 'viewer') throw Object.assign(Error('wrong role'),{status:403});
+      return wrongResult || {case_id:id,site_id:site,operation_id:data.operationId.toLowerCase(),requested_by:grants.get(token).id};
+    },
+    async readJevReceipt(token,site,id,operationId) {
       return wrongResult || {case_id:id,site_id:site,operation_id:operationId.toLowerCase(),requested_by:grants.get(token).id};
     },
     async recordDisposition(token,_site,_id,data) {
@@ -116,7 +129,7 @@ test('HTTPS reviewer routes only release protected data to the current authorize
     assert.equal(r.status,200);
     assert.notEqual(r.cookie,pre.cookie);
     assert.notEqual(r.body.csrf,pre.csrf);
-    assert.deepEqual(Object.keys(r.body).sort(),['csrf','expiresAt','user']);
+    assert.deepEqual(Object.keys(r.body).sort(),['capabilities','csrf','expiresAt','user']);
     assert.match(r.headers['set-cookie'][0], /; Secure; HttpOnly; SameSite=Strict$/);
     assert.ok(!r.headers['set-cookie'][0].includes('Domain='));
     return {cookie:r.cookie,csrf:r.body.csrf};
@@ -212,6 +225,21 @@ test('HTTPS reviewer routes only release protected data to the current authorize
     await signOut(alice); await signOut(bob);
   });
 
+  await t.test('JEV uses a separate operation and preserves role, CSRF and receipt identity checks', async () => {
+    const alice=await authenticated('alice'),bob=await authenticated('bob');
+    const input={operationId:randomUUID()},url=caseURL+'/jev-review';
+    assert.equal((await request(url,{method:'POST',state:bob,data:input})).status,403);
+    assert.equal((await request(url,{method:'POST',state:{...alice,csrf:bob.csrf},data:input})).status,403);
+    assert.equal((await request(url,{method:'POST',state:alice,data:{...input,feedback:'Not an investigation'}})).status,400);
+    assert.equal((await request(url,{method:'POST',state:alice,data:input})).body.requested_by,'alice');
+    assert.equal((await request(url+'/'+input.operationId,{state:alice})).status,200);
+    try {
+      wrongResult={case_id:caseId,site_id:'red',operation_id:input.operationId,requested_by:'bob'};
+      assert.equal((await request(url+'/'+input.operationId,{state:alice})).status,503);
+    } finally {wrongResult=null;}
+    await signOut(alice);await signOut(bob);
+  });
+
   await t.test('response scope must match the requested case, site, operation and reviewer', async () => {
     const alice = await authenticated('alice');
     const operationId = randomUUID();
@@ -235,6 +263,44 @@ test('HTTPS reviewer routes only release protected data to the current authorize
       }
     } finally { wrongResult = null; }
     await signOut(alice);
+  });
+
+  await t.test('telemetry is finite, site scoped and rechecked after reads', async () => {
+    const state = await authenticated('alice');
+    const url = '/review/sites/red/telemetry/health';
+    assert.equal((await request(url)).status,401);
+    telemetryEnabled = false;
+    assert.equal((await request(url,{state})).status,403);
+    assert.equal((await request('/review/session',{state})).body.capabilities.telemetry,false);
+    telemetryEnabled = true;
+    const result = await request(url,{state});
+    assert.equal(result.status,200);
+    assert.equal(result.body.healthScore.value,97);
+    assert.ok(result.headers['x-review-expires-at']);
+    for (const target of ['/review/sites/blue/telemetry/health', url+'?site=blue',
+      url+'?range=1h&range=24h', '/review/sites/red/telemetry/models', '/review/sites/red/telemetry/../health']) {
+      assert.notEqual((await request(target,{state})).status,200);
+    }
+    assert.equal((await request(url,{method:'POST',state,data:{}})).status,404);
+    wrongResult = {site:'blue', secret:'other site'};
+    assert.equal((await request(url,{state})).status,503);
+    wrongResult = null;
+    pauseRead = {started:Promise.withResolvers(),resume:Promise.withResolvers()};
+    const pending = request(url,{state});
+    await pauseRead.started.promise;
+    await signOut(state);
+    pauseRead.resume.resolve();
+    assert.equal((await pending).status,401);
+    pauseRead = null;
+    const replacement = await authenticated('alice');
+    pauseRead = {started:Promise.withResolvers(),resume:Promise.withResolvers()};
+    const revoked = request(url,{state:replacement});
+    await pauseRead.started.promise;
+    for (const [token, subject] of grants) if (subject.id === 'alice') grants.set(token,{...subject,sites:['blue']});
+    pauseRead.resume.resolve();
+    assert.equal((await revoked).status,403);
+    pauseRead = null;
+    await signOut(replacement);
   });
 
   await t.test('sign-out invalidates a pending login and disposes of the late grant', async () => {

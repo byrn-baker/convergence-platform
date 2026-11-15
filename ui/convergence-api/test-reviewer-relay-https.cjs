@@ -17,6 +17,7 @@ test('relay uses trusted HTTPS, a dedicated credential and bounded fixed endpoin
   requests.push({path:req.url,method:req.method,authorization:req.headers.authorization,body});
   if(behavior==='redirect'){res.writeHead(302,{location:'/arbitrary-other-service'});return res.end();}
   if(behavior==='large'){res.writeHead(200);return res.end('x'.repeat(5000));}
+  if(behavior==='jev-large'){res.writeHead(200);return res.end('x'.repeat(40001));}
   if(behavior==='hang')return;
   if(behavior==='denied'){res.writeHead(403);return res.end('private backend diagnostic must stay private');}
   res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({delivery_id:delivery,job_id:job,state:'enqueued'}));
@@ -36,4 +37,10 @@ test('relay uses trusted HTTPS, a dedicated credential and bounded fixed endpoin
  behavior='large';await assert.rejects(client.read(delivery),e=>e.status===503);
  behavior='denied';await assert.rejects(client.read(delivery),e=>e.status===403&&!e.message.includes('private'));
  behavior='hang';await assert.rejects(client.read(delivery),e=>e.status===503);
+ behavior='normal';
+ const jevCommand={delivery_id:delivery,command:'jev_review'};
+ await client.submitJev(jevCommand);assert.deepEqual(requests.at(-1),{path:'/reviewer/commands/jev',method:'POST',authorization:'Bearer '+token,body:JSON.stringify(jevCommand)});
+ await client.readJev(delivery);assert.equal(requests.at(-1).path,'/reviewer/commands/jev/'+delivery);
+ assert.throws(()=>client.readJev('../private'),/identity/);
+ behavior='jev-large';await assert.rejects(client.readJev(delivery),e=>e.status===503);
 });

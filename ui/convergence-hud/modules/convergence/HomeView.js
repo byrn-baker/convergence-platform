@@ -6,7 +6,7 @@ import {reviewerLink} from './ReviewerLink.js';
 import {caseIPContext, ipContextHTML} from './IPContext.js';
 import {caseCaptureContext, observedVlanHTML, captureContextHTML} from './CaptureContext.js';
 import {jevReviewHTML} from './JevReview.js';
-import {assessmentHTML, securityQueueHTML, ispReportsHTML, reportDownload} from './IncidentReview.js';
+import {assessmentHTML, securityQueueHTML, ispReportsHTML, reportDownload, reportHTML} from './IncidentReview.js';
 
 import {diaryHTML, groupDiary, caseHandoff, MAX_SELECTION} from './DiaryExplorer.js';
 import {flowHTML, flowHandoff} from './FlowExplorer.js';
@@ -170,7 +170,7 @@ export class HomeView {
     this.subview = 'overview';
     /** Active site id. Seeded from the operator's last choice, then confirmed
      *  against what the API actually offers (see discoverSites). */
-    this.site = readStoredSite() || DEFAULT_SITE;
+    this.site = this.readOnly ? '' : readStoredSite() || DEFAULT_SITE;
     /** @type {Array<{id:string,name:string,healthy:boolean|null}>} */
     this.sites = [];
     this.element = null;
@@ -759,7 +759,7 @@ export class HomeView {
       if (this.readOnly) throw Error('No authorized site available.');
       return;
     }
-    if (this.readOnly && this.sites.length && this.site !== sites[0].id) this.clearOwnerData(this.cache.status);
+    if (this.readOnly && this.sites.length && !sites.some(site => site.id === this.site)) this.clearOwnerData(this.cache.status);
 
     this.sites = sites;
     const ids = sites.map((s) => s.id);
@@ -799,7 +799,7 @@ export class HomeView {
     if (this.loading || this.triageBusy || this.modelsBusy) return;
     if (this.sites.length && !this.sites.some((s) => s.id === siteId)) return;
     this.site = siteId;
-    writeStoredSite(siteId);
+    if (!this.readOnly) writeStoredSite(siteId);
     // Site-scoped caches are now stale; keep only the site list.
     this.cache = {};
     this.vmSecuritySearch = ''; this.vmSecurityFilter = 'all'; this.vmSecurityPage = 0; this.vmSecuritySelected = null;
@@ -835,7 +835,7 @@ export class HomeView {
         if (!this.readOnly) this.cache.security = {hostTelemetry: {status: 'unavailable', agents: []}};
         this.lastError = {
           kind: 'config',
-          message: this.readOnly ? 'Site telemetry requires a local owner session. Sign in to the reviewer to work on cases.' : 'Convergence API is unavailable.',
+          message: this.readOnly ? (this.options.hostAccess?.sessionMessage || 'Site telemetry requires a local owner session. Sign in to the reviewer to work on cases.') : 'Convergence API is unavailable.',
         };
         this.syncTopbarMetrics(null);
         return;
@@ -969,7 +969,7 @@ export class HomeView {
     if (this.disposed) return;
     if (this.readOnly) {
       const models = this.chrome?.querySelector('[data-home-sub="models"]');
-      if (models) models.hidden = !this.cache.status?.configured;
+      if (models) models.hidden = this.options.hostAccess?.capabilities?.models === false || !this.cache.status?.configured;
     }
     this.options.onUpdate?.(this);
     const body = this.element?.querySelector('#home-panel-body');
@@ -1034,7 +1034,7 @@ export class HomeView {
       triage: () => this.htmlTriage(),
       models: () => this.htmlModels(),
     };
-    return (this.readOnly ? reviewerLink(origin) : '') + (map[this.subview] || map.overview)();
+    return (this.readOnly && !this.options.hostAccess?.capabilities?.embeddedReviewer ? reviewerLink(origin) : '') + (map[this.subview] || map.overview)();
   }
 
   htmlSecurity() {
@@ -1091,10 +1091,18 @@ export class HomeView {
 
   htmlWanCases() {
     const cases = this.cache.wanCases;
-    if (!Array.isArray(cases?.events)) return '<p>WAN case history unavailable.</p>';
-    return '<h2>Internet incidents</h2>' + (cases.events.map(e =>
-      `<article><h3>${esc(e.alert_name)}</h3><p>${esc(e.message)}</p>${reviewerLink(this.cache.status?.reviewerOrigin, this.site, e.id)}</article>`
-    ).join('') || '<p>No recorded WAN incidents in this view.</p>');
+    if (!Array.isArray(cases?.events) || cases.unavailable || (cases.site && cases.site !== this.site)) {
+      return '<p role="status">WAN case history unavailable.</p>';
+    }
+    return '<h2>Internet incidents &amp; report evidence</h2><p>Inspect retained incident evidence and saved provider drafts. Preparing a new provider report is not available in this workspace.</p>' +
+      (cases.events.map(e => {
+        const key = `${this.site}:${e.id}`, report = this.ispReports.get(key);
+        return `<article class="home-incident-card"><h3>${esc(e.alert_name)}</h3><p>${esc(e.timestamp)} · ${esc(e.message)}</p>
+          ${reviewerLink(this.cache.status?.reviewerOrigin, this.site, e.id)}
+          ${e.isp_report_generated_at && !report ? `<button type="button" data-isp-load="${esc(e.id)}" ${this.incidentPending.has(key) ? 'disabled' : ''}>View saved draft and evidence</button>` : ''}
+          ${this.incidentErrors.get(key) ? `<p role="status">${esc(this.incidentErrors.get(key))}</p>` : ''}
+          ${report ? reportHTML(report,e.id,{readOnly:true}) : ''}</article>`;
+      }).join('') || '<p>No recorded WAN incidents in this view. This does not establish complete monitoring.</p>');
   }
 
   securityState() {
@@ -1128,6 +1136,7 @@ export class HomeView {
   }
 
   fetchModels(options) {
+    if (this.options.hostAccess?.capabilities?.models === false) return Promise.reject(Error('Host models are unavailable.'));
     return this.readOnly ? this.options.hostAccess.models(options) : fetch('/api/models', options);
   }
 
@@ -1367,7 +1376,7 @@ export class HomeView {
       </div>
       <p class="home-section-title">Network Guardian</p>
       <p class="home-muted">
-        ${this.options.embedded ? 'Review site telemetry here, follow investigations in Diary, and handle escalated cases in Triage. Send observations to Canvas to continue an investigation with NetClaw.' : `Metrics → Alertmanager → alert-receiver → risk investigator (guardian-claw) → diary / triage.
+        ${this.options.embedded ? ('Review site telemetry here, follow investigations in Diary, and handle escalated cases in Triage. ' + (this.options.investigate ? 'Send observations to Canvas to continue an investigation with NetClaw.' : 'Open a case to review findings and request authorized actions.')) : `Metrics → Alertmanager → alert-receiver → risk investigator (guardian-claw) → diary / triage.
         Convergence tab proxies <code>/api/home/*</code> to convergence-api (or pilot Network Guardian during dual-run).`}
       </p>
     `;
@@ -1375,6 +1384,7 @@ export class HomeView {
 
   htmlWifi() {
     const w = this.cache.wifi;
+    if (w?.unavailable) return '<h2>Wi‑Fi</h2><p role="status">Wi‑Fi observations unavailable. Client counts and radio health are unknown.</p>';
     if (!w) {
       return `<div class="home-panel-header"><div><p class="eyebrow">Wireless</p><h2>Wi‑Fi</h2></div></div>
         <p class="home-muted">No Wi‑Fi data loaded. Click Refresh.</p>`;

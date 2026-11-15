@@ -24,16 +24,28 @@ class CommandConflict(ValueError):
     """A delivery ID already represents a different immutable envelope."""
 
 
+def reserve_delivery(db, body):
+    """Shared command identity; the caller owns the admission transaction."""
+    rows = db.execute('''SELECT * FROM reviewer_delivery_keys WHERE delivery_id=?
+        OR (installation=? AND actor=? AND operation_id=?)''',
+        (body['delivery_id'], body['installation_id'], body['actor_id'], body['operation_id'])).fetchall()
+    if rows:
+        if len(rows) != 1 or rows[0]['delivery_id'] != body['delivery_id'] or rows[0]['command'] != body['command']:
+            raise CommandConflict('Delivery identity belongs to another command')
+    else:
+        db.execute('INSERT INTO reviewer_delivery_keys VALUES (?,?,?,?,?)',
+            (body['delivery_id'], body['command'], body['installation_id'], body['actor_id'], body['operation_id']))
+
+
 def _text(value, maximum, minimum=1):
     return (isinstance(value, str) and minimum <= len(value) <= maximum and
             not any(c == '\0' or 0xd800 <= ord(c) <= 0xdfff for c in value))
 
 
-def validate_command(body):
-    if not isinstance(body, dict) or set(body) != set(FIELDS):
-        raise ValueError('Invalid command fields')
-    if type(body['version']) is not int or body['version'] != 1 or body['command'] != 'reinvestigate':
-        raise ValueError('Unsupported command')
+def validate_identity(body):
+    """Common immutable attribution; command adapters validate their own payload."""
+    if type(body['version']) is not int or body['version'] != 1:
+        raise ValueError('Unsupported version')
     if not all(isinstance(body[k], str) and UUID.fullmatch(body[k])
                for k in ('delivery_id', 'operation_id', 'case_id')):
         raise ValueError('Invalid command identity')
@@ -43,6 +55,14 @@ def validate_command(body):
         raise ValueError('Invalid site')
     if not _text(body['actor_id'], 128) or not _text(body['actor_name'], 256):
         raise ValueError('Invalid reviewer identity')
+
+
+def validate_command(body):
+    if not isinstance(body, dict) or set(body) != set(FIELDS):
+        raise ValueError('Invalid command fields')
+    validate_identity(body)
+    if body['command'] != 'reinvestigate':
+        raise ValueError('Unsupported command')
     if not _text(body['feedback'], 4000, 10) or body['feedback'] != body['feedback'].strip(JS_TRIM):
         raise ValueError('Invalid normalized feedback')
     return body
@@ -73,6 +93,15 @@ class ReviewerCommands:
                     self.db.execute('ALTER TABLE reviewer_command_receipts ADD COLUMN ' + name + ' TEXT')
             if 'dispatch_deadline' not in columns:
                 self.db.execute('ALTER TABLE reviewer_command_receipts ADD COLUMN dispatch_deadline REAL')
+            self.db.execute('''CREATE TABLE IF NOT EXISTS reviewer_delivery_keys (
+                delivery_id TEXT PRIMARY KEY, command TEXT NOT NULL,
+                installation TEXT, actor TEXT, operation_id TEXT,
+                UNIQUE(installation, actor, operation_id))''')
+            # Historical receipt-only rows still reserve their delivery identity.
+            self.db.execute('''INSERT OR IGNORE INTO reviewer_delivery_keys
+                SELECT r.delivery_id,'reinvestigate',json_extract(j.payload,'$.installation_id'),
+                    json_extract(j.payload,'$.actor_id'),json_extract(j.payload,'$.operation_id')
+                FROM reviewer_command_receipts r LEFT JOIN jobs j ON j.id=r.job_id''')
 
     def read(self, delivery_id):
         row = self.db.execute('SELECT delivery_id,job_id,state FROM reviewer_command_receipts WHERE delivery_id=?',
@@ -85,6 +114,7 @@ class ReviewerCommands:
         # have one serialization point even with concurrent admission connections.
         self.db.execute('BEGIN IMMEDIATE')
         with self.db:
+            reserve_delivery(self.db, body)
             previous = self.db.execute('SELECT * FROM reviewer_command_receipts WHERE delivery_id=?',
                                        (body['delivery_id'],)).fetchone()
             if previous:
@@ -152,7 +182,7 @@ def _object(pairs):
     return body
 
 
-async def command_body(request):
+async def command_body(request, validate=validate_command):
     if not re.fullmatch(r'application/json(?:\s*;\s*charset=utf-8)?', request.headers.get('content-type', ''), re.I):
         raise ValueError('Expected JSON')
     if request.headers.get('content-encoding'):
@@ -166,7 +196,7 @@ async def command_body(request):
             chunks.append(part)
     body = json.loads(b''.join(chunks).decode('utf-8'), object_pairs_hook=_object,
                       parse_constant=lambda value: (_ for _ in ()).throw(ValueError('Invalid JSON constant')))
-    return validate_command(body)
+    return validate(body)
 
 
 def authenticate(request, token, ordinary_token):

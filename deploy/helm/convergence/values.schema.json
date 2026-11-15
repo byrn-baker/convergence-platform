@@ -161,6 +161,9 @@
           "properties": {
             "enabled": {
               "type": "boolean"
+            },
+            "jevEnabled": {
+              "type": "boolean"
             }
           },
           "if": {
@@ -199,6 +202,17 @@
               }
             }
           }
+        },
+        "telemetryEnabled": {
+          "type": "boolean"
+        },
+        "telemetryIdsSecret": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+        },
+        "jevEnabled": {
+          "type": "boolean"
         }
       }
     }

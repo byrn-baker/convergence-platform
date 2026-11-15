@@ -58,3 +58,21 @@ In one database transaction the service validates the grant, current authority, 
 First qualify sign-in, session status, sign-out and a scoped read in isolation. Add one audited disposition. Expand to other operations after proving their permissions, side effects and retry semantics. Make the adapter opt-in, and validate both HUD entry points with it disabled and enabled. Rollback disables the adapter, revokes its grants and returns the HUD to the existing views. Preserve case and audit records.
 
 The [queued investigation design](queued-investigations.md) proposes ownership of case notes, command receipts, receiver admission and recovery after a lost response.
+
+## HTTPS telemetry workspace
+
+Extract shared site-read services from existing API handlers and keep legacy HTTP
+and grant-authenticated reviewer HTTP as separate adapters. Use finite GET
+`/v1/sites/:site/telemetry/:resource` operations (resource names match the existing
+site view reads); the HTTPS browser adapter exposes the corresponding
+`/review/sites/:site/telemetry/:resource` path. Query filters never supply authority.
+The mTLS client gains `readTelemetry(token, site, resource, query)`; resource and
+filter validation is enforced server-side. Short grant checks bracket bounded
+external reads; transactional authority checks remain unchanged for writes.
+
+Mount the existing HomeView under the HTTPS session lifecycle through an explicit
+read-only telemetry transport. Existing case actions remain in the case reviewer
+workspace with links from site evidence. Separate transport/session lifetime from
+host-only controls; restrict static assets to the required view dependency graph.
+The reviewer image must contain those assets. Add tests at real transport and
+browser seams rather than relying on the old loopback-only staging qualification.

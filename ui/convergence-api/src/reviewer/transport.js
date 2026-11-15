@@ -3,8 +3,10 @@
 const https = require('node:https');
 const { readCase, readDispositionReceipt, recordDisposition } = require('./cases');
 const {requestInvestigation, readInvestigationReceipt} = require('./investigations');
+const {requestJevReview,readJevReceipt}=require('./jev');
+const {parseTelemetryTarget} = require('./telemetry-contract');
 
-const casePath = /^\/v1\/sites\/([a-zA-Z0-9_.-]{1,128})\/cases\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/(disposition|investigation)(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}))?)?$/i;
+const casePath = /^\/v1\/sites\/([a-zA-Z0-9_.-]{1,128})\/cases\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/(disposition|investigation|jev-review)(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}))?)?$/i;
 const messages = {
   400: 'Invalid request', 401: 'Invalid credentials or grant', 403: 'Access denied',
   404: 'Not found', 409: 'Conflicting operation', 413: 'Request too large',
@@ -70,7 +72,9 @@ function bearer(req) {
   return match[1];
 }
 
-function createReviewerService({tls, enrollments, authority, investigationEnabled = false}) {
+function createReviewerService({tls, enrollments, authority, investigationEnabled = false, jevEnabled = false, telemetry, telemetryTimeoutMs = 18000}) {
+  if (!Number.isInteger(telemetryTimeoutMs) || telemetryTimeoutMs < 1 || telemetryTimeoutMs > 18000) throw new Error('Invalid telemetry deadline');
+  let activeTelemetry = 0;
   let installations = parseEnrollments(enrollments);
   const server = https.createServer({
     ...tls, requestCert: true, rejectUnauthorized: true, minVersion: 'TLSv1.2',
@@ -85,6 +89,36 @@ function createReviewerService({tls, enrollments, authority, investigationEnable
         const credentials = await readJSON(req, ['username', 'password']);
         const grant = await authority.issue(installation, credentials);
         return reply(res, 201, grant);
+      }
+      if (req.url.startsWith('/v1/sites/') && req.url.includes('/telemetry/')) {
+        if (req.method !== 'GET' || typeof telemetry !== 'function') reject(404);
+        if (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) !== 0) reject(400);
+        const op = parseTelemetryTarget(req.url);
+        const token = bearer(req);
+        const principal = (_client, actor) => ({id:actor.id,role:actor.role,sites:[...actor.sites].sort()});
+        // Each authorization transaction finishes before external acquisition starts.
+        const before = await authority.withGrant(installation,token,{site:op.site,write:false},principal);
+        if (activeTelemetry >= 24) reject(429);
+        const stop = new AbortController();
+        const cancel = () => stop.abort();
+        const timeout = setTimeout(cancel,telemetryTimeoutMs);
+        res.once('close',cancel);
+        activeTelemetry++;
+        try {
+          const data = await new Promise((resolve,rejectRead)=>{
+            const aborted = () => rejectRead(Object.assign(new Error('Telemetry deadline'),{status:503}));
+            stop.signal.addEventListener('abort',aborted,{once:true});
+            Promise.resolve().then(()=>telemetry(op.site,op.resource,op.query,{signal:stop.signal}))
+              .then(resolve,rejectRead).finally(()=>{activeTelemetry--;stop.signal.removeEventListener('abort',aborted);});
+          });
+          const after = await authority.withGrant(installation,token,{site:op.site,write:false},principal);
+          if (stop.signal.aborted || JSON.stringify(before)!==JSON.stringify(after) ||
+              installations.get(req.socket.getPeerCertificate()?.fingerprint256)!==installation) reject(403);
+          return reply(res,200,data);
+        } finally {
+          clearTimeout(timeout);
+          res.removeListener('close',cancel);
+        }
       }
       const match = casePath.exec(req.url);
       const status = req.method === 'GET' && req.url === '/v1/grants/current';
@@ -101,14 +135,16 @@ function createReviewerService({tls, enrollments, authority, investigationEnable
       }
       const site = match?.[1] ?? null;
       const investigation = match?.[3] === 'investigation';
+      const jev = match?.[3] === 'jev-review';
+      if(write && jev && !jevEnabled)reject(503);
       if (write && investigation && !investigationEnabled) reject(503);
-      const input = write ? await readJSON(req, investigation ? ['operationId','feedback'] : ['operationId', 'kind', 'reason']) : undefined;
+      const input = write ? await readJSON(req, jev ? ['operationId'] : investigation ? ['operationId','feedback'] : ['operationId', 'kind', 'reason']) : undefined;
       const data = await authority.withGrant(installation, token, {site, write: Boolean(write)}, (client, actor) => {
         if (status) return {id: actor.id, name: actor.name, role: actor.role, sites: actor.sites,
-          expiresAt: actor.expiresAt, idleExpiresAt: actor.idleExpiresAt};
-        if (receipt) return (investigation ? readInvestigationReceipt : readDispositionReceipt)(client, actor, site, match[2], match[4]);
-        if (write) return (investigation ? requestInvestigation : recordDisposition)(client, actor, site, match[2], input);
-        return readCase(client, actor, site, match[2]).then(record => ({...record, investigation_enabled: investigationEnabled}));
+          expiresAt: actor.expiresAt, idleExpiresAt: actor.idleExpiresAt,capabilities:{telemetry:typeof telemetry==='function'}};
+        if (receipt) return (jev ? readJevReceipt : investigation ? readInvestigationReceipt : readDispositionReceipt)(client, actor, site, match[2], match[4]);
+        if (write) return (jev ? requestJevReview : investigation ? requestInvestigation : recordDisposition)(client, actor, site, match[2], input);
+        return readCase(client, actor, site, match[2]).then(record => ({...record, investigation_enabled: investigationEnabled,jev_enabled:jevEnabled}));
       });
       return reply(res, 200, data);
     } catch (error) {

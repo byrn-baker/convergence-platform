@@ -3,6 +3,7 @@
 const https = require('node:https');
 const {randomUUID} = require('node:crypto');
 const {envelope} = require('./investigations');
+const {jevEnvelope,validJevReceipt}=require('./jev');
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const receiverStates = ['enqueued','dispatched','completed','failed','unknown'];
 
@@ -17,7 +18,7 @@ function createReceiverClient({origin, token, ca, deadlineMs = 5000}) {
     keepAlive:true,maxSockets:2,maxFreeSockets:1});
   let agent = connect(ca);
   const retiring = new Map();
-  function call(method,path,body) {
+  function call(method,path,body,maxBytes=4096) {
     const data = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
     return new Promise((resolve,reject) => {
       const unavailable = () => reject(Object.assign(new Error('Receiver unavailable'),{status:503}));
@@ -29,7 +30,7 @@ function createReceiverClient({origin, token, ca, deadlineMs = 5000}) {
         }
         let size=0;const chunks=[];
         res.on('error',unavailable);res.on('aborted',unavailable);
-        res.on('data',part=>{size+=part.length;if(size>4096){res.destroy();unavailable();}else chunks.push(part);});
+        res.on('data',part=>{size+=part.length;if(size>maxBytes){res.destroy();unavailable();}else chunks.push(part);});
         res.on('end',()=>{try{if(!res.complete)return unavailable();resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch{unavailable();}});
       });
       req.on('error',unavailable);req.end(data);
@@ -38,6 +39,8 @@ function createReceiverClient({origin, token, ca, deadlineMs = 5000}) {
   return {
     submit: command => call('POST','/reviewer/commands',command),
     read: id => {if(!UUID.test(id))throw new Error('Invalid delivery identity');return call('GET','/reviewer/commands/'+id);},
+    submitJev: command => call('POST','/reviewer/commands/jev',command,40000),
+    readJev: id => {if(!UUID.test(id))throw new Error('Invalid delivery identity');return call('GET','/reviewer/commands/jev/'+id,undefined,40000);},
     // A renewed receiver CA bundle applies to new requests; the old agent is destroyed
     // once its in-flight requests have reached their deadline.
     reload({ca:trusted}) {
@@ -53,39 +56,46 @@ function createReceiverClient({origin, token, ca, deadlineMs = 5000}) {
   };
 }
 
-function createRelay(pool, receiver, {leaseMs=30000, retryMs=10000, pollMs=5000}={}) {
+function createRelay(pool, receiver, {leaseMs=30000, retryMs=10000, pollMs=5000, command='reinvestigate'}={}) {
+  if(!['reinvestigate','jev_review'].includes(command))throw new Error('Unknown delivery command');
+  const jev=command==='jev_review';
+  // These names are fixed internal descriptors, never supplied by an HTTP caller.
+  const requests=jev?'reviewer_jev_requests':'reviewer_investigations';
+  const outbox=jev?'reviewer_jev_outbox':'reviewer_investigation_outbox';
+  const encode=jev?jevEnvelope:envelope;
   for (const value of [leaseMs,retryMs,pollMs]) {
     if (!Number.isInteger(value) || value<1 || value>300000) throw new Error('Invalid relay timing');
   }
   async function claim() {
     const {rows:[row]} = await pool.query(`WITH candidate AS (
-      SELECT delivery_id FROM reviewer_investigation_outbox
+      SELECT delivery_id FROM ${outbox}
       WHERE state IN ('accepted','enqueued','dispatched') AND next_attempt_at<=clock_timestamp()
         AND (leased_until IS NULL OR leased_until<=clock_timestamp())
       ORDER BY next_attempt_at,delivery_id FOR UPDATE SKIP LOCKED LIMIT 1)
-      UPDATE reviewer_investigation_outbox o SET lease_id=$1,
+      UPDATE ${outbox} o SET lease_id=$1,
         leased_until=clock_timestamp()+$2*interval '1 millisecond',attempts=attempts+1
       FROM candidate c WHERE o.delivery_id=c.delivery_id RETURNING o.*`,[randomUUID(),leaseMs]);
     if (!row) return null;
-    const {rows:[command]} = await pool.query('SELECT * FROM reviewer_investigations WHERE delivery_id=$1',[row.delivery_id]);
-    return {...row,envelope:envelope(command)};
+    const {rows:[command]} = await pool.query(`SELECT * FROM ${requests} WHERE delivery_id=$1`,[row.delivery_id]);
+    return {...row,envelope:encode(command)};
   }
-  async function settle(lease, {state,jobId,error=null,delayMs=pollMs}) {
+  async function settle(lease, {state,jobId,error=null,delayMs=pollMs,assessmentId=null,participation=null,result=null}) {
     // A worker whose lease expired or was replaced has no authority to publish.
     // A late receiver acknowledgement may lag a newer state; retain the newer one.
-    const {rowCount} = await pool.query(`UPDATE reviewer_investigation_outbox SET
+    const {rowCount} = await pool.query(`UPDATE ${outbox} SET
       state=CASE WHEN state='dispatched' AND $3='enqueued' THEN state ELSE COALESCE($3,state) END,
       job_id=COALESCE(job_id,$4),last_error=$5,updated_at=clock_timestamp(),
+      ${jev?'assessment_id=COALESCE(assessment_id,$7),participation=COALESCE(participation,$8),result=COALESCE(result,$9),':''}
       lease_id=NULL,leased_until=NULL,next_attempt_at=clock_timestamp()+$6*interval '1 millisecond'
       WHERE delivery_id=$1 AND lease_id=$2 AND leased_until>clock_timestamp()
         AND state IN ('accepted','enqueued','dispatched')`,
-    [lease.delivery_id,lease.lease_id,state??null,jobId??null,error,delayMs]);
+    [lease.delivery_id,lease.lease_id,state??null,jobId??null,error,delayMs,...(jev?[assessmentId,participation,result]:[])]);
     return rowCount===1;
   }
   async function deliver(lease) {
     let receipt;
     try {
-      receipt = lease.state==='accepted' ? await receiver.submit(lease.envelope) : await receiver.read(lease.delivery_id);
+      receipt = lease.state==='accepted' ? await (jev?receiver.submitJev:receiver.submit)(lease.envelope) : await (jev?receiver.readJev:receiver.read)(lease.delivery_id);
     } catch(error) {
       if ([401,403].includes(error.status)) return settle(lease,{state:'failed',error:'unauthorized'});
       if (error.status===409) return settle(lease,{state:'unknown',error:'conflict'});
@@ -95,6 +105,10 @@ function createRelay(pool, receiver, {leaseMs=30000, retryMs=10000, pollMs=5000}
         return settle(lease,{state:'failed',error:'invalid_receipt'});
       }
       return settle(lease,{error:'unavailable',delayMs:retryMs});
+    }
+    if (jev) {
+      if(!validJevReceipt(receipt,lease))return settle(lease,{state:'unknown',error:'invalid_receipt'});
+      return settle(lease,{state:receipt.state,jobId:receipt.job_id,assessmentId:receipt.assessment_id,participation:receipt.participation,result:receipt.result});
     }
     if (!receipt || Object.keys(receipt).length!==3 || receipt.delivery_id!==lease.delivery_id ||
         typeof receipt.job_id!=='string' || !UUID.test(receipt.job_id) ||
@@ -109,4 +123,5 @@ function createRelay(pool, receiver, {leaseMs=30000, retryMs=10000, pollMs=5000}
   return {claim,deliver,tick};
 }
 
-module.exports = {createReceiverClient,createRelay};
+const createJevRelay=(pool,receiver,options={})=>createRelay(pool,receiver,{...options,command:'jev_review'});
+module.exports = {createReceiverClient,createRelay,createJevRelay};

@@ -51,6 +51,7 @@ HOST = os.getenv("ALERT_RECEIVER_HOST", "0.0.0.0")
 PORT = int(os.getenv("ALERT_RECEIVER_PORT", "8099"))
 RECEIVER_TOKEN = os.getenv("ALERT_RECEIVER_TOKEN", "")
 REVIEWER_DELIVERY_TOKEN = os.getenv("REVIEWER_DELIVERY_TOKEN", "")
+REVIEWER_JEV_ENABLED = os.getenv("REVIEWER_JEV_ENABLED", "") == "1"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 NAUTOBOT_URL = os.getenv("NAUTOBOT_URL", "").rstrip("/")
@@ -1654,8 +1655,10 @@ async def queue_jev_review(request: Request):
     except (ValueError, core.Refused) as exc:
         return JSONResponse({'error': str(exc) if isinstance(exc, ValueError) else 'JEV configuration unavailable'}, status_code=400)
     try:
-        jid = job_store.enqueue(f'jev:{site}:{event_id}', 'jev_review',
-            {'event_id': event_id, 'site': site, 'input_summary': state}, retry_failed=True)
+        assessment = job_store.assessments.admit(site, event_id, state, retry_failed=True)
+        if assessment['result'] is not None:
+            return {'status': 'complete', 'review': assessment['result']}
+        jid = assessment['job_id']
     except OverflowError:
         return JSONResponse({'error': 'Receiver inbox full'}, status_code=503)
     return JSONResponse({'status': 'accepted', 'job_id': jid}, status_code=202)
@@ -1822,6 +1825,56 @@ async def admit_reviewer_command(request: Request):
         return JSONResponse({'error': 'Delivery conflicts with accepted command'}, status_code=409)
     except (OverflowError, sqlite3.OperationalError):
         return JSONResponse({'error': 'Receiver inbox unavailable'}, status_code=503)
+
+
+@app.post('/reviewer/commands/jev')
+async def admit_reviewer_assessment(request: Request):
+    from jev_assessments import validate_request
+    from jev_review import abstraction, configuration, core
+    try:
+        body = await reviewer_commands.command_body(request, validate_request)
+    except (ValueError, UnicodeError, TimeoutError, RecursionError):
+        return JSONResponse({'error': 'Invalid assessment request'}, status_code=400)
+    if job_store is None:
+        return JSONResponse({'error': 'Receiver inbox unavailable'}, status_code=503)
+    try:
+        prior = job_store.assessments.replay(body)
+        if prior:
+            return JSONResponse(prior)
+        if not REVIEWER_JEV_ENABLED:
+            return JSONResponse({'error': 'Reviewer assessments disabled'}, status_code=503)
+        event = await _fetch_guardian_event(body['case_id'], body['site_id'])
+        if not event or event.get('id') != body['case_id'] or event.get('site_id') != body['site_id']:
+            return JSONResponse({'error': 'Case not found'}, status_code=404)
+        cached = event.get('jev_review')
+        if not isinstance(cached, dict) or not isinstance(cached.get('status'), str) or not cached['status'] or cached['status'] == 'queued':
+            cached = None
+        if cached is None:
+            configuration(body['site_id'], body['case_id'])
+        state = abstraction(event)
+        return JSONResponse(job_store.assessments.admit(body['site_id'], body['case_id'], state,
+                                                      request=body, cached_result=cached))
+    except reviewer_commands.CommandConflict:
+        return JSONResponse({'error': 'Delivery conflicts with accepted assessment'}, status_code=409)
+    except (ValueError, core.Refused):
+        return JSONResponse({'error': 'Assessment configuration or evidence unavailable'}, status_code=400)
+    except (OverflowError, sqlite3.OperationalError):
+        return JSONResponse({'error': 'Receiver inbox unavailable'}, status_code=503)
+
+
+@app.get('/reviewer/commands/jev/{delivery_id}')
+async def read_reviewer_assessment(delivery_id: str, request: Request):
+    if not reviewer_commands.UUID.fullmatch(delivery_id):
+        return JSONResponse({'error': 'Invalid delivery ID'}, status_code=400)
+    if request.headers.get('transfer-encoding') or request.headers.get('content-length', '0') != '0':
+        return JSONResponse({'error': 'GET body is not allowed'}, status_code=400)
+    if job_store is None:
+        return JSONResponse({'error': 'Receiver inbox unavailable'}, status_code=503)
+    try:
+        receipt = job_store.assessments.read(delivery_id)
+    except sqlite3.OperationalError:
+        return JSONResponse({'error': 'Receiver inbox unavailable'}, status_code=503)
+    return JSONResponse(receipt) if receipt else JSONResponse({'error': 'Delivery not found'}, status_code=404)
 
 
 @app.get("/reviewer/commands/{delivery_id}")

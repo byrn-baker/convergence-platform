@@ -15,7 +15,7 @@ import { chromium } from 'playwright';
 const serviceDir = process.env.REVIEWER_API_DIR;
 const viewDir = fileURLToPath(new URL('../../ui/convergence-hud/', import.meta.url));
 const { Pool } = createRequire(path.join(serviceDir, 'package.json'))('pg');
-const {createRelay, createReceiverClient} = createRequire(path.join(serviceDir,'package.json'))('./src/reviewer/relay');
+const {createRelay, createJevRelay, createReceiverClient} = createRequire(path.join(serviceDir,'package.json'))('./src/reviewer/relay');
 const fixture = process.env.REVIEWER_FIXTURE_DIR;
 const file = (key) => path.join(fixture, key);
 const url = new URL(process.env.REVIEWER_TEST_DATABASE_URL);
@@ -102,6 +102,7 @@ test(
     for (const [name, role] of [
       ['reader', 'viewer'],
       ['responder', 'operator'],
+      ['second-responder', 'operator'],
     ])
       command(serviceDir, ['reviewer-accounts.js', 'create', name, role, 'red'], 'fixture-only-password');
     const result = await db.query(
@@ -119,6 +120,7 @@ test(
     await launch(t, serviceDir, ['reviewer-service.js'], {
       REVIEWER_SERVICE_PORT: '' + apiPort,
       REVIEWER_INVESTIGATION_ENABLED: '1',
+      REVIEWER_JEV_ENABLED: '1',
       REVIEWER_CLIENT_CA: file('root.pem'),
       REVIEWER_TLS_CERT: file('localhost.pem'),
       REVIEWER_TLS_KEY: file('localhost.key'),
@@ -270,6 +272,44 @@ test(
     await operator.page.getByRole('button',{name:'Check investigation request',exact:true}).click();
     await operator.page.locator('#investigation-status').getByText(/Agent run finished/).waitFor();
 
+    // Independent attributed requests share one real receiver assessment and budget.
+    const second = await login('second-responder');
+    assert.equal(await reader.page.locator('#jev-request').isVisible(), false);
+    await Promise.all([operator.page.locator('#jev-request').click(), second.page.locator('#jev-request').click()]);
+    await operator.page.locator('#jev-status').getByText(/Requested by responder/).waitFor();
+    await second.page.locator('#jev-status').getByText(/Requested by second-responder/).waitFor();
+    let jevAdmissions = 0;
+    const jevRelay = createJevRelay(db, {
+      async submitJev(envelope) {
+        const response = await receiver.submitJev(envelope);
+        if (++jevAdmissions === 1) throw Error('Synthetic lost JEV receiver acknowledgement');
+        return response;
+      },
+      readJev: id => receiver.readJev(id),
+    }, {retryMs:1,pollMs:1});
+    let assessments;
+    for (let attempt=0; attempt<240; attempt++) {
+      await jevRelay.tick();
+      assessments = (await db.query('SELECT * FROM reviewer_jev_outbox')).rows;
+      if (assessments.length === 2 && assessments.every(row => row.state === 'completed')) break;
+      await pause(25);
+    }
+    assert.equal(assessments.length,2);
+    assert.ok(assessments.every(row => row.state === 'completed' && row.result.status === 'ok'));
+    assert.equal(new Set(assessments.map(row=>row.assessment_id)).size,1);
+    assert.equal(new Set(assessments.map(row=>row.job_id)).size,1);
+    assert.equal(JSON.parse(fs.readFileSync(file('jev-provider-calls.json'))).length,1);
+    assert.equal((await db.query('SELECT 1 FROM reviewer_jev_requests')).rowCount,2);
+    assert.equal((await db.query('SELECT investigation_notes FROM events WHERE id=$1',[caseId])).rows[0].investigation_notes,notes);
+    await operator.page.locator('#jev-check').click();
+    await operator.page.locator('#jev-summary').getByText(/Recorded outcome: ok/).waitFor();
+    const jevOperation = await operator.page.locator('#jev-operation').innerText();
+    await operator.page.reload(); await openCase(operator.page);
+    await operator.page.locator('#jev-summary').getByText(/Recorded outcome: ok/).waitFor();
+    assert.equal(await operator.page.locator('#jev-operation').innerText(),jevOperation);
+    assert.equal(JSON.parse(fs.readFileSync(file('jev-provider-calls.json'))).length,1);
+    await second.ctx.close();
+
     const cross = await operator.page.evaluate(
       async ({ caseId }) => (await fetch('/review/sites/blue/cases/' + caseId)).status,
       { caseId },
@@ -307,7 +347,7 @@ test(
     );
     assert.equal((await db.query('SELECT 1 FROM reviewer_case_dispositions')).rowCount, 1);
     t.diagnostic(
-      'Real CLI startup, named accounts, trusted HTTPS, mTLS and PostgreSQL. Independent mobile viewer and desktop operator. Committed request with a lost response recovered the same receipt after reload, with one audit row and a named actor. Cross-site, native routes and hostile origin denied; separate logout. Lost investigation browser response and receiver acknowledgement recovered one PostgreSQL note, one SQLite job and one counted correlated synthetic hook through the real HTTPS relay.',
+      'Real CLI startup, named accounts, trusted HTTPS, mTLS and PostgreSQL. Independent mobile viewer and desktop operator. Committed request with a lost response recovered the same receipt after reload, with one audit row and a named actor. Cross-site, native routes and hostile origin denied; separate logout. Lost investigation browser response and receiver acknowledgement recovered one PostgreSQL note, one SQLite job and one counted correlated synthetic hook through the real HTTPS relay. Two independent JEV operators retain separate attributed receipts sharing one canonical assessment/job and one counted synthetic provider call through the real disclosure/budget ledger; receipt reload and a lost delivery ACK do not resubmit.',
     );
   },
 );

@@ -32,3 +32,33 @@ Check certificate trust from a second workstation, run viewer and operator accou
 To roll back, remove the reviewer ingress and stop the reviewer HUD. Remove enrollment of that installation on every API replica and restart the private service for the rotation to take effect. Keep the database and immutable history. Signing in through the existing standalone dashboard and the generic NetClaw view registration have separate entry points. Native host integration is proposed in [NetClaw #357](https://github.com/automateyournetwork/netclaw/pull/357).
 
 For containers, build using reviewer/Dockerfile with the reviewer directory as its context. The image runs as the unprivileged node user. Mount certificate files read-only and make the key readable by that service user. The release image is built alongside the platform images on a coordinated version tag. Pin the published digest in the deployment.
+
+## Authenticated site workspace
+
+When the reviewer service advertises its opt-in telemetry capability, **Site overview**
+opens the shared Convergence health, inventory, security, VM/heartbeat, diary, traffic
+and Internet evidence views. **Case review** retains the existing attributed actions.
+A service without the capability keeps the case-only reviewer. The site transport
+exposes finite reads, rechecks user/site access after acquisition, and cannot reach
+NetClaw models, terminals or administrative routes. Saved provider drafts can be
+inspected and downloaded; generating a new draft is not exposed here.
+
+The image build context is `ui/convergence-hud`, with
+`-f ui/convergence-hud/reviewer/Dockerfile` from the repository root. Only the
+allowlisted shared view dependency graph is served; other files in the image are
+not HTTP assets. Graphs use inline style attributes, so the CSP permits style
+attributes while retaining self-only scripts and no inline script execution.
+
+The separately enabled JEV case action requests the canonical shared assessment.
+Its command-specific receipt pointer survives an ambiguous response without storing
+case evidence or credentials. Checking/retrying the same request never authorizes a
+fresh evaluation or budget. JEV assessment, case disposition and investigation
+execution remain separate actions.
+
+Run the shared UI/HTTPS transport tests with `npm test` in this package. After
+installing `tests/reviewer-browser` dependencies and Chromium, run
+`node ui/convergence-hud/browser/telemetry.mjs` from the repository root for the
+isolated HTTPS workspace browser fixture. It checks actual static assets with
+synthetic backend records and independent desktop/mobile sessions; it does not
+qualify PostgreSQL authority or production telemetry. Set `REVIEWER_SCREENSHOT_DIR`
+to an existing private directory to retain synthetic screenshots.

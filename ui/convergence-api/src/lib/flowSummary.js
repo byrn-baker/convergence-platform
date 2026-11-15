@@ -1,4 +1,5 @@
 'use strict';
+const {readSignal} = require('../services/read-context');
 const {isIP} = require('node:net');
 const WINDOWS = {'15m':900,'1h':3600,'6h':21600,'24h':86400};
 const quote = value => JSON.stringify(String(value));
@@ -18,7 +19,7 @@ async function queryLogs(query) {
   const base = process.env.FLOW_VICTORIALOGS_URL || process.env.VICTORIALOGS_URL || 'http://victorialogs:9428';
   const response = await fetch(`${base.replace(/\/$/,'')}/select/logsql/query`, {
     method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body:new URLSearchParams({query}), signal:AbortSignal.timeout(15000),
+    body:new URLSearchParams({query}), signal:readSignal(15000),
   });
   if (!response.ok) throw new Error('Flow archive query failed');
   const reader = response.body.getReader();

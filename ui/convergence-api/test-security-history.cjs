@@ -1,3 +1,4 @@
+const {runSource} = require('./test-support/load-module.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {spawnSync}=require('node:child_process');
@@ -27,7 +28,7 @@ test('drilldown accepts only bounded half-open security intervals and explicit c
 
 function routes(file,query){
   const handlers={};const router={use(){},get:(p,h)=>handlers[p]=h,post(){},patch(){}};
-  vm.runInNewContext(fs.readFileSync(`${__dirname}/src/routes/${file}.js`,'utf8'),{
+  runSource(`${__dirname}/src/routes/${file}.js`,{
     require:n=>n==='express'?{Router:()=>router}:n==='../db'?{query,DbUnavailableError:class extends Error{},dbStatus:()=>({})}:require(`${__dirname}/src/${n.slice(3)}`),
     module:{exports:{}},Date,URLSearchParams,console,fetch,AbortSignal,
   });return handlers;

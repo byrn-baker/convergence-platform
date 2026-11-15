@@ -1,9 +1,10 @@
 import https from 'node:https';
+import {parseTelemetryTarget} from './telemetry-contract.mjs';
 import {Admission, cookieName, failure, ReviewerSessions, tokenPattern} from './sessions.mjs';
 
 const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const casePath = new RegExp('^/review/sites/([A-Za-z0-9_.-]{1,128})/cases/(' + uuid +
-  ')(?:/(disposition|investigation)(?:/(' + uuid + '))?)?$', 'i');
+  ')(?:/(disposition|investigation|jev-review)(?:/(' + uuid + '))?)?$', 'i');
 const errors = {
   400: 'Invalid request', 401: 'Sign-in required or credentials invalid', 403: 'Access denied',
   404: 'Not found', 409: 'Request conflicts with current state', 413: 'Request too large',
@@ -49,7 +50,7 @@ function cookie(res, value, seconds) {
 }
 
 function sessionReply(entry) {
-  return entry.grant ? {user: entry.user, csrf: entry.csrf, expiresAt: new Date(Math.min(entry.idleUntil,entry.expires)).toISOString()}
+  return entry.grant ? {user: entry.user, csrf: entry.csrf, capabilities:{telemetry:entry.capabilities?.telemetry === true}, expiresAt: new Date(Math.min(entry.idleUntil,entry.expires)).toISOString()}
     : {user: null, csrf: entry.csrf};
 }
 
@@ -112,6 +113,7 @@ export function createReviewerServer({tls, origin, client, assets}) {
       sessions.updateDeadline(entry, snapshot, wrote);
       if (user.id !== entry.user.id) throw failure(401);
       entry.user = user;
+      entry.capabilities = {telemetry:snapshot.capabilities?.telemetry === true};
       return user;
     } catch (error) {
       if (error.status === 401) sessions.remove(entry);
@@ -136,6 +138,7 @@ export function createReviewerServer({tls, origin, client, assets}) {
       const user = identity(snapshot);
       if (res.destroyed || user.id !== grant.id) throw failure(401);
       const authenticated = sessions.authenticated(entry, grant, user, snapshot);
+      authenticated.capabilities = {telemetry:snapshot.capabilities?.telemetry === true};
       cookie(res, authenticated.id, Math.ceil((authenticated.expires - Date.now()) / 1000));
       json(res, 200, sessionReply(authenticated));
       grant = null;
@@ -153,7 +156,7 @@ export function createReviewerServer({tls, origin, client, assets}) {
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Referrer-Policy','no-referrer');
     res.setHeader('Strict-Transport-Security','max-age=31536000');
-    res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+    res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
     try {
       if (closing) throw failure(503);
       originGate(req,url);
@@ -186,10 +189,33 @@ export function createReviewerServer({tls, origin, client, assets}) {
         return json(res,204);
       }
 
+      const telemetry = parseTelemetryTarget(target);
+      if (telemetry) {
+        if (method !== 'GET') throw failure(404);
+        const user = await current(entry);
+        if (!entry.capabilities.telemetry || !user.sites.includes(telemetry.site)) throw failure(403);
+        const grant = entry.grant;
+        const result = await client.readTelemetry(grant, telemetry.site, telemetry.resource, telemetry.query);
+        const after = await current(entry);
+        if (!entry.capabilities.telemetry || entry.grant !== grant || after.id !== user.id || !after.sites.includes(telemetry.site)) throw failure(403);
+        const singleEvent = /^events\/[0-9a-f-]{36}$/i.test(telemetry.resource);
+        if (!result || typeof result !== 'object' || Array.isArray(result) ||
+            (telemetry.resource !== 'isp/providers' && result[singleEvent ? 'site_id' : 'site'] !== telemetry.site) ||
+            (result.site !== undefined && result.site !== telemetry.site) ||
+            (result.site_id !== undefined && result.site_id !== telemetry.site)) throw failure(503);
+        res.setHeader('X-Review-Expires-At',new Date(Math.min(entry.idleUntil,entry.expires)).toISOString());
+        return json(res,200,result);
+      }
+
       const match = casePath.exec(target);
       if (!match) throw failure(404);
       const [,site,caseId,operation,operationId] = match;
-      const investigation = operation === 'investigation';
+      const commands = {
+        disposition:{fields:['kind','reason','operationId'],write:'recordDisposition',receipt:'readReceipt',actor:'reviewed_by'},
+        investigation:{fields:['feedback','operationId'],write:'requestInvestigation',receipt:'readInvestigationReceipt',actor:'requested_by'},
+        'jev-review':{fields:['operationId'],write:'requestJevReview',receipt:'readJevReceipt',actor:'requested_by'},
+      };
+      const command = commands[operation];
       if (site === '.' || site === '..') throw failure(400);
       const write = method === 'POST' && Boolean(operation) && !operationId;
       const read = method === 'GET' && (!operation || Boolean(operationId));
@@ -197,13 +223,13 @@ export function createReviewerServer({tls, origin, client, assets}) {
       sessions.requireCurrent(entry);
       if (!entry.grant) throw failure(401);
       if (write) sessions.checkCsrf(entry,req.headers['x-review-csrf']);
-      const data = write ? await readJSON(req,investigation ? ['feedback','operationId'] : ['kind','reason','operationId']) : null;
+      const data = write ? await readJSON(req,command.fields) : null;
       sessions.requireCurrent(entry);
       // The service atomically authorizes the case access or mutation. It also
       // owns idempotency and reconciliation via the original operation ID.
       let result;
-      if (write) result = await (investigation ? client.requestInvestigation : client.recordDisposition)(entry.grant,site,caseId,data);
-      else if (operationId) result = await (investigation ? client.readInvestigationReceipt : client.readReceipt)(entry.grant,site,caseId,operationId);
+      if (write) result = await client[command.write](entry.grant,site,caseId,data);
+      else if (operationId) result = await client[command.receipt](entry.grant,site,caseId,operationId);
       else result = await client.readCase(entry.grant,site,caseId);
       if (res.destroyed) return;
       const user = await current(entry, write);
@@ -214,7 +240,7 @@ export function createReviewerServer({tls, origin, client, assets}) {
       const resultCaseId = operation ? result?.case_id : result?.id;
       if (result?.site_id !== site || resultCaseId !== caseId.toLowerCase()) throw failure(503);
       if (operation && (result?.operation_id !== requestedOperation.toLowerCase() ||
-          result?.[investigation ? 'requested_by' : 'reviewed_by'] !== user.id)) throw failure(503);
+          result?.[command.actor] !== user.id)) throw failure(503);
       res.setHeader('X-Review-Expires-At',new Date(Math.min(entry.idleUntil,entry.expires)).toISOString());
       return json(res,200,result);
     } catch (error) {
