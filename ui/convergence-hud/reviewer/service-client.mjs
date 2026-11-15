@@ -14,8 +14,10 @@ export function createReviewerClient({origin, tls, deadlineMs = 10000}) {
   if (base.protocol !== 'https:' || base.origin !== origin || !tls?.key || !tls.cert || !tls.ca) {
     throw new Error('Expected an exact HTTPS service origin and installation TLS credentials');
   }
-  const agent = new https.Agent({keepAlive: true, maxSockets: 16, maxTotalSockets: 16, maxFreeSockets: 4,
-    ca: tls.ca, cert: tls.cert, key: tls.key, rejectUnauthorized: true, minVersion: 'TLSv1.2'});
+  const connect = ({ca, cert, key}) => new https.Agent({keepAlive: true, maxSockets: 16, maxTotalSockets: 16,
+    maxFreeSockets: 4, ca, cert, key, rejectUnauthorized: true, minVersion: 'TLSv1.2'});
+  let agent = connect(tls);
+  const retiring = new Map();
   async function call(method, path, token, input) {
     if (token !== null && (typeof token !== 'string' || !/^[a-zA-Z0-9_-]{43}$/.test(token))) {
       throw Object.assign(new Error('Invalid session'), {status: 401});
@@ -71,6 +73,19 @@ export function createReviewerClient({origin, tls, deadlineMs = 10000}) {
       if (typeof operationId !== 'string' || !uuid.test(operationId)) throw Object.assign(new Error('Invalid receipt'), {status: 400});
       return call('GET', casePath(site, id) + '/investigation/' + operationId, token);
     },
-    close: () => agent.destroy(),
+    // New requests use the renewed identity; requests already on the old agent finish
+    // within their deadline before it is destroyed.
+    reload(next) {
+      const old = agent;
+      agent = connect(next);
+      const timer = setTimeout(() => { retiring.delete(timer); old.destroy(); }, deadlineMs);
+      timer.unref();
+      retiring.set(timer, old);
+    },
+    close() {
+      for (const [timer, old] of retiring) { clearTimeout(timer); old.destroy(); }
+      retiring.clear();
+      agent.destroy();
+    },
   };
 }

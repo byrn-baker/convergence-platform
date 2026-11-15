@@ -71,7 +71,7 @@ function bearer(req) {
 }
 
 function createReviewerService({tls, enrollments, authority, investigationEnabled = false}) {
-  const installations = parseEnrollments(enrollments);
+  let installations = parseEnrollments(enrollments);
   const server = https.createServer({
     ...tls, requestCert: true, rejectUnauthorized: true, minVersion: 'TLSv1.2',
     maxHeaderSize: 8192, requestTimeout: 15000, headersTimeout: 10000,
@@ -120,6 +120,13 @@ function createReviewerService({tls, enrollments, authority, investigationEnable
   server.maxConnections = 64;
   server.setTimeout(20000, socket => socket.destroy());
   server.on('upgrade', (_req, socket) => socket.destroy());
+  // Renewed identity, client CA and enrollments apply together, after all validate. Several
+  // pins per installation let an installation certificate rotate without a 403 window.
+  server.reload = next => {
+    const pins = parseEnrollments(next.enrollments);
+    server.setSecureContext({ca: next.ca, cert: next.cert, key: next.key, minVersion: 'TLSv1.2'});
+    installations = pins;
+  };
   return server;
 }
 

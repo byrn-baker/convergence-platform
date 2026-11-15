@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const {setTimeout:pause} = require('node:timers/promises');
 const {pool} = require('./src/db');
 const {createReceiverClient,createRelay} = require('./src/reviewer/relay');
+const {trust,watchTls} = require('./src/reviewer/tls-reload');
 
 async function main() {
   if (process.env.REVIEWER_DELIVERY_ENABLED !== '1' || !pool || process.argv.length!==2) {
@@ -14,6 +15,9 @@ async function main() {
     token:fs.readFileSync(process.env.REVIEWER_DELIVERY_TOKEN_FILE,'utf8').trim(),
     ca:process.env.REVIEWER_RECEIVER_CA ? fs.readFileSync(process.env.REVIEWER_RECEIVER_CA) : undefined});
   const relay = createRelay(pool,receiver);
+  // Only an explicit receiver CA is watched; without one the system trust store applies.
+  const watcher = process.env.REVIEWER_RECEIVER_CA ? watchTls({files:{ca:process.env.REVIEWER_RECEIVER_CA},
+    build:trust,apply:next=>receiver.reload(next)}) : null;
   let stopped=false;
   const stop=()=>{stopped=true;};
   process.once('SIGTERM',stop);process.once('SIGINT',stop);
@@ -24,7 +28,7 @@ async function main() {
       try { if (!await relay.tick()) await pause(1000); }
       catch {console.error('Reviewer delivery unavailable; pending leases are retained');await pause(5000);}
     }
-  } finally {receiver.close();await pool.end();}
+  } finally {watcher?.close();receiver.close();await pool.end();}
 }
 
 if(require.main===module) main().catch(()=>{

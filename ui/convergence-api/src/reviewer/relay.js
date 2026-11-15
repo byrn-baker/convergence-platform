@@ -13,8 +13,10 @@ function createReceiverClient({origin, token, ca, deadlineMs = 5000}) {
       !Number.isInteger(deadlineMs) || deadlineMs < 100 || deadlineMs > 10000) {
     throw new Error('Expected HTTPS receiver origin and a dedicated service credential');
   }
-  const agent = new https.Agent({ca, rejectUnauthorized:true,minVersion:'TLSv1.2',
+  const connect = trusted => new https.Agent({ca:trusted,rejectUnauthorized:true,minVersion:'TLSv1.2',
     keepAlive:true,maxSockets:2,maxFreeSockets:1});
+  let agent = connect(ca);
+  const retiring = new Map();
   function call(method,path,body) {
     const data = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
     return new Promise((resolve,reject) => {
@@ -36,7 +38,18 @@ function createReceiverClient({origin, token, ca, deadlineMs = 5000}) {
   return {
     submit: command => call('POST','/reviewer/commands',command),
     read: id => {if(!UUID.test(id))throw new Error('Invalid delivery identity');return call('GET','/reviewer/commands/'+id);},
-    close:()=>agent.destroy(),
+    // A renewed receiver CA bundle applies to new requests; the old agent is destroyed
+    // once its in-flight requests have reached their deadline.
+    reload({ca:trusted}) {
+      const old = agent;
+      agent = connect(trusted);
+      const timer = setTimeout(()=>{retiring.delete(timer);old.destroy();},deadlineMs);
+      timer.unref();retiring.set(timer,old);
+    },
+    close() {
+      for (const [timer,old] of retiring) {clearTimeout(timer);old.destroy();}
+      retiring.clear();agent.destroy();
+    },
   };
 }
 
