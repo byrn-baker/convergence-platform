@@ -288,3 +288,40 @@ ordered backlog, dependencies and acceptance criteria. Private operations handof
 provides Claude with paths, verified state, known traps and the first action.
 Validation: remote ancestry commands, live Argo status, documentation diff/link
 checks. This is documentation preparation, not a new implementation qualification.
+
+### 2026-11-15 release consolidation and stable v0.1.12
+
+Re-fetched remote heads before acting: main 160cbae, release/reviewer-production
+f7a7715 (v0.1.11) and #15 head 3874d95 each descend from the one before, and all
+eight older PR heads (#6 through #13) are ancestors of f7a7715. v0.1.12-rc.2..3874d95
+changed only these spec files. The expanded main..#15 diff (213 files) was scanned for
+key material, tokens and private paths; it contains only test passwords and
+one existing-style local path in a test command.
+
+Route: #15 was marked ready and merged into its declared base with a merge commit
+(124342b, tree identical to 3874d95). Consolidation PR #16 (release/reviewer-production
+-> main) passed CI 43667768535 and was merged with a merge commit as main 6d51969, whose
+tree equals 124342b. GitHub recorded #6, #7, #8, #9 and #12 as merged. #10, #11 and #13
+(feature-branch bases) were closed as superseded by #16, each citing a head commit that
+is an ancestor of main. Main push CI 43668140024 passed.
+
+`git diff v0.1.12-rc.2 6d51969` outside specs/ is empty: runtime code, chart, image
+sources and workflows equal the qualified rc2, so no further runtime qualification
+delta applies. Annotated tag v0.1.12 (unsigned, matching the rc tags) points at
+6d51969; rc tags are unchanged. Release run 43668293018 passed all test jobs and
+published multi-arch convergence-api, convergence-reviewer-hud and
+convergence-ids-ingest images tagged 0.1.12. They have different digests from rc2
+because the builds are not reproducible.
+
+Production pins: the installed /home/ubuntu/convergence checkout moved from
+v0.1.12-rc.2 to v0.1.12 (clean, detached; only spec files changed). The GitOps
+Application chart source moved from f3afb8c to 6d51969 (operations commit 9d54dec).
+Reviewer API/HUD/relay images deliberately remain on the qualified rc2 digests,
+because adopting the rebuilt identical-source digests would restart reviewer Pods and
+sign users out with no code change. Argo reported revision 6d51969 Synced/Healthy
+with no new sync operation. All 20 netclaw-convergence Pods kept the same start times
+and restart counts. The reviewer site returned HTTPS 200. Native netclaw-hud and
+netclaw-hud-ui stayed active, /api/home/status was configured, and
+/api/home/health?site=home reported unavailable=false. The receiver unit stayed
+active, untouched, and continued accepting ordinary Alertmanager webhooks. No model
+call, account change or receipt mutation was made.
