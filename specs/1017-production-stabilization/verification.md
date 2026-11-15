@@ -270,3 +270,158 @@ on VM117. Reviewed checked subitems as narrowly scoped; no full-recovery or
 production-deployment claim. All 18 tested candidate code/test/Docker hashes still
 match the reviewed build inputs. Run closed before its original deadline with
 the repair accepted and acquisition blocked; future work retains these findings.
+
+## Run stabilization-release-continuation-20261115-04
+Start UTC: 2026-11-15T22:03:47Z; branch stabilization/vm115-rehearsal at b9bf2c7.
+Starting tree clean. Owner explicitly requested continued work until every gate is
+resolved, then commit to main. This overrides the default 45-minute stopping point;
+retain bounded three-attempt tasks, evidence checkpoints and independent review.
+No early main merge, additional PR or production deployment. Actual elapsed soak
+and unresolved evidence remain mandatory; no inferred stable-release claim.
+Coordinator owns specs, integration, operational actions and final acceptance.
+Initial tasks: S04d1b baseline health-path diagnosis and bounded probe; S08b isolated
+load/recovery qualification; S03d1 stock subscription investigation/replay wiring.
+Attempts initially 1 each. At most two workers, then independent verification.
+Private evidence: ~/.local/state/convergence-stabilization-release-20261115/.
+
+S04d1b attempt1: eight paired read-only health samples showed variable latency
+inside the IDS Pod (9–514ms) as well as via a new port-forward (19–445ms after
+listener readiness). CPU cgroup throttling counters are zero; IO pressure is
+visible. This supports, but does not prove, storage-related event-loop stalls.
+Source remains on unchanged deployed code. Fresh baseline guard passed without
+relaxing750ms or PSI/queue limits. Reader security/hash/UID and actual egress denial
+rechecked. The64MiB transfer completed in16.88s at<=4MiB/s and both receipts matched
+SHA256; health stayed53–484ms, queue age<1s and IO pressure below limits.
+However reader exited134 at interpreter shutdown: daemon thread remained blocked
+inside buffered stdin. Receipt matching is not acceptance of a failed process.
+Archived failed-attempt logs before retry; original target partial01 retained.
+S04d1b attempt2: replace buffered daemon reader with stoppable select/os.read
+listener, join before interpreter shutdown; preserve fail-closed leases. Twelve
+fixtures pass including child process exit with stdin open; actual non-root,
+network-disabled container CLI read4MiB via O_DIRECT and exited0 with matching
+hash. Independent review in progress; no second source read yet.
+
+S08b measured workload basis: current intake132.28events/s; highest5-minute rate
+in24h145.67events/s. Prior1h mix: flow106.08/s,dns11.98,alert10.70,tls2.85,stats0.067.
+Worker preparing150/s and300/s synthetic load with explicit batch assumptions.
+Application intake tests will not qualify packet capture or full-history scale.
+
+VM117 dependency preparation: exact target marker verified;43GiB OS and951GiB
+recovery-filesystem free,~7.4GiB available memory. Installed docker.io29.1.3 andjq;
+Docker data-root is separate /srv/convergence-lab/docker, lab user has no Docker
+membership. Native K3s/Helm preparation uses pinned official release checksums.
+No restored credentials/data activated; post-container network enforcement remains
+a mandatory gate before test services run.
+
+S04d1b attempt2 COMPLETE, independently reviewed: corrected probe transferred
+64MiB in16.97s; both processes exited0, exact SHA matched, unchanged health/PSI/
+queue guards passed. Original failed exit134 evidence and both target partials
+retained separately. Reader Pod deleted with UID precondition; ConfigMap removed.
+Small-probe gate only. S04d1c now implements reusable bounded chunk contracts,
+reader, root-private target store and complete-range assembly. Resumption requires
+rehashing accepted target bytes and the identical source fingerprint; failed
+partials remain unaccepted. New source reads wait for independent helper and
+coordinator integration review. No production source writes or workload changes.
+
+VM117 fresh full core install and13 checks passed: API/database and auth/site
+boundaries; metrics probe; Alertmanager; Grafana health/dashboard/datasource query;
+Loki readiness; case create/read/archive; OTLP collector to VictoriaLogs. Twelve
+core Pods ready. Native K3s v1.35.6+k3s1 and Helm4.3.1 artifacts matched official
+release checksums. Positive Pod public HTTPS/DNS and negative private/link-local
+egress passed; controllerSSH allowed and direct6443 denied. Browser/npm/system
+and receiver dependencies freshly installed. Synthetic reviewer provisioning uses
+four separate CA roles, distinct scoped reader/case keys, restricted reviewer and
+relay DB roles, no JEV provider, and no production credentials. Reviewer install
+and restricted alert-agent wiring in progress. First helper apply met a transient
+API-forward readiness failure; tokens independently returned200 after lab rollout
+settled; retry preserves identities and credentials.
+
+S08b independent review found metrics latency omitted the injected stall because
+its observation awaited storage first, plus overbroad restart wording. Attempt3
+uses an independently scheduled metrics probe with due-to-completion timing and
+narrows compared restart fields. Corrected150/s shows2.006s metrics wait during
+2s storage stall while health remains responsive; final300/s and re-review pending.
+
+S08b attempt3 independently PASS: real ASGI/SQLite/lifecycle harness at150/s and
+300/s,4648/9148 accepted events and395/761 cases reconciled; replay inserted0.
+Independent metrics observation captured2.006/1.968s waits during2s storage stall,
+while same-window health stayed responsive. Restart uses new child PID;20 pending
+items survive copy-only retention. This qualifies bounded synthetic application
+intake/recovery, not physical capture, full history, TLS or real destinations.
+Grok supplied-text review attempt timed out at120s; no API billing fallback used.
+
+S04d1c helper qualification:37 fixtures passed after independent review identified
+and corrected lease checks around blocking metadata/completion. Direct-I/O proof
+adds Linux statx positive memory/offset alignment on the exact fd and actual mmap
+address;45 fixtures passed including real direct reads. Target rejects unqualified
+receipts on acceptance and resume. Controller review found concurrency/resume
+identity gaps; added whole-run flock, prelaunch process-absence check, immediate
+Pod/ConfigMap/policy readmission, exact target identity and chunk-grid checks.
+Seven controller synthetic checks pass; final independent review pending. Target
+status now returns identity even when empty. Metadata-only source admission passed
+with512-byte alignment, exact retained base identity, UID10001 and actual denied
+public/private egress. No full source transfer has begun. Root-private VM117 target
+initialized for the exact acquisition fingerprint; source exporter deadline12h.
+
+S03d1 wiring: fresh real native receiver and restricted relay run on loopback with
+separate TLS/token/DB identities; reviewer HTTPS forwarded on loopback. Existing
+VM Codex OAuth works after explicitly enabling the already-installed native Codex
+plugin. Gateway startup exposed a separate stock-runtime configuration requirement:
+restricted allowedSessionKeyPrefixes need a matching defaultSessionKey. Added a
+matching restricted default; per-delivery request keys remain enabled. Exported
+reviewer policy unchanged and verified. Gateway now starts; effective tool catalog
+requires a persisted session, so no model/investigation call submitted yet. No
+production service configuration, account or runtime changed.
+
+S04d1c sustained/abort qualification independently PASS: four contiguous64MiB
+chunks accepted, source/target exit0 and SHA equality;32 health observations,
+max520ms, PSI full5.82/some8.52, delivery age<0.47s. Controlled coordinatorSIGTERM
+mid-chunk stopped both processes in2.520s;17MiB partial retained, no certificate,
+no surviving reader. Fresh attempt resumed the same range and verified; five
+accepted ranges total. Replacement exporter changes only UID and24h maximum
+lifetime, with fresh exact admission/alignment/network-denial checks. Full guarded
+acquisition started23:21UTC, private PID/argv retained in acquisition/full-process.json;
+controller remains locked, single-reader,64MiB/60s chunks,<=4MiB/s with unchanged
+health gates. Approximate12.5h transfer at measured cadence; no recovery completion
+claim until assembly, filesystem/DB validation and all other stores reconcile.
+
+S03d1 actual isolated investigation COMPLETE pending independent provenance review:
+trusted-browser baseline and one submission, real reviewer outbox/relayTLS/receiver
+checkpoint, nativeCodex agent case_get/flow_evidence/case_update/final case_get.
+Saved findings match2 records/3000bytes/30packets and explicitly synthetic coverage.
+One completed Gateway receipt and native1thread/1turn; real native persisted tool
+catalog contains case+stock-reader tools and omits prohibited dynamic JEV/ISP-report/shell/browser/message callables.
+This does not prove every native capability absent; Codex functions.exec is the
+observed tool-orchestration wrapper, distinct from a shell execution tool. Core tools.effective cannot see the native MCP manager, so it
+was not used to infer that inventory. All3 stock-reader tools and wrong-token/site/
+disabled refusals independently pass via actual MCP connections. Gateway/receiver/
+relay restarted preserving stores; browser and directTLS exact replay return same
+completed receipt, changedfeedback409. Full DB note/rootcause hashes, request/job/
+dispatch IDs, native turn count and token counters unchanged. Same saved operation,
+no second inference. Runtime code remains clean pinned upstream+Convergencev0.1.15.
+
+Compatibility repair: policy export/check previously accepted hook settings that
+stockOpenClaw2026.10.9 refuses at startup. New validation mirrors default-key/prefix
+constraint;8 reproduced failures before fix,53 unit tests after; independent code
+review PASS. No settings/permissions mutated by helper. Docs record restricted
+matching default and explicit existing nativeCodex plugin activation with version
+qualification. A second bounded Grok supplied-text review failed; inspect private
+runtime-research/grok-hook-review.json. No API fallback or acceptance inferred.
+
+S03d1 independently PASS. Sanitized provenance.json proves exact delivery →
+Gateway hook run → ephemeral cron job → runtime session/run → nativeCodex
+thread/turn mapping using retained Gateway log and trajectory records. Actual
+auth-profile identity matches the valid OAuth profile; no configured fallback or
+applied shell-environment credentials. Before/after replay has one native turn,
+unchanged171106 total tokens including144000 cached input, same durable receipt
+and full case-content hashes. S03/S03d overall remain open; native-loopback canary
+does not qualify K3s API learning callback, physical telemetry, JEV or full RAG.
+
+Next selected-profile step uses existing documented host-receiver wiring on the
+VM117 CNI gateway10.117.0.1, with legacy HTTP bearer confined to that isolated
+network and reviewerTLS remaining loopback. No proxy or product architecture
+change. Actual Pod access/authentication and external denial must be reverified.
+RAG receiver shutdown must use supported control-group policy and90s stop timeout;
+its earlier30s unit is only the RAG-disabled smallest canary. API learning callback
+is best-effort; test explicit operator reconciliation for missing/stale snapshots
+using existing /snapshot and /snapshot/backfill, not an invented durableAPIoutbox.

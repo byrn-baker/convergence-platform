@@ -215,6 +215,29 @@ policy or calling the hook again. Remote work may outlive a transport timeout.
 No automatic retry is made after the dispatch checkpoint. Intentional follow-up
 requires a new authorized request, not reuse of the unknown delivery.
 
+Before exporting, configure hook session admission explicitly. For the restricted
+reviewer prefix on OpenClaw 2026.10.9, the relevant settings are:
+
+```json
+{
+  "hooks": {
+    "allowRequestSessionKey": true,
+    "allowedSessionKeyPrefixes": ["hook:convergence-reviewer:"],
+    "defaultSessionKey": "hook:convergence-reviewer:default"
+  }
+}
+```
+
+These are settings to merge deliberately into the existing managed hooks, not a
+replacement for its agent allowlist, mappings or credentials. Stock OpenClaw checks
+the default session key at startup even when reviewer requests supply their own
+keys. A restricted prefix with an unset/blank default prevents startup; an explicit
+default outside the allowed prefixes also fails. Keep the matching default instead
+of broadening the prefix to fix startup. Each reviewer delivery still supplies its
+own `hook:convergence-reviewer:<delivery_id>` key. Policy export/check validates this
+constraint and reports an actionable error without modifying Gateway settings or
+permissions. This check does not replace Gateway startup or effective-tool checks.
+
 Export and check the narrow policy from the repository root:
 
 ```sh
@@ -231,6 +254,27 @@ configuration changes and before rollout. Runtime policy-file drift fails before
 checkpoint. The receiver still uses only `OPENCLAW_HOOK_TOKEN`; it needs no Gateway
 operator token. Gateway HTTP is permitted only on a literal loopback address;
 remote destinations need HTTPS. Redirects and environment proxies are disabled.
+
+For an isolated installation using an authorized Codex subscription, qualification
+with OpenClaw 2026.10.9, installed `@openclaw/codex` 2026.10.9 and native
+`@openai/codex` 0.160.0 required explicit activation of the installed plugin. Run
+under the intended isolated runtime account, environment and home directory:
+
+```sh
+openclaw plugins enable codex
+openclaw models status --agent alert --check --json
+```
+
+The first command changes plugin activation; it is a deliberate operator step,
+not something the policy helper installs or enables. In that qualification, valid
+main-agent authentication alone did not establish alert-agent readiness: the alert
+check reported `owner-plugin-not-activatable` until activation. Verify the actual
+alert agent, its effective tools and a bounded synthetic investigation separately.
+Use the runtime's native subscription authentication and empty model fallback
+chains for this profile; do not substitute an API key or copy production credentials.
+These exact versions were qualified in isolation; other versions require their own
+checks. Subscription-backed Gateway investigation does not qualify JEV's separate
+provider interface.
 
 Back up SQLite alongside the PostgreSQL outbox. Receipts are retained beyond
 normal job cleanup. A restore of one database without matching delivery history

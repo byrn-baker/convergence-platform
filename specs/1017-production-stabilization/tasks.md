@@ -43,7 +43,7 @@ S01/S02 COMPLETE with independent review PASS. S03 PARTIAL: clean stock componen
 - [x] S03c1 — Fresh pinned runtime and selected stock GAIT/RAG/read-connector install; synthetic audit and persisted RAG retrieval passed without hosted inference.
 - [ ] S03c2 — Repeat installation, final runtime/browser dependency qualification and actual Gateway readiness.
 - [ ] S04d1 — Qualify a full-history acquisition method with acceptable production IO impact. First online Longhorn clone was aborted after IDS readiness/scrape failures; retained snapshot is not a completed backup.
-- [ ] S03d1 — Authenticate the isolated runtime through the existing Codex subscription and prove one bounded synthetic investigation plus replay.
+- [x] S03d1 — Authenticate the isolated runtime through the existing Codex subscription and prove one bounded synthetic investigation plus replay.
 
 The new target removes the capacity blocker. It does not close full recovery:
 source-side IO interference is now a demonstrated blocker. Production recovered
@@ -53,9 +53,12 @@ without Pod restarts, but the rehearsal did cause a readiness/metrics interrupti
 
 - [x] S08a — Reproduce IDS health starvation from synchronous storage; implement bounded serialized storage outside the request loop; verify cancellation, transactions, enrollment checks and shutdown. Full host/receiver suite: 436 tests plus 20 subtests; isolated VM117 IDS suite: 217 tests. Independent review passed. Candidate remains undeployed.
 - [x] S04d1a — Qualify direct-read pacing and failure handling with synthetic fixtures, target guards, actual source-reader confinement and positive-control network-policy tests. This does not qualify production data acquisition.
-- [ ] S04d1b — Establish a healthy baseline and complete the bounded 64 MiB source probe. Attempt stopped before reading data because baseline health exceeded the 750 ms limit; no limit was relaxed. Temporary reader removed.
+- [x] S04d1b — Establish a healthy baseline and complete the bounded 64 MiB source probe. Corrected reader exits cleanly; source/target hashes match and all unchanged health limits pass. Independent review passed; source reader removed. Full acquisition remains separate.
 - [ ] S04d1c — Qualify sustained acquisition, source retention and abort behavior before full history transfer; validate the recovered filesystem/databases and reconcile remaining stores.
 - [ ] S08b — Qualify the repaired IDS under representative storage delay/load on the isolated stack; include promotion and rollback in the eventual consolidated release plan.
 
 Publication: PR27 is closed without merge. Keep reviewed fixes on the existing
 stabilization branch; create one consolidated PR when the agreed work is ready.
+
+- [x] S04d1c1 — Sustained guarded source chunks, real cancellation and resume passed independent review. Full transfer and restored-data validation remain open.
+- [x] S08b1 — Measured150/s and300/s application intake with injected storage/downstream failures, real restart and exact replay passed independent review. Full-history/physical-capture qualification remains open.

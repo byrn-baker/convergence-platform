@@ -101,3 +101,37 @@ def test_export_refuses_symlink_without_touching_target(tmp_path):
     with pytest.raises(ValueError, match='symlink'):
         setup.execute(SimpleNamespace(command='export', openclaw_dir=str(tmp_path), policy_file=str(link), replace=True))
     assert original.read_text() == 'keep'
+
+
+@pytest.mark.parametrize('default', [None, '', '   ', 'hook:other:default'])
+@pytest.mark.parametrize('command', ['export', 'check'])
+def test_rejects_runtime_invalid_default_session_without_writing(tmp_path, command, default):
+    config, state = managed()
+    config_file = tmp_path/'openclaw.json'
+    state_file = tmp_path/'convergence-netclaw.json'
+    config_file.write_text(json.dumps(config))
+    state_file.write_text(json.dumps(state))
+    target = tmp_path/'policy.json'
+    args = SimpleNamespace(command='export', openclaw_dir=str(tmp_path), policy_file=str(target), replace=False)
+    setup.execute(args)
+    policy_before = target.read_bytes()
+    config['hooks']['allowedSessionKeyPrefixes'] = ['hook:convergence-reviewer:']
+    if default is not None:
+        config['hooks']['defaultSessionKey'] = default
+    config_file.write_text(json.dumps(config))
+    config_before, state_before = config_file.read_bytes(), state_file.read_bytes()
+    args.command = command
+    with pytest.raises(ValueError, match='hooks.defaultSessionKey'):
+        setup.execute(args)
+    assert target.read_bytes() == policy_before
+    assert config_file.read_bytes() == config_before
+    assert state_file.read_bytes() == state_before
+
+
+@pytest.mark.parametrize('default', ['hook:convergence-reviewer:default', '  HOOK:CONVERGENCE-REVIEWER:default  '])
+def test_matching_restricted_default_preserves_exported_policy(default):
+    config, state = managed()
+    previous = setup.policy_bytes(setup.managed_policy(config, state))
+    config['hooks']['allowedSessionKeyPrefixes'] = ['  HOOK:CONVERGENCE-REVIEWER:  ']
+    config['hooks']['defaultSessionKey'] = default
+    assert setup.policy_bytes(setup.managed_policy(config, state)) == previous
