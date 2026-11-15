@@ -11,14 +11,20 @@ request to repeat the synthetic model calls or migrate the native HUD immediatel
 - [x] Reconcile stale acceptance checkboxes, separating completed HTTPS review/
   reinvestigation from native HUD and JEV work.
 - [x] Fetch current remote heads and map the open PR ancestry.
-- [ ] Choose and review a consolidation PR into main that preserves the already
+- [x] Choose and review a consolidation PR into main that preserves the already
   qualified integration history. Inspect the exact resulting tree against rc2.
-- [ ] Merge after required checks/review, account for every component PR, and
+- [x] Merge after required checks/review, account for every component PR, and
   close or mark superseded only those whose contents are actually retained.
-- [ ] Publish stable v0.1.12 from the reviewed integrated commit after release
+- [x] Publish stable v0.1.12 from the reviewed integrated commit after release
   gates pass. Keep rc tags immutable. If code differs from rc2, qualify that delta.
-- [ ] Update installed checkout/GitOps pins through the documented rollout and
+- [x] Update installed checkout/GitOps pins through the documented rollout and
   verify ordinary alerts, native telemetry, reviewer access and existing receipts.
+
+Section 1 completed 2026-11-15; see the release consolidation entry in
+[verification.md](verification.md). #15 merged into release/reviewer-production
+(124342b); consolidation PR #16 merged it into main (6d51969) with a merge commit;
+#6, #7, #8, #9 and #12 show as merged; #10, #11 and #13 were closed as superseded
+with their head commits cited. v0.1.12 tags 6d51969.
 
 ### PR ancestry verified on 2026-11-15
 
