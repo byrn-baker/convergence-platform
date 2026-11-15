@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Case review · Convergence</title>
+  <title>Site workspace · Convergence</title>
+  <link rel="stylesheet" href="/site-assets/home.css">
+  <link rel="stylesheet" href="/site-assets/dashboard.css">
   <link rel="stylesheet" href="/reviewer.css">
   <script type="module" src="/reviewer.js"></script>
 </head>
@@ -12,7 +14,7 @@
     <div id="account" hidden><span id="identity"></span><button type="button" id="logout">Sign out</button></div>
   </header>
   <main>
-    <h1>Investigation review</h1>
+    <h1>Site workspace</h1>
     <p id="status" role="status" aria-live="polite"></p>
     <button type="button" id="reconnect" hidden>Check session</button>
     <form id="login" method="post" action="/review/sign-in" hidden>
@@ -21,6 +23,11 @@
       <label>Password<input name="password" type="password" required autocomplete="current-password"></label>
       <button type="submit">Sign in</button>
     </form>
+    <nav id="workspace-nav" aria-label="Workspace" hidden>
+      <button type="button" id="site-tab" aria-pressed="false">Site overview</button>
+      <button type="button" id="cases-tab" aria-pressed="true">Case review</button>
+    </nav>
+    <section id="site-workspace" class="convergence-workspace" aria-label="Site telemetry" hidden></section>
     <section id="workspace" aria-label="Reviewer workspace" hidden>
       <form id="lookup">
         <label>Site<select name="site" required></select></label>
@@ -50,6 +57,19 @@
             <button type="button" id="check-receipt" hidden>Check receipt</button>
             <button type="button" id="retry" hidden>Retry same operation</button>
           </div>
+        </section>
+        <section id="jev-panel" hidden>
+          <h3>JEV assessment</h3>
+          <p>Request an advisory assessment of this case. Requests share the existing case assessment and its budget; an additional request does not purchase a new evaluation. This does not change the case disposition or start an investigation.</p>
+          <button type="button" id="jev-request">Request JEV assessment</button>
+          <p id="jev-status" role="status" aria-live="polite"></p>
+          <code id="jev-operation"></code>
+          <div class="actions">
+            <button type="button" id="jev-check" hidden>Check JEV request</button>
+            <button type="button" id="jev-retry" hidden>Retry same JEV request</button>
+          </div>
+          <p id="jev-summary" hidden></p>
+          <details id="jev-evidence" hidden><summary>Assessment evidence and limitations</summary><pre id="jev-result" aria-label="Recorded JEV result" hidden></pre></details>
         </section>
         <section id="investigation-panel" hidden>
           <h3>Request an investigation</h3>

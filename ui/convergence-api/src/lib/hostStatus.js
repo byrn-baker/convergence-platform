@@ -1,4 +1,5 @@
 'use strict';
+const {readSignal} = require('../services/read-context');
 
 const unavailable = () => ({status: 'unavailable', reason: 'Guest heartbeat status unavailable; visibility is unknown', agents: []});
 const empty = () => ({status: 'not_configured', reason: 'No guest heartbeat enrollments configured', agents: []});
@@ -55,7 +56,7 @@ async function hostStatus(site) {
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid status URL');
     url.searchParams.set('site', site);
     const response = await fetch(url, {headers: {Authorization: `Bearer ${token}`},
-      signal: AbortSignal.timeout(5000), redirect: 'error'});
+      signal: readSignal(5000), redirect: 'error'});
     if (!response.ok) throw new Error('Host status unavailable');
     const data = await response.json();
     if (!object(data) || !['configured', 'not_configured'].includes(data.status) || !Array.isArray(data.agents)

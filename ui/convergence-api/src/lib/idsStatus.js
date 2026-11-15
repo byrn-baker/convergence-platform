@@ -1,4 +1,5 @@
 'use strict';
+const {readSignal} = require('../services/read-context');
 
 // Sensor status is independent of firewall logs and model availability.
 async function idsStatus(site) {
@@ -9,7 +10,7 @@ async function idsStatus(site) {
     const url = new URL('/v1/status', base);
     url.searchParams.set('site', site);
     const response = await fetch(url, {
-      headers: {Authorization: `Bearer ${token}`}, signal: AbortSignal.timeout(5000),
+      headers: {Authorization: `Bearer ${token}`}, signal: readSignal(5000),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();

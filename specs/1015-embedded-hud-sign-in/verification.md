@@ -412,3 +412,83 @@ receiver-https (365). The renewal timer is installed from the installed checkout
 service ran under systemd with every leaf at "none" (364-365 days) and pushed metrics,
 which VictoriaMetrics scraped. No TLS alert fired. Reviewers must sign in again once,
 because of the HUD restart. Rollback pins are recorded in the private runbook.
+
+### Native HUD continuation — 2026-11-15 16:33 UTC
+
+Run ID: native-hud-20261115-codex. Start 2026-11-15T16:33:31.397275+00:00; deadline
+2026-11-15T17:18:31.397275+00:00. Three attempts per task maximum.
+Checkout: `/home/ubuntu/github-projects/cp-native-hud`, branch
+`feat/native-hud-telemetry`, starting commit `e2f122e`. Existing live NetClaw
+HUD/research edits and unrelated operations files are preserved. This is a new
+user-authorized continuation of Claude's completed release/maintenance run.
+
+Acceptance: follow-up section 3; establish current upstream host support and an
+authenticated per-user telemetry path preserving Classic/dashboard, VM Security
+and Host Heartbeat. Qualify identity, CSRF, revocation and stale responses in
+isolation before proposing any live cutover. JEV remains a separate increment.
+Before: deployed native fork uses machine-authenticated telemetry and has no
+Convergence sign-in; prior local-owner-only cutover lost remote telemetry.
+
+Prerequisite inspection in progress; no acceptance cycle started. Coordinator
+owns spec/plan/tasks/ledger and integration. Read-only delegates inspect current
+upstream host/session support and downstream telemetry integration independently.
+No runtime deployment or account/credential changes are part of this inspection.
+Platform checkout has no CONTRIBUTING.md or .specify/memory/constitution.md;
+NetClaw contributor/spec instructions and platform qualification records were read.
+
+Architecture decision: upstream main remains a5e7c3a3 (PR #357 design only).
+Two independent source reviews confirmed the existing LAN HUD cannot use the
+loopback owner seam. The user explicitly selected expansion of the HTTPS
+Convergence site instead; spec/plan/tasks updated before implementation.
+Attempt 1 for H2/H3 starts now. Backend worker owns ui/convergence-api telemetry
+services, routes, transport and tests. Frontend worker owns ui/convergence-hud
+reviewer integration, shared view lifecycle and tests. Coordinator owns spec,
+packaging/deployment integration and browser qualification. No live changes.
+
+JEV design approved: separate attributed requests share the existing per-case
+assessment/budget. Contract is jev-requests.md. Coordinator owns receiver-only
+J2 implementation while H2/H3 workers retain their API/HUD ownership. Attempt 1.
+J3/J4 end-to-end activation remains dependent on this canonical result seam.
+
+Iteration 1 integration evidence (2026-11-15):
+- Shared telemetry services extracted from legacy HTTP handlers; finite reviewer
+  operations use short pre/post authority checks around external reads. Backend
+  capability negotiation defaults telemetry off. No new local-owner behavior.
+- Shared HomeView and exact static assets serve HTTPS desktop/mobile telemetry;
+  screenshots inspected at 1440px and 390px with synthetic data. Actual image
+  build and asset import check passed (23 required/reachable assets).
+- Receiver canonical assessments and request associations use the existing queue,
+  JEV ledger/budget and review lane. Shared delivery keys prevent cross-command
+  identity reuse; first result is retained independently of publication/cleanup.
+- Receiver suite: 200 passed. Full HUD suite: 72 passed before final review fixes.
+  Independent API suite: 104 passed, zero skipped, including real PostgreSQL
+  restricted roles, mTLS, migration replay, operation conflicts and revocation.
+- Real Chromium HTTPS/PG/relay/SQLite integration passed: two JEV operators, two
+  attributed receipts, one canonical assessment/job and one synthetic provider
+  call; lost receiver acknowledgement and browser reload preserve identity. Real
+  disclosure/budget code ran with only provider exchange/publication synthetic.
+- Helm suites: 66 passed, three optional PromQL execution tests skipped because
+  PROMTOOL_BIN is not configured. Asset synchronization check passed.
+- Independent review found receiver cross-command identity reuse (fixed with shared
+  registry and both-order tests), missing flow-record address filter, and outage
+  projection/rendering gaps for Wi-Fi/alerts/WAN. The latter fixes and reviewer
+  rechecks are in progress; no acceptance is closed from test counts alone.
+
+Expanded telemetry and reviewer JEV are NOT deployed. Their additive migration
+and role grants must be atomic before traffic; bounded statement_timeout and
+read-only IDS source credentials must be configured. Live telemetry comparison,
+release and bounded live JEV commissioning remain H5/J5, separate from fixtures.
+Existing site outage was fixed separately in PR23/v0.1.14: one /32 Service change
+and HUD-only navigation rollout. Owner confirmed the public sign-in page opens.
+
+Final iteration-1 review: PASS. All reported findings were corrected and
+independently rechecked. Receiver focused54/54 plus legacy migration probes;
+full receiver200/200. API independent104/104, then final focused15/15 including
+historical migration backfill/conflict rollback. HUD independent74/74 after
+flow/WAN/Wi-Fi corrections. Real HTTPS/PG/relay/receiver browser integration PASS
+with two attributed JEV requests and one counted synthetic provider exchange.
+
+H2/H3/H4 and J2/J3/J4 coding/isolated qualification COMPLETE. H5/J5 deployment
+and live comparison/commissioning remain pending. No broad native HUD cutover.
+Sanitized test logs and synthetic screenshots live outside Git under /tmp;
+private operations evidence is in ~/.local/state/convergence-codex-20261115/.

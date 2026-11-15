@@ -35,11 +35,16 @@ async function requestInvestigation(client, actor, site, caseId, input) {
     throw failure(404,'Case not found');
   }
   const identity = [actor.installation,actor.id,operationId];
-  const inserted = await client.query(`INSERT INTO reviewer_investigations
+  let inserted;
+  try { inserted = await client.query(`INSERT INTO reviewer_investigations
     (installation_id,actor_id,operation_id,site_id,case_id,actor_name,feedback)
     VALUES ($1,$2,$3,$4,$5,$6,$7)
     ON CONFLICT (installation_id,actor_id,operation_id) DO NOTHING RETURNING delivery_id`,
   [...identity,site,id,actor.name,feedback]);
+  } catch(error) {
+    if(error.constraint==='reviewer_command_identity')throw failure(409,'Conflicting operation');
+    throw error;
+  }
   if (!inserted.rowCount) {
     const {rows:[prior]} = await client.query(`SELECT site_id,case_id,feedback FROM reviewer_investigations
       WHERE installation_id=$1 AND actor_id=$2 AND operation_id=$3`,identity);

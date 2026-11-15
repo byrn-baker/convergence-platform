@@ -8,6 +8,7 @@ const {pool} = require('./src/db');
 const {createGrantAuthority} = require('./src/reviewer/grants');
 const {identity, watchTls} = require('./src/reviewer/tls-reload');
 const {createReviewerService} = require('./src/reviewer/transport');
+const {createTelemetryReader} = require('./src/reviewer/telemetry');
 
 async function migrate(pool) {
   const client = await pool.connect();
@@ -16,7 +17,7 @@ async function migrate(pool) {
     // Serialize installations across replicas without taking a lock during normal startup.
     await client.query("SELECT pg_advisory_xact_lock(hashtext('convergence reviewer schema v1'))");
     await client.query('SELECT security_disposition FROM events LIMIT 0');
-    for (const file of ['grants.sql', 'cases.sql', 'investigations.sql']) {
+    for (const file of ['grants.sql', 'cases.sql', 'investigations.sql', 'jev.sql']) {
       await client.query(fs.readFileSync(path.join(__dirname, 'src/reviewer', file), 'utf8'));
     }
     await client.query('COMMIT');
@@ -47,7 +48,9 @@ async function main() {
   const enrollments = JSON.parse(input('REVIEWER_INSTALLATIONS_FILE'));
   await pool.query('SELECT 1 FROM reviewer_grants LIMIT 0');
   const server = createReviewerService({tls, enrollments, authority: createGrantAuthority(pool),
-    investigationEnabled: process.env.REVIEWER_INVESTIGATION_ENABLED === '1'});
+    investigationEnabled: process.env.REVIEWER_INVESTIGATION_ENABLED === '1',
+    jevEnabled: process.env.REVIEWER_JEV_ENABLED === '1',
+    telemetry: process.env.REVIEWER_TELEMETRY_ENABLED === '1' ? createTelemetryReader() : undefined});
   server.listen(port, host, () => console.log('Convergence reviewer service listening with mutual TLS'));
   const watcher = watchTls({files: {ca: process.env.REVIEWER_CLIENT_CA, cert: process.env.REVIEWER_TLS_CERT,
     key: process.env.REVIEWER_TLS_KEY, enrollments: process.env.REVIEWER_INSTALLATIONS_FILE},

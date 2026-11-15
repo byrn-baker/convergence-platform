@@ -82,6 +82,12 @@ os.environ.update({
     'ALERT_JOBS_PATH': str(fixture / 'receiver-jobs.sqlite'),
     'INVESTIGATION_POLICY_PATH': str(fixture / 'receiver-policy.yaml'),
     'REVIEWER_DELIVERY_TOKEN': 'x' * 40,
+    'REVIEWER_JEV_ENABLED': '1',
+    'CONVERGENCE_JEV_ENABLED': 'true',
+    'JEV_ENABLED': 'true',
+    'JEV_API_KEY': 'synthetic-jev-token',
+    'JEV_DATA_DIR': str(fixture / 'jev-ledger'),
+    'CONVERGENCE_JEV_ENV_FILE': str(fixture / 'empty-jev.env'),
     'ALERT_RECEIVER_TOKEN': 'ordinary-fixture-token',
     'ALERT_RECEIVER_HOST': '127.0.0.1',
     'ALERT_RECEIVER_PORT': str(http_port),
@@ -111,10 +117,12 @@ import receiver_runtime
 async def synthetic_case(case_id, site):
     return {
         'id': case_id, 'site_id': site, 'status': 'resolved',
-        'alert_name': 'SyntheticReinvestigation',
+        'alert_name': 'SuricataIntrusion',
         'message': 'Synthetic browser qualification case',
         'investigation_notes': 'Synthetic retained evidence',
-        'source_evidence': {'synthetic': True},
+        'source_evidence': {'annotations': {'description': 'Passive IDS observation; not proof of compromise. ' +
+            jsonlib.dumps({'alert': {'signature': 'SURICATA STREAM fixture', 'severity': 3},
+                          'src_ip': '192.0.2.1', 'dest_ip': '192.0.2.2', 'proto': 'TCP'})}},
     }
 
 
@@ -124,6 +132,35 @@ async def synthetic_device(_name):
 
 receiver._fetch_guardian_event = synthetic_case
 receiver.lookup_device = synthetic_device
+
+# Exercise the real abstraction, disclosure gate, shared budget ledger and worker;
+# only the provider exchange and case publication are replaced with local fixtures.
+import jev_review
+
+
+async def synthetic_provider(config, payload):
+    path = fixture / 'jev-provider-calls.json'
+    calls = jsonlib.loads(path.read_text()) if path.exists() else []
+    calls.append({'task_id': config.task_id})
+    path.write_text(jsonlib.dumps(calls))
+    answers = {}
+    for name, question in payload['questions'].items():
+        labels = list(question['criteria']) if question['type'] == 'choice' else [str(i) for i in range(len(question['criteria']))]
+        answer = {'type': question['type'], 'probabilities': {label: 1.0 if i == 0 else 0.0 for i, label in enumerate(labels)}, 'confidence': 0.5}
+        if question['type'] == 'choice':
+            answer['choice'] = labels[0]
+        else:
+            answer.update(score=0, legend={str(i): item for i, item in enumerate(question['criteria'])})
+        answers[name] = answer
+    return {'model': config.model, 'answers': answers, 'usage': {'input_tokens': 100, 'output_tokens': 30}}
+
+
+async def synthetic_publication(body, result):
+    (fixture / 'jev-published.json').write_text(jsonlib.dumps({'site': body['site'], 'event_id': body['event_id'], 'result': result}))
+
+
+jev_review.core.provider_call = synthetic_provider
+receiver.publish_jev_review = synthetic_publication
 
 async def main():
     # Exercise the production coordinator and shared lifespan. Announce readiness

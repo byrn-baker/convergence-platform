@@ -74,9 +74,14 @@ Completion: reinstall does not silently change fallbacks, and certificate renewa
 plus service reload is exercised with evidence. See the private operations runbook
 for actual expiry dates, service names and credential locations.
 
-## 3. Complete native HUD integration
+## 3. Complete authenticated site telemetry (scope updated 2026-11-15)
 
-- [ ] Recheck current upstream NetClaw changes against accepted design PR #357.
+The owner chose to expand the existing dedicated HTTPS Convergence site with full
+site telemetry instead of changing remote ownership of the ordinary NetClaw HUD.
+The working native fork remains in place. H2–H5 in tasks.md track this approved
+increment; native verified-owner disposition acceptance remains deferred.
+
+- [x] Recheck current upstream NetClaw changes against accepted design PR #357.
   Keep the generic host/session extension upstream and Convergence views here.
 - [ ] Define the authenticated per-user telemetry path for the user's actual remote
   workstation, preserving live dashboard, VM Security and Host Heartbeat behavior.
@@ -90,6 +95,10 @@ live telemetry intact. The earlier native migration removed that telemetry and w
 rolled back; the working fork remains a live dependency until this is proven.
 
 ## 4. Add reviewer JEV actions
+
+Approved contract: [jev-requests.md](jev-requests.md). Separate attributed requests
+share a canonical site/case assessment and the existing daily/per-case budget.
+J2–J5 in tasks.md track implementation, qualification and rollout.
 
 - [ ] Specify command ownership, reviewer/site authorization, operation identity,
   immutable audit and shared JEV budget behavior using the existing dispatch seam.

@@ -1,3 +1,4 @@
+const {runSource} = require('./test-support/load-module.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm');
@@ -6,7 +7,7 @@ function routes(file, dependencies, globals={}){
  const handlers={},middleware=[];
  const router={use:h=>middleware.push(h)};
  for(const m of ['get','post','patch'])router[m]=(p,h)=>{handlers[m+' '+p]=h};
- vm.runInNewContext(fs.readFileSync(__dirname+'/src/routes/'+file,'utf8'),{
+ runSource(__dirname+'/src/routes/'+file,{
  require:n=>n==='express'?{Router:()=>router}:['../lib/captureContext','../lib/securityAssessment','../lib/ispReport','../lib/trafficContext','../lib/securityHistory'].includes(n)?require('./src/lib/'+n.split('/').at(-1)):dependencies[n],module:{exports:{}},process:{env:{}},console,Date,AbortSignal,Promise,URLSearchParams,...globals,
  });
  return {handlers,middleware};

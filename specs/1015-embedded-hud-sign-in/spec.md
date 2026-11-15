@@ -31,3 +31,35 @@ and inspects its schema; the case-read example must reject a missing/ambiguous
 match without calling another tool. Qualify this procedure with a decoy-first
 catalog fixture and a subsequent deliberate synthetic commissioning request.
 Preserve the original failed receipt and its case evidence.
+
+## Approved remote telemetry increment (2026-11-15)
+
+The user chose to expand the existing HTTPS Convergence site with the full site
+dashboard, VM Security and guest heartbeat telemetry. The ordinary remote
+NetClaw HUD remains on its working fork; this increment does not reinterpret a
+remote browser as a loopback owner or expose host administration. Reuse the
+existing Convergence views and per-user reviewer grants.
+
+Authenticated viewers can inspect the sites currently authorized to their account:
+health, Wi-Fi, site inventory, security and history, VM Security including host
+heartbeats, diary/case lists, flows, and Internet-report evidence. Existing
+operator case actions remain attributed through the established reviewer receipts.
+No model/config editor, terminal, owner bootstrap or general proxy is exposed.
+
+Telemetry is obtained through finite read operations with bounded, validated
+filters and explicit site scoping. Check current user/site authority before
+acquisition and again before delivery; slow external reads do not hold database
+locks. Sign-out, expiry, account changes and late responses clear private views.
+No private response enters persistent browser storage. Unavailable sources remain
+explicitly unavailable, including partial VM/heartbeat coverage.
+
+Qualify site isolation, both independent users, revocation during a slow read,
+logout/session switches, malformed filters, unavailable dependencies and preserved
+case actions. Build and exercise the actual HTTPS browser assets, then prepare
+release/cutover and rollback evidence before live activation.
+
+## Approved reviewer JEV increment (2026-11-15)
+
+The user approved separate attributed request receipts sharing one existing
+per-case assessment and budget. Follow [jev-requests.md](jev-requests.md); JEV
+completion is separate from the investigation Gateway lifecycle.

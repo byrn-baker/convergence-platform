@@ -5,12 +5,24 @@ import {createReviewerClient} from './service-client.mjs';
 import {createReviewerServer} from './server.mjs';
 import {identity, watchTls} from './tls-reload.mjs';
 
+// Deliberately static dependency graph: no directory traversal or host modules.
+function siteAssets() {
+  const names = ['HomeView.js','ReviewerLink.js','IPContext.js','CaptureContext.js','JevReview.js',
+    'IncidentReview.js','DiaryExplorer.js','FlowExplorer.js','SecurityExplorer.js','SecurityHistory.js',
+    'VMSecurity.js','HostHeartbeat.js','world-regions.js','home.css','dashboard.css','vm-security.css'];
+  return names.map(file => ['/site-assets/' + file, {
+    content:fs.readFileSync(new URL('../modules/convergence/' + file, import.meta.url)),
+    type:file.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8',
+  }]);
+}
+
 export function reviewerAssets() {
   const asset = (file, type) => ({content: fs.readFileSync(new URL('public/' + file, import.meta.url)), type});
   return new Map([
+    ...siteAssets(),
     ['/', asset('index.html', 'text/html; charset=utf-8')],
     ['/reviewer.css', asset('reviewer.css', 'text/css; charset=utf-8')],
-    ...['reviewer.js', 'pending-operations.js', 'investigation.js'].map(file => ['/' + file, asset(file, 'text/javascript; charset=utf-8')]),
+    ...['reviewer.js', 'pending-operations.js', 'investigation.js', 'telemetry.js', 'jev.js'].map(file => ['/' + file, asset(file, 'text/javascript; charset=utf-8')]),
   ]);
 }
 

@@ -80,6 +80,25 @@ spec:
             - {name: REVIEWER_SERVICE_HOST, value: "0.0.0.0"}
             - {name: REVIEWER_SERVICE_PORT, value: "3443"}
             - {name: REVIEWER_INVESTIGATION_ENABLED, value: {{ ternary "1" "0" $r.investigationEnabled | quote }}}
+            - {name: REVIEWER_TELEMETRY_ENABLED, value: {{ ternary "1" "0" $r.telemetryEnabled | quote }}}
+            - {name: REVIEWER_JEV_ENABLED, value: {{ ternary "1" "0" $r.jevEnabled | quote }}}
+            {{- if $r.telemetryEnabled }}
+            - {name: PROMETHEUS_URL, value: 'http://{{ $.Release.Name }}-metrics:8428'}
+            - {name: VICTORIAMETRICS_URL, value: 'http://{{ $.Release.Name }}-metrics:8428'}
+            - {name: LOKI_URL, value: 'http://{{ $.Release.Name }}-loki:3100'}
+            - {name: FLOW_VICTORIALOGS_URL, value: 'http://{{ $.Release.Name }}-logs:9428'}
+            - {name: ALERTMANAGER_URL, value: 'http://{{ $.Release.Name }}-alertmanager:9093'}
+            - name: SITES_CONFIG
+              valueFrom:
+                configMapKeyRef: {name: '{{ $.Release.Name }}-application-config', key: SITES_CONFIG}
+            {{- if $r.telemetryIdsSecret }}
+            - {name: NODE_EXTRA_CA_CERTS, value: /run/reviewer/ids/ca.crt}
+            {{- range $key := list "IDS_STATUS_URL" "IDS_STATUS_TOKEN" }}
+            - name: {{ $key }}
+              valueFrom: {secretKeyRef: {name: {{ $r.telemetryIdsSecret | quote }}, key: {{ $key }}}}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             - {name: REVIEWER_CLIENT_CA, value: /run/reviewer/service/ca.crt}
             - {name: REVIEWER_TLS_CERT, value: /run/reviewer/service/tls.crt}
             - {name: REVIEWER_TLS_KEY, value: /run/reviewer/service/tls.key}
@@ -98,6 +117,9 @@ spec:
           volumeMounts:
             {{- if $backend }}
             - {name: service-tls, mountPath: /run/reviewer/service, readOnly: true}
+            {{- if and $r.telemetryEnabled $r.telemetryIdsSecret }}
+            - {name: telemetry-ids, mountPath: /run/reviewer/ids, readOnly: true}
+            {{- end }}
             {{- else }}
             - {name: installation-tls, mountPath: /run/reviewer/installation, readOnly: true}
             - {name: browser-tls, mountPath: /run/reviewer/browser, readOnly: true}
@@ -141,6 +163,14 @@ spec:
               - {key: tls.key, path: tls.key}
               - {key: ca.crt, path: ca.crt}
               - {key: enrolled.json, path: enrolled.json}
+        {{- if and $r.telemetryEnabled $r.telemetryIdsSecret }}
+        - name: telemetry-ids
+          secret:
+            secretName: {{ $r.telemetryIdsSecret | quote }}
+            defaultMode: 0440
+            items:
+              - {key: ids-ca.crt, path: ca.crt}
+        {{- end }}
         {{- else }}
         - name: installation-tls
           secret:

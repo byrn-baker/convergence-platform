@@ -65,3 +65,22 @@ li { margin-bottom: .7rem; }
   dd { margin-bottom: .45rem; }
   main { padding-top: 1.5rem; }
 }
+
+/* The shared site view owns its panels; this shell owns page layout and navigation. */
+main { width: min(90rem, 100%); }
+#workspace-nav { display:flex; gap:.65rem; margin:1rem 0; }
+#workspace-nav [aria-pressed=true] { background:var(--accent); color:#082035; }
+#site-workspace { --text-primary:var(--foreground); --text-secondary:var(--muted); --border-color:var(--line); }
+#site-workspace .home-shell { position:static; width:100%; }
+#site-workspace .home-toolbar { position:static; flex-wrap:wrap; }
+#site-workspace .home-content { overflow:visible; }
+#site-workspace .home-subviews { flex-wrap:wrap; }
+#site-workspace a { color:var(--accent); }
+#site-workspace dl { display:block; }
+#site-workspace .vm-evidence { display:grid; }
+#site-workspace .home-table-wrap { overflow-x:auto; }
+#site-workspace .home-kpi-grid { grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+#site-workspace .home-toolbar #home-refresh { display:inline-flex; }
+
+#jev-result { white-space:pre-wrap; overflow-wrap:anywhere; max-height:28rem; overflow:auto; }
+#jev-operation { display:block; margin:.7rem 0; }

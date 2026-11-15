@@ -4,7 +4,7 @@ require('dotenv').config();
 const fs = require('node:fs');
 const {setTimeout:pause} = require('node:timers/promises');
 const {pool} = require('./src/db');
-const {createReceiverClient,createRelay} = require('./src/reviewer/relay');
+const {createReceiverClient,createRelay,createJevRelay} = require('./src/reviewer/relay');
 const {trust,watchTls} = require('./src/reviewer/tls-reload');
 
 async function main() {
@@ -15,6 +15,7 @@ async function main() {
     token:fs.readFileSync(process.env.REVIEWER_DELIVERY_TOKEN_FILE,'utf8').trim(),
     ca:process.env.REVIEWER_RECEIVER_CA ? fs.readFileSync(process.env.REVIEWER_RECEIVER_CA) : undefined});
   const relay = createRelay(pool,receiver);
+  const jevRelay = process.env.REVIEWER_JEV_DELIVERY_ENABLED==='1' ? createJevRelay(pool,receiver) : null;
   // Only an explicit receiver CA is watched; without one the system trust store applies.
   const watcher = process.env.REVIEWER_RECEIVER_CA ? watchTls({files:{ca:process.env.REVIEWER_RECEIVER_CA},
     build:trust,apply:next=>receiver.reload(next)}) : null;
@@ -23,9 +24,14 @@ async function main() {
   process.once('SIGTERM',stop);process.once('SIGINT',stop);
   try {
     await pool.query('SELECT delivery_id FROM reviewer_investigation_outbox LIMIT 0');
+    if(jevRelay)await pool.query('SELECT delivery_id FROM reviewer_jev_outbox LIMIT 0');
     console.log('Convergence reviewer delivery relay started');
     while(!stopped) {
-      try { if (!await relay.tick()) await pause(1000); }
+      try {
+        const investigation=await relay.tick();
+        const assessment=jevRelay?await jevRelay.tick():false;
+        if(!investigation && !assessment)await pause(1000);
+      }
       catch {console.error('Reviewer delivery unavailable; pending leases are retained');await pause(5000);}
     }
   } finally {watcher?.close();receiver.close();await pool.end();}

@@ -168,7 +168,7 @@ jobs:
             context: ui/convergence-api
             file: ui/convergence-api/Dockerfile
           - name: convergence-reviewer-hud
-            context: ui/convergence-hud/reviewer
+            context: ui/convergence-hud
             file: ui/convergence-hud/reviewer/Dockerfile
           # ids-ingest copies a deploy/ script too, so it builds from the repository root.
           - name: convergence-ids-ingest

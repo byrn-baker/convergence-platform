@@ -1,3 +1,4 @@
+const {runSource} = require('./test-support/load-module.cjs');
 'use strict';
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
@@ -9,7 +10,7 @@ const nic = () => ({name:'net0',tap:'tap100i0',ifindex:12,mac:'12:34:56:78:90:ab
 const source = () => ({id:'observer-1',site:'authorized',node:'node-1',status:'reporting',last_contact:epoch,token:'private-secret',tenant_id:'private-customer',snapshot:{schema_version:1,sequence:1,observed_at:epoch,collector_started_at:epoch-10,node:'node-1',boot_id:uuid,token:'private-secret',collection:{inventory_ok:true,packet_capture_ok:true,sampled:true,capture_drops:0,events_discarded:0,limitations:[],raw_payload:'private-secret'},vms:[{vm_id:100,vm_uuid:uuid,power_state:'running',nics:[nic()],customer_id:'private-customer'}],connections:[{vm_id:100,vm_uuid:uuid,tap:'tap100i0',ifindex:12,observed_at:epoch,direction:'guest_egress',ip_version:4,protocol:'tcp',src_ip:'192.0.2.1',dst_ip:'192.0.2.2',src_port:10,dst_port:443,packet_count:1,evidence:'packet_metadata',verdict:'unknown',payload:'private-secret'}]}});
 function reader(fetch, env={IDS_STATUS_URL:'https://receiver.example',IDS_STATUS_TOKEN:'private-secret'}) {
   const module = {exports:{}};
-  vm.runInNewContext(fs.readFileSync(__dirname+'/src/lib/hypervisorStatus.js','utf8'), {module,require,process:{env},fetch,URL,AbortSignal});
+  runSource(__dirname+'/src/lib/hypervisorStatus.js', {module,require,process:{env},fetch,URL,AbortSignal});
   return module.exports.hypervisorStatus;
 }
 const response = source => async()=>({ok:true,json:async()=>({status:'configured',sources:[source]})});
@@ -48,7 +49,7 @@ test('security API includes hypervisor status independently of firewall failures
     const handlers={};let requestedSite;
     const status={status:'configured',sources:[]};
     const deps={express:{Router:()=>({get:(path,handler)=>handlers[path]=handler})},'../lib/config':{LOKI_URL:'https://logs',promqlLabelValue:s=>s},'../lib/hostStatus':{hostStatus:async()=>({})},'../lib/idsStatus':{idsStatus:async()=>({})},'../lib/hypervisorStatus':{hypervisorStatus:async site=>{requestedSite=site;return status;}},'../db':{},'../lib/securityHistory':{}};
-    vm.runInNewContext(fs.readFileSync(__dirname+'/src/routes/security.js','utf8'),{module:{exports:{}},require:name=>deps[name],AbortSignal,URLSearchParams,fetch:async()=>{if(fail)throw Error('logs down');return {ok:true,json:async()=>({status:'success',data:{result:[]}})};}});
+    runSource(__dirname+'/src/routes/security.js',{module:{exports:{}},require:name=>deps[name],AbortSignal,URLSearchParams,fetch:async()=>{if(fail)throw Error('logs down');return {ok:true,json:async()=>({status:'success',data:{result:[]}})};}});
     const res={json(body){this.body=body;}};await handlers['/']({site:'authorized',query:{site:'spoof'}},res);
     assert.equal(requestedSite,'authorized');assert.equal(res.body.hypervisorTelemetry,status);
   }

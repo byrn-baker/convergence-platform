@@ -109,8 +109,12 @@ reviewer:
   installationTlsSecret: '' # tls.crt, tls.key (client identity), ca.crt (service CA)
   browserTlsSecret: ''      # tls.crt, tls.key for publicOrigin
   investigationEnabled: false
+  telemetryEnabled: false
+  telemetryIdsSecret: ''   # optional IDS_STATUS_URL, IDS_STATUS_TOKEN, ids-ca.crt (read-only)
+  jevEnabled: false
   relay:
     enabled: false
+    jevEnabled: false       # can drain accepted JEV requests while acceptance is disabled
     databaseSecret: ''      # separate restricted relay PG credentials
     deliverySecret: ''      # token and ca.crt (receiver server trust)
     receiverOrigin: ''      # exact trusted HTTPS receiver origin, no path

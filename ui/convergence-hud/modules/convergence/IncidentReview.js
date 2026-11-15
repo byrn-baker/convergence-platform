@@ -69,14 +69,14 @@ export function ispReportsHTML(events, catalog, providerId, reports, pending, er
     </section>`;
 }
 
-function reportHTML(report, id) {
+export function reportHTML(report, id, {readOnly = false} = {}) {
   return `<div class="home-isp-draft" data-isp-case="${esc(id)}">
     <h4>Draft for ${esc(report.provider.name)}</h4>
     <p><a href="${esc(report.provider.support_url)}" target="_blank" rel="noopener noreferrer">Official support channel ↗</a> · ${esc(report.provider.channel)}</p>
     ${report.provider.credit_url ? `<p><a href="${esc(report.provider.credit_url)}" target="_blank" rel="noopener noreferrer">Provider credit guidance ↗</a></p>` : ''}
     <p>${esc(report.provider.guidance)}</p><p class="home-muted">${esc(report.recipient_note)}</p>
-    <label>Subject <input data-isp-field="subject" value="${esc(report.draft.subject)}" maxlength="300"></label>
-    <label>Draft email / support message <textarea data-isp-field="body" rows="18">${esc(report.draft.body)}</textarea></label>
+    <label>Subject <input data-isp-field="subject" value="${esc(report.draft.subject)}" maxlength="300" ${readOnly ? 'readonly' : ''}></label>
+    <label>Draft email / support message <textarea data-isp-field="body" rows="18" ${readOnly ? 'readonly' : ''}>${esc(report.draft.body)}</textarea></label>
     <div class="home-incident-filters"><button type="button" data-isp-download="email" data-event-id="${esc(id)}">Download email draft</button>
     <button type="button" data-isp-download="evidence" data-event-id="${esc(id)}">Download evidence JSON</button>
     <button type="button" data-isp-download="csv" data-event-id="${esc(id)}">Download probe CSV</button></div>

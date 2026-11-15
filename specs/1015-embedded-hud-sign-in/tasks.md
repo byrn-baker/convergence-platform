@@ -30,3 +30,27 @@
 - [x] D5e: Correct exact callable selection in existing triage guidance, qualify a decoy-first/missing/ambiguous catalog, and repeat deliberate production commissioning without changing terminal receipt semantics.
 
 Release consolidation and the remaining maintenance/native-HUD/JEV work are tracked in [follow-up.md](follow-up.md).
+
+### HTTPS telemetry increment (approved instead of remote native-owner migration)
+
+- [x] H1: Recheck current upstream host implementation against accepted #357;
+  design only, with loopback-owner and HTTPS-reviewer boundaries unchanged.
+- [x] H2: Extract shared telemetry services and add finite, site-authorized
+  reviewer reads with pre/post current-authority checks and bounded filters.
+- [x] H3: Mount shared dashboard/VM/heartbeat views in the HTTPS reviewer session
+  with private-state disposal, scoped assets and preserved attributed case actions.
+- [x] H4: Qualify two-user browser behavior, telemetry preservation, revocation,
+  source failure, permissions and real image assembly; independently review.
+- [ ] H5: Prepare reviewed release/rollout/rollback and bounded live comparison
+  before enabling the expanded site. Ordinary remote NetClaw owner work is deferred.
+
+### Shared JEV assessment requests
+
+- [x] J1: Agree request attribution separate from canonical assessment and shared budget.
+- [x] J2: Add durable canonical assessment/request associations, serializing legacy
+  and reviewer admission in the existing receiver queue; preserve result recovery.
+- [x] J3: Add scoped reviewer acceptance/outbox/relay and distinct JEV receipts,
+  restricted grants, separate enablement, and browser replay recovery.
+- [x] J4: Qualify simultaneous callers, budgets, restarts, ambiguous outcomes,
+  publication failures and current authority using a synthetic provider.
+- [ ] J5: Independently review, release, and perform bounded live commissioning.

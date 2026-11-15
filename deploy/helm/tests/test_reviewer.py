@@ -41,6 +41,28 @@ def test_reviewer_disabled_does_not_add_resources(tmp_path):
     assert all(obj['kind'] != 'Ingress' for obj in objects)
 
 
+def test_telemetry_is_opt_in_and_mounts_only_read_source_credentials(tmp_path):
+    docs = render(tmp_path, {**REVIEW, 'telemetryEnabled': True, 'telemetryIdsSecret': 'ids-reader'})
+    deployment = next(d for d in docs if d['kind'] == 'Deployment' and d['metadata']['name'].endswith('-review-api'))
+    pod = deployment['spec']['template']['spec']
+    container = pod['containers'][0]
+    env = {e['name']: e for e in container['env']}
+    assert env['REVIEWER_TELEMETRY_ENABLED']['value'] == '1'
+    assert env['SITES_CONFIG']['valueFrom']['configMapKeyRef']['key'] == 'SITES_CONFIG'
+    assert env['VICTORIAMETRICS_URL']['value'] == 'http://case-demo-metrics:8428'
+    assert env['IDS_STATUS_TOKEN']['valueFrom']['secretKeyRef'] == {'name': 'ids-reader', 'key': 'IDS_STATUS_TOKEN'}
+    assert not container.get('envFrom')
+    assert not {'API_TOKEN', 'AUTH_TOKEN', 'ALERT_RECEIVER_TOKEN'} & env.keys()
+    volume = next(v for v in pod['volumes'] if v['name'] == 'telemetry-ids')
+    assert volume['secret']['items'] == [{'key': 'ids-ca.crt', 'path': 'ca.crt'}]
+    assert next(m for m in container['volumeMounts'] if m['name'] == 'telemetry-ids')['readOnly']
+    off = render(tmp_path, REVIEW)
+    api = next(d for d in off if d['kind'] == 'Deployment' and d['metadata']['name'].endswith('-review-api'))
+    env = {e['name']: e for e in api['spec']['template']['spec']['containers'][0]['env']}
+    assert env['REVIEWER_TELEMETRY_ENABLED']['value'] == '0'
+    assert 'IDS_STATUS_TOKEN' not in env and 'VICTORIAMETRICS_URL' not in env
+
+
 @pytest.mark.parametrize(('release', 'namespace'), [('alpha', 'team-east'), ('beta', 'team-west')])
 def test_reviewer_only_mounts_each_workloads_credentials(tmp_path, release, namespace):
     docs = render(tmp_path, REVIEW, release, namespace)

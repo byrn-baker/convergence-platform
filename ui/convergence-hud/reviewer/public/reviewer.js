@@ -1,5 +1,7 @@
+import {telemetryWorkspace} from './telemetry.js';
 import {tokenDigest, receiptPointers} from './pending-operations.js';
 import {investigationPanel} from './investigation.js';
+import {jevPanel} from './jev.js';
 
 const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
@@ -31,13 +33,32 @@ export function startReviewer(document, browser = document.defaultView) {
       linkedCase = {id: reference.get('case').toLowerCase(), site: reference.get('site')};
     }
   }
+  let workspaceMode = 'cases';
+  const telemetry = telemetryWorkspace({document, browser, session:() => session, scopeLost, updateExpiry:setExpiry,
+    openCase(selectedSite, id) {
+      if (!session?.user?.sites.includes(selectedSite) || !UUID.test(id)) return;
+      showWorkspace('cases'); purgeCase(); site.value = selectedSite; caseId.value = id;
+      loadCase(id, generation);
+    }});
+  function showWorkspace(mode) {
+    if (mode === 'site' && session?.capabilities?.telemetry !== true) mode = 'cases';
+    workspaceMode = mode;
+    visible('workspace', Boolean(session?.user) && mode === 'cases');
+    byId('site-tab')?.setAttribute('aria-pressed', String(mode === 'site'));
+    byId('cases-tab')?.setAttribute('aria-pressed', String(mode === 'cases'));
+    if (mode === 'site' && session?.user) telemetry.show(); else telemetry.hide();
+  }
+  byId('site-tab')?.addEventListener('click', () => showWorkspace('site'));
+  byId('cases-tab')?.addEventListener('click', () => showWorkspace('cases'));
   const pointers = receiptPointers(browser);
   const investigations = investigationPanel({document, browser, request, scopeLost});
+  const jev = jevPanel({document, browser, request, scopeLost});
   const changes = typeof browser.BroadcastChannel === 'function' ? new browser.BroadcastChannel('review-session') : null;
   if (changes) changes.onmessage = () => { if (!logoutNonce) { ++sessionRequest; purgeSession(); refreshSession(); } };
 
   function purgeCase() {
     investigations.clear();
+    jev.clear();
     generation++;
     current = currentKey = operation = null;
     preparing = recoveryUnavailable = false;
@@ -49,6 +70,8 @@ export function startReviewer(document, browser = document.defaultView) {
   }
 
   function purgeSession() {
+    telemetry.hide();
+    visible('workspace-nav', false);
     purgeCase();
     browser.clearTimeout(expiryTimer);
     session = null; expiresAt = 0; pointers.clearPrivate(); suspendedDraft = null;
@@ -99,14 +122,17 @@ export function startReviewer(document, browser = document.defaultView) {
       throw Error('Invalid review session');
     }
     const changed = !session || next.csrf !== session.csrf ||
-      JSON.stringify(user) !== JSON.stringify(session.user);
+      JSON.stringify(user) !== JSON.stringify(session.user) ||
+      next.capabilities?.telemetry !== session.capabilities?.telemetry;
     const resume = !changed && !document.hidden ? suspendedDraft : null;
     if (changed) purgeSession();
     session = next;
     visible('reconnect', false);
     visible('login', !user);
     visible('account', Boolean(user));
-    visible('workspace', Boolean(user));
+    if (next.capabilities?.telemetry !== true) workspaceMode = 'cases';
+    visible('workspace-nav', Boolean(user) && next.capabilities?.telemetry === true);
+    visible('workspace', Boolean(user) && workspaceMode === 'cases');
     if (user) text('identity', `${user.name} · ${user.role}`);
     if (changed && user) {
       site.replaceChildren(...user.sites.map(name => new browser.Option(name, name)));
@@ -123,6 +149,7 @@ export function startReviewer(document, browser = document.defaultView) {
       }
     }
     if (user && next.expiresAt) setExpiry(next.expiresAt);
+    if (user && workspaceMode === 'site' && !document.hidden) telemetry.show();
     if (resume && user) {
       suspendedDraft = null;
       reloadDraft(resume);
@@ -208,6 +235,7 @@ export function startReviewer(document, browser = document.defaultView) {
     visible('disposition', Boolean(assessment) && session.user.role !== 'viewer');
     updateOperation();
     investigations.show(entry, session.user);
+    jev.show(entry, session.user);
   }
 
   function outcomeLabel(kind) {
@@ -406,6 +434,7 @@ export function startReviewer(document, browser = document.defaultView) {
         reason: current && (!operation || operation.state === 'saved') ? form.elements.reason.value : ''};
     }
     if (session?.user) {
+      telemetry.hide();
       purgeCase();
       text('identity', '');
       visible('account', false);
@@ -416,7 +445,7 @@ export function startReviewer(document, browser = document.defaultView) {
   browser.addEventListener('focus', refreshSession);
   const poll = browser.setInterval(() => { if (!document.hidden && session?.user) refreshSession(); }, 15000);
   refreshSession();
-  return () => { browser.clearInterval(poll); browser.clearTimeout(expiryTimer); changes?.close(); };
+  return () => { telemetry.hide(); browser.clearInterval(poll); browser.clearTimeout(expiryTimer); changes?.close(); };
 }
 
 if (typeof document !== 'undefined') startReviewer(document);

@@ -92,11 +92,17 @@ async function recordDisposition(client, actor, site, caseId, input) {
   const identity = [actor.installation, actor.id, operationId];
   // Store the normalized input and the original database timestamp. The unique
   // constraint serializes this operation ID even if different cases are locked.
-  const inserted = await client.query(`
+  let inserted;
+  try {
+    inserted = await client.query(`
     INSERT INTO reviewer_case_dispositions (installation_id, actor_id, operation_id, site_id, case_id, kind, reason, actor_name)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     ON CONFLICT (installation_id, actor_id, operation_id) DO NOTHING RETURNING ${RECEIPT}`,
   [...identity, site, id, input.kind, reason, actor.name]);
+  } catch (error) {
+    if(error.constraint==='reviewer_command_identity')throw failure(409,'Conflicting operation');
+    throw error;
+  }
   if (!inserted.rowCount) {
     const result = await client.query(`SELECT ${RECEIPT} FROM reviewer_case_dispositions
       WHERE installation_id = $1 AND actor_id = $2 AND operation_id = $3`, identity);

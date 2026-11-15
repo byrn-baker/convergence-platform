@@ -2,6 +2,8 @@
 
 const express = require('express');
 const router = express.Router();
+const {httpRead} = require('../services/http-read');
+const {readEvents, readEscalatedEvents, readEvent} = require('../services/events');
 router.use((req, res, next) => {
   if (!['GET', 'HEAD'].includes(req.method) && !['admin', 'operator'].includes(req.user?.role)) {
     return res.status(403).json({ error: 'Operator role required' });
@@ -64,72 +66,7 @@ async function ensureSite(siteId) {
  * GET /api/events?site=X&limit=20&status=X&fingerprint=Y
  * Returns curated event diary entries for the customer/operator view.
  */
-router.get('/', async (req, res) => {
-  const site = req.site;
-  const limit = Math.max(1, Math.min(parseInt(req.query.limit) || 20, 100));
-  const windows = {'1h':3600,'6h':21600,'24h':86400,'7d':604800};
-  if (req.query.range && !Object.hasOwn(windows, req.query.range)) return res.status(400).json({error:'Invalid diary time window'});
-  const status = req.query.status; // optional: filter by status
-  const fingerprint = req.query.fingerprint; // optional: alertmanager fingerprint
-  let historical;
-  try { historical=caseHistoryFilters(req.query); }
-  catch (err) { return res.status(400).json({error:err.message}); }
-
-  try {
-    let sql = `SELECT id, timestamp, message, severity, category, source, status,
-               alert_name, alert_fingerprint, root_cause, investigation_notes,
-               expert_feedback, feedback_quality, rag_document_id, incident_key, alert_cleared_at,
-               source_evidence->'annotations'->'ip_context' AS ip_context, source_evidence, jev_review,
-               security_disposition, isp_report->>'generated_at' AS isp_report_generated_at
-               FROM events WHERE site_id = $1`;
-    const params = [site];
-    if (req.query.range) {
-      params.push(new Date(Date.now() - windows[req.query.range] * 1000).toISOString());
-      sql += ` AND timestamp >= $${params.length}::timestamptz`;
-    }
-
-    if (req.query.type === 'security') sql += " AND alert_name = 'SuricataIntrusion'";
-    if (historical.start) {
-      params.push(historical.start,historical.end);
-      sql += ` AND timestamp >= $${params.length-1}::timestamptz AND timestamp < $${params.length}::timestamptz`;
-    }
-    if (historical.country) {
-      params.push(historical.country);
-      sql += ` AND (SELECT ${COUNTRY_SQL} FROM (SELECT ${DESTINATION_SQL} AS destination) context) = $${params.length}`;
-    }
-    if (req.query.type === 'wan') {
-      params.push(WAN_ALERTS);
-      sql += ` AND (category = 'wan' OR alert_name = ANY($${params.length}::text[]))`;
-    }
-
-    if (status) {
-      sql += ` AND status = $${params.length + 1}`;
-      params.push(status);
-    }
-    if (fingerprint) {
-      sql += ` AND alert_fingerprint = $${params.length + 1}`;
-      params.push(fingerprint);
-    }
-    if (req.query.incident_key) {
-      sql += ` AND incident_key = $${params.length + 1}`;
-      params.push(req.query.incident_key);
-    }
-
-    sql += ` ORDER BY timestamp DESC LIMIT $${params.length + 1}`;
-    params.push(limit);
-
-    const result = await query(sql, params);
-    res.json({ site, limit, range: req.query.range || null, historical, events: result.rows.map(({source_evidence, ...event}) => ({
-      ...event, capture_context: captureContext(source_evidence, event.alert_name),
-      traffic_context: trafficContext(source_evidence),
-      security_assessment: securityAssessment({...event, source_evidence}),
-    })) });
-  } catch (err) {
-    if (!isDbDown(err)) console.error('Events GET error:', err.message);
-    if (isDbDown(err)) return emptyWithReason(res, site, err);
-    res.status(500).json({error: 'Case query failed', unavailable: true});
-  }
-});
+router.get('/', httpRead(readEvents));
 
 /**
  * POST /api/events
@@ -323,51 +260,13 @@ router.patch('/:id', async (req, res) => {
  * Returns events awaiting expert review (the operator triage panel).
  * Registered before /:id so path is not swallowed.
  */
-router.get('/escalated', async (req, res) => {
-  const site = req.site;
-
-  try {
-    const result = await query(
-      `SELECT id, site_id, timestamp, message, severity, category, source, status,
-              alert_name, alert_fingerprint, root_cause, investigation_notes,
-              expert_feedback, feedback_quality, rag_document_id, rag_snapshotted_at,
-              escalated_at, investigation_started_at, investigation_completed_at,
-              feedback_provided_at, created_at, updated_at, source_evidence, jev_review, security_disposition
-       FROM events
-       WHERE site_id = $1 AND status = 'escalated'
-       ORDER BY escalated_at DESC NULLS LAST, timestamp DESC`,
-      [site]
-    );
-    res.json({ site, events: result.rows.map(event => ({
-      ...event, traffic_context: trafficContext(event.source_evidence), capture_context: captureContext(event.source_evidence, event.alert_name),
-      security_assessment: securityAssessment(event),
-    })) });
-  } catch (err) {
-    if (!isDbDown(err)) console.error('Escalated events error:', err.message);
-    if (isDbDown(err)) return emptyWithReason(res, site, err);
-    res.status(500).json({error: 'Case query failed', unavailable: true});
-  }
-});
+router.get('/escalated', httpRead(readEscalatedEvents));
 
 /**
  * GET /api/events/:id?site=X
  * Single event (for triage detail / RAG id display).
  */
-router.get('/:id', async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await query(`SELECT * FROM events WHERE id = $1 AND site_id = $2`, [id, req.site]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Event not found' });
-    }
-    const event = result.rows[0];
-    res.json({...event, traffic_context: trafficContext(event.source_evidence), capture_context: captureContext(event.source_evidence, event.alert_name), security_assessment: securityAssessment(event)});
-  } catch (err) {
-    if (writeUnavailable(res, err, 'Reading an event')) return;
-    console.error('Event GET error:', err.message);
-    res.status(500).json({ error: 'Failed to fetch event' });
-  }
-});
+router.get('/:id', httpRead(readEvent));
 
 // Operator-triggered review. Case identity and site come from the authorized route.
 router.post('/:id/jev-review', async (req, res) => {

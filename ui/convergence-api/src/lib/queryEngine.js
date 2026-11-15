@@ -1,4 +1,5 @@
 'use strict';
+const {currentRead} = require('../services/read-context');
 
 /**
  * Query Engine — stateless utility for querying Prometheus, Loki, and Alertmanager.
@@ -17,7 +18,7 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = DEFAULT_TIMEOUT) {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(url, { ...opts, signal: controller.signal });
+    const res = await fetch(url, { ...opts, signal: currentRead()?.signal ? AbortSignal.any([currentRead().signal,controller.signal]) : controller.signal });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);

@@ -1,3 +1,4 @@
+const {runSource} = require('./test-support/load-module.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -11,7 +12,7 @@ const agent = () => ({id:'enrollment-1', site:'authorized', vm_id:'vm-1', tenant
   pending_events:0, pending_limit:100, evidence_trust:'guest_reported'});
 function reader(fetch, env={IDS_STATUS_URL:'https://receiver.example/internal', IDS_STATUS_TOKEN:'operator-secret'}) {
   const module={exports:{}};
-  vm.runInNewContext(fs.readFileSync(__dirname+'/src/lib/hostStatus.js','utf8'), {
+  runSource(__dirname+'/src/lib/hostStatus.js', {
     module, process:{env}, URL, AbortSignal, fetch,
   });
   return module.exports.hostStatus;
@@ -102,7 +103,7 @@ test('security retains host status independently of firewall and IDS failures',a
       '../lib/hostStatus':{hostStatus:async site=>{requestedSite=site;return host;}},
       '../lib/idsStatus':{idsStatus:async()=>{if(idsFail)throw Error('IDS offline');return {status:'configured'};}},
       '../db':{},'../lib/securityHistory':{}};
-    vm.runInNewContext(fs.readFileSync(__dirname+'/src/routes/security.js','utf8'),{
+    runSource(__dirname+'/src/routes/security.js',{
       require:name=>dependencies[name],module:{exports:{}},URLSearchParams,AbortSignal,console,
       fetch:async()=>{if(logsFail)throw Error('logs offline');return {ok:true,json:async()=>({status:'success',data:{result:[]}})};},
     });

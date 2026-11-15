@@ -1,4 +1,5 @@
 'use strict';
+const {readSignal} = require('../services/read-context');
 const {isIP} = require('node:net');
 
 const unavailable = () => ({status: 'unavailable', reason: 'Hypervisor observations unavailable; visibility is unknown', sources: []});
@@ -63,7 +64,7 @@ async function hypervisorStatus(site) {
     const url = new URL('/v1/hypervisor-status', base);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw Error('Invalid URL');
     url.searchParams.set('site', site);
-    const response = await fetch(url, {headers: {Authorization: `Bearer ${token}`}, signal: AbortSignal.timeout(5000), redirect: 'error'});
+    const response = await fetch(url, {headers: {Authorization: `Bearer ${token}`}, signal: readSignal(5000), redirect: 'error'});
     if (!response.ok) throw Error('Unavailable');
     const data = await response.json();
     if (!object(data) || !['configured', 'not_configured'].includes(data.status) || !list(data.sources, 256)
