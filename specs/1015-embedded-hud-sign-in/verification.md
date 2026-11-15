@@ -345,3 +345,42 @@ Live read-only comparison against the installation's OpenClaw config and state:
 the old planner proposed `fallbacks: null` (with `--model openai/gpt-6-luna`) or
 `model: null` (without); the fixed planner proposes the live model unchanged in
 both cases. Validation: tests/unit 235 passed; ruff findings unchanged from main.
+
+### 2026-11-15 certificate renewal and in-place reload
+
+The user chose a host timer for private-CA renewal, so the CA keys stay in their
+owner-only host directories. Design: specs/1016-tls-renewal-reload/spec.md.
+
+In-place reload (#19, merged as 1be95ec): the reviewer HUD (browser identity and
+installation client), the reviewer API (identity, client CA and enrollment pins, applied
+together), the relay (receiver CA) and the alert receiver (`:8446` context) poll their
+files and swap validated material without restarting. Tests use throwaway CAs published
+the way kubelet updates a Secret:
+- HUD: renewal served with the reviewer session kept; half-written and expired renewals
+  rejected, then recovered; client identity switched; service CA rolled over.
+- API/relay: certificate renewal plus pin overlap (no 403 window), then the old pin
+  revoked; invalid enrollment file rejected; receiver CA rolled over.
+- Receiver: end-to-end through serve(); the test fails when reload is disabled.
+Suites: HUD 62, API 58 (plus 6 PostgreSQL-only skipped locally), receiver 193 on
+Python 3.14; CI passed on 3.12.
+
+Host renewal (#20): setup/reviewer_tls.py and setup/tls_renewal.py. A leaf is due under
+30 days. The new certificate copies the current profile and is verified before it is
+written; the old pair is archived and the publish is a compare-and-swap. The pinned
+installation leaf rotates enroll -> publish -> unpin, one settled, resumable step per
+run. Metrics go to the Pushgateway through the API proxy. Unit tests: 8 (tests/unit
+243 total). An isolated rehearsal had the renewal CLI renew a running receiver's
+files; the receiver served the renewed certificate 0.32 s later without a restart.
+The live `plan` was read-only: all three leaves chain to their configured CAs and their
+profiles can be reproduced; about 364 days remain; no state was written. The owner-only
+config is ~/.config/convergence/reviewer/tls-renewal.json.
+
+Not live yet. The timer is not installed: production v0.1.12 cannot reload, so a pinned
+rotation would lock the HUD out. Monitoring (tls_expiry probes of the browser and
+receiver endpoints, a convergence_tls_* Pushgateway job and five warning rules with
+investigate=false) is on operations branch `convergence-tls-monitoring` (56d48cb). All
+five expressions parsed against the live VictoriaMetrics. It is not merged because the
+chart's shared config checksum would roll api, blackbox, vmalert, agent, alertmanager,
+collector, loki and postgres, so it ships with the next release rollout. The cluster
+cannot reach the browser LoadBalancer (source ranges), so that endpoint is probed on
+the Service's in-cluster name.
