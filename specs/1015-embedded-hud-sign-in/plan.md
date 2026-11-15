@@ -1,5 +1,34 @@
 # Integration design
 
+## Receiver transport and ownership
+
+The receiver runtime owns both listeners, signals and one application lifespan.
+Its optional TLS boundary exposes reviewer commands and minimal health; the
+existing HTTP boundary retains ordinary alert callers and refuses reviewer
+commands even with forwarded HTTPS headers. Socket/TLS validation precedes
+queue startup. The application acquires a process lock before opening its inbox
+and keeps it until workers and SQLite are closed. See
+[receiver-https.md](receiver-https.md) for configuration and acceptance.
+
+Installer preflight reuses the literal environment reader and the runtime's
+stdlib-only configuration/TLS validation. It validates the selected environment
+file independently of the invoking shell, before installation changes. The
+browser integration fixture runs the same dual-listener coordinator.
+
+Gateway result correlation is a separate adapter boundary. See
+[gateway-results.md](gateway-results.md) for the installed protocol evidence and
+the remaining deployment prerequisite.
+
+Deployment keeps investigation acceptance and relay delivery as separate opt-in
+controls. A dedicated relay Deployment uses the qualified API image, its own
+restricted database role and a mounted delivery token/receiver CA. It exposes no
+Service or ingress. Submission can be disabled while admitted work continues
+delivery; stopping the relay preserves PostgreSQL leases/outbox. Defaults create
+no relay and leave investigation acceptance disabled. Chart rendering must reject
+shared credentials, incomplete receiver settings and relay enablement without
+the reviewer component. Production rollout still requires migration, grants,
+certificate trust, network reachability and one bounded attributed canary.
+
 ## Session and sign-in
 
 Mount a narrow adapter in the local HUD server after the existing local-origin, profile and installation gates. The host supplies verified session ownership and expiry. Use a server-only digest of the verified owner cookie, namespaced by installation and runtime, as the lookup key. A dedicated adapter namespace supports sign-in, session status, sign-out and specific case operations. The host must support this mount before deployment.

@@ -14,7 +14,8 @@ openssl_req() {
 }
 openssl_req root
 openssl x509 -req -days 1 -in "$REVIEWER_FIXTURE_DIR/root.csr" -signkey "$REVIEWER_FIXTURE_DIR/root.key" \
-  -set_serial 1 -out "$REVIEWER_FIXTURE_DIR/root.pem" -extfile <(echo 'basicConstraints=critical,CA:TRUE') 2>/dev/null
+  -set_serial 1 -out "$REVIEWER_FIXTURE_DIR/root.pem" \
+  -extfile <(printf 'basicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\n') 2>/dev/null
 serial=1
 for identity in reviewer.test hostile.test localhost installation; do
   openssl_req "$identity"

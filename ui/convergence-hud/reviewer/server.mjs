@@ -3,7 +3,7 @@ import {Admission, cookieName, failure, ReviewerSessions, tokenPattern} from './
 
 const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const casePath = new RegExp('^/review/sites/([A-Za-z0-9_.-]{1,128})/cases/(' + uuid +
-  ')(?:/(disposition)(?:/(' + uuid + '))?)?$', 'i');
+  ')(?:/(disposition|investigation)(?:/(' + uuid + '))?)?$', 'i');
 const errors = {
   400: 'Invalid request', 401: 'Sign-in required or credentials invalid', 403: 'Access denied',
   404: 'Not found', 409: 'Request conflicts with current state', 413: 'Request too large',
@@ -184,21 +184,22 @@ export function createReviewerServer({tls, origin, client, assets}) {
 
       const match = casePath.exec(target);
       if (!match) throw failure(404);
-      const [,site,caseId,disposition,operationId] = match;
+      const [,site,caseId,operation,operationId] = match;
+      const investigation = operation === 'investigation';
       if (site === '.' || site === '..') throw failure(400);
-      const write = method === 'POST' && Boolean(disposition) && !operationId;
-      const read = method === 'GET' && (!disposition || Boolean(operationId));
+      const write = method === 'POST' && Boolean(operation) && !operationId;
+      const read = method === 'GET' && (!operation || Boolean(operationId));
       if (!write && !read) throw failure(404);
       sessions.requireCurrent(entry);
       if (!entry.grant) throw failure(401);
       if (write) sessions.checkCsrf(entry,req.headers['x-review-csrf']);
-      const data = write ? await readJSON(req,['kind','reason','operationId']) : null;
+      const data = write ? await readJSON(req,investigation ? ['feedback','operationId'] : ['kind','reason','operationId']) : null;
       sessions.requireCurrent(entry);
       // The service atomically authorizes the case access or mutation. It also
       // owns idempotency and reconciliation via the original operation ID.
       let result;
-      if (write) result = await client.recordDisposition(entry.grant,site,caseId,data);
-      else if (operationId) result = await client.readReceipt(entry.grant,site,caseId,operationId);
+      if (write) result = await (investigation ? client.requestInvestigation : client.recordDisposition)(entry.grant,site,caseId,data);
+      else if (operationId) result = await (investigation ? client.readInvestigationReceipt : client.readReceipt)(entry.grant,site,caseId,operationId);
       else result = await client.readCase(entry.grant,site,caseId);
       if (res.destroyed) return;
       const user = await current(entry, write);
@@ -206,10 +207,10 @@ export function createReviewerServer({tls, origin, client, assets}) {
       // The service authorizes its data source. Check the response identity
       // independently before publishing any case contents on this origin.
       const requestedOperation = write ? data.operationId : operationId;
-      const resultCaseId = disposition ? result?.case_id : result?.id;
+      const resultCaseId = operation ? result?.case_id : result?.id;
       if (result?.site_id !== site || resultCaseId !== caseId.toLowerCase()) throw failure(503);
-      if (disposition && (result?.operation_id !== requestedOperation.toLowerCase() ||
-          result?.reviewed_by !== user.id)) throw failure(503);
+      if (operation && (result?.operation_id !== requestedOperation.toLowerCase() ||
+          result?.[investigation ? 'requested_by' : 'reviewed_by'] !== user.id)) throw failure(503);
       res.setHeader('X-Review-Expires-At',new Date(Math.min(entry.idleUntil,entry.expires)).toISOString());
       return json(res,200,result);
     } catch (error) {

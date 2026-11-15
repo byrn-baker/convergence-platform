@@ -112,15 +112,15 @@ test('two mTLS reviewer services authorize and audit one durable case dispositio
     {headers: {authorization: 'Bearer ' + token}});
   assert.equal((await webSite(webToken, 'red')).status, 200);
   assert.equal((await webSite(webToken, 'blue')).status, 403);
-  async function start(pool) {
-    const server = createReviewerService({tls: {ca, ...cert('localhost')}, enrollments, authority: createGrantAuthority(pool)});
+  async function start(pool, investigationEnabled=false) {
+    const server = createReviewerService({tls: {ca, ...cert('localhost')}, enrollments, authority: createGrantAuthority(pool), investigationEnabled});
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
     t.after(() => new Promise(resolve => server.close(resolve)));
     return server.address().port;
   }
   const portA = await start(first);
-  const portB = await start(second);
+  const portB = await start(second,true);
   function request(port, url, {id = 'reviewer', method = 'GET', token, body, headers = {}} = {}) {
     return new Promise((resolve, reject) => {
       const req = https.request({hostname: '127.0.0.1', servername: 'localhost', port, path: url,
@@ -162,6 +162,15 @@ test('two mTLS reviewer services authorize and audit one durable case dispositio
   const reviewed = await request(portA, url, {token});
   assert.equal(reviewed.body.review_history.length, 1);
   assert.equal(reviewed.body.security_disposition.reviewed_by, aliceRow.id);
+  const investigate={operationId:randomUUID(),feedback:'Collect additional synthetic network evidence'};
+  assert.equal((await request(portA,url,{token})).body.investigation_enabled,false);
+  assert.equal((await request(portB,url,{token})).body.investigation_enabled,true);
+  assert.equal((await request(portA,url+'/investigation',{method:'POST',token,body:investigate})).status,503);
+  assert.equal((await request(portB,url+'/investigation',{method:'POST',token,body:{...investigate,actor_id:'spoof'}})).status,400);
+  const commissioned=await request(portB,url+'/investigation',{method:'POST',token,body:investigate});
+  assert.equal(commissioned.status,200);assert.equal(commissioned.body.requested_by,aliceRow.id);assert.equal(commissioned.body.state,'accepted');
+  assert.deepEqual(await request(portA,url+'/investigation/'+investigate.operationId,{token}),commissioned);
+  assert.deepEqual(await request(portB,url+'/investigation',{method:'POST',token,body:investigate}),commissioned);
   await provision(first, ['access', 'alice', 'admin', 'red']);
   assert.equal((await webSite(webToken, 'red')).status, 401);
   const adminToken = (await (await standaloneLogin()).json()).token;
@@ -169,6 +178,7 @@ test('two mTLS reviewer services authorize and audit one durable case dispositio
   assert.equal((await webSite(adminToken, 'red')).status, 200);
   await provision(first, ['access', 'alice', 'viewer', 'red']);
   assert.equal((await post({...write, operationId: randomUUID()})).status, 403);
+  assert.equal((await request(portB,url+'/investigation',{method:'POST',token,body:{...investigate,operationId:randomUUID()}})).status,403);
   assert.equal((await request(portA, '/v1/grants/current', {token, method: 'DELETE'})).status, 204);
   assert.equal((await request(portB, url, {token})).status, 401);
   assert.equal((await request(portB, '/v1/grants/current', {token: bob.body.token})).status, 200);

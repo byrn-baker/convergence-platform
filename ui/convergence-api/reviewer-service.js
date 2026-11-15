@@ -15,7 +15,7 @@ async function migrate(pool) {
     // Serialize installations across replicas without taking a lock during normal startup.
     await client.query("SELECT pg_advisory_xact_lock(hashtext('convergence reviewer schema v1'))");
     await client.query('SELECT security_disposition FROM events LIMIT 0');
-    for (const file of ['grants.sql', 'cases.sql']) {
+    for (const file of ['grants.sql', 'cases.sql', 'investigations.sql']) {
       await client.query(fs.readFileSync(path.join(__dirname, 'src/reviewer', file), 'utf8'));
     }
     await client.query('COMMIT');
@@ -41,7 +41,8 @@ async function main() {
   const tls = {ca: input('REVIEWER_CLIENT_CA'), key: input('REVIEWER_TLS_KEY'), cert: input('REVIEWER_TLS_CERT')};
   const enrollments = JSON.parse(input('REVIEWER_INSTALLATIONS_FILE'));
   await pool.query('SELECT 1 FROM reviewer_grants LIMIT 0');
-  const server = createReviewerService({tls, enrollments, authority: createGrantAuthority(pool)});
+  const server = createReviewerService({tls, enrollments, authority: createGrantAuthority(pool),
+    investigationEnabled: process.env.REVIEWER_INVESTIGATION_ENABLED === '1'});
   server.listen(port, host, () => console.log('Convergence reviewer service listening with mutual TLS'));
   const close = () => server.close(() => pool.end());
   process.once('SIGTERM', close);

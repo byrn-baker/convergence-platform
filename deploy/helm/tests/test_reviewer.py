@@ -109,3 +109,56 @@ def test_reviewer_only_mounts_each_workloads_credentials(tmp_path, release, name
 def test_enabled_reviewer_rejects_invalid_configuration(tmp_path, invalid):
     result = render(tmp_path, {**REVIEW, **invalid}, check=False)
     assert result.returncode and ('reviewer' in result.stderr.lower() or 'Reviewer' in result.stderr)
+
+
+RELAY = {'enabled': True, 'databaseSecret': 'relay-db', 'deliverySecret': 'relay-delivery',
+         'receiverOrigin': 'https://192.0.2.4:8446'}
+
+
+def test_investigation_acceptance_and_delivery_can_be_stopped_separately(tmp_path):
+    for accept in (False, True):
+        docs = render(tmp_path, {**REVIEW, 'investigationEnabled':accept, 'relay':RELAY})
+        api = next(d for d in docs if d['kind']=='Deployment' and d['metadata']['name'].endswith('-review-api'))
+        env = {e['name']:e for e in api['spec']['template']['spec']['containers'][0]['env']}
+        assert env['REVIEWER_INVESTIGATION_ENABLED']['value'] == ('1' if accept else '0')
+        relay = next(d for d in docs if d['kind']=='Deployment' and d['metadata']['name'].endswith('-review-relay'))
+        pod = relay['spec']['template']['spec']
+        assert pod['automountServiceAccountToken'] is False
+        assert pod['securityContext']['runAsNonRoot'] is True
+        assert pod['terminationGracePeriodSeconds'] == 30
+        assert relay['spec']['strategy'] == {'type':'Recreate'}
+        c = pod['containers'][0]
+        assert c['command'] == ['node','reviewer-relay.js'] and c['image'] == REVIEW['apiImage']
+        assert c['securityContext']['readOnlyRootFilesystem'] is True
+        env = {e['name']:e for e in c['env']}
+        assert env['REVIEWER_DELIVERY_ENABLED']['value']=='1'
+        assert env['REVIEWER_RECEIVER_ORIGIN']['value']==RELAY['receiverOrigin']
+        assert {e['valueFrom']['secretKeyRef']['name'] for e in c['env'] if 'valueFrom' in e}=={'relay-db'}
+        assert pod['volumes']==[{'name':'delivery','secret':{'secretName':'relay-delivery','defaultMode':0o440,
+                 'items':[{'key':'token','path':'token'},{'key':'ca.crt','path':'ca.crt'}]}}]
+        assert c['volumeMounts']==[{'name':'delivery','mountPath':'/run/reviewer/delivery','readOnly':True}]
+        policy = next(d for d in docs if d['kind']=='NetworkPolicy' and d['metadata']['name'].endswith('-review-relay'))
+        assert policy['spec']['policyTypes']==['Ingress'] and policy['spec']['ingress']==[]
+        assert not any(d['kind']=='Service' and d['metadata']['name'].endswith('-review-relay') for d in docs)
+
+
+@pytest.mark.parametrize('invalid', [
+    {'databaseSecret':''}, {'deliverySecret':''}, {'databaseSecret':'review-db'},
+    {'deliverySecret':'relay-db'}, {'deliverySecret':'ordinary-app'},
+    {'receiverOrigin':'http://192.0.2.4'}, {'receiverOrigin':'https://receiver.test/'},
+    {'receiverOrigin':'https://user:password@receiver.test'}, {'receiverOrigin':'https://receiver.test:99999'},
+    {'receiverOrigin':'https://receiver.test:443'}, {'receiverOrigin':'https://127.1'},
+    {'receiverOrigin':'https://999.2.3.4'}, {'receiverOrigin':'https://receiver..test'},
+])
+def test_relay_rejects_invalid_identity_or_transport(tmp_path, invalid):
+    assert render(tmp_path, {**REVIEW,'relay':{**RELAY,**invalid}}, check=False).returncode
+
+
+def test_relay_and_acceptance_require_reviewer_component(tmp_path):
+    for reviewer in ({'enabled':False,'relay':RELAY}, {'enabled':False,'investigationEnabled':True}):
+        assert render(tmp_path, reviewer, check=False).returncode
+
+
+def test_acceptance_can_be_enabled_without_starting_delivery(tmp_path):
+    docs = render(tmp_path, {**REVIEW,'investigationEnabled':True})
+    assert not any(d['metadata']['name'].endswith('-review-relay') for d in docs)

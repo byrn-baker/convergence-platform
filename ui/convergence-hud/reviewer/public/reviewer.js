@@ -1,39 +1,7 @@
+import {tokenDigest, receiptPointers} from './pending-operations.js';
+import {investigationPanel} from './investigation.js';
+
 const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
-
-async function tokenDigest(browser, fields) {
-  const bytes = new TextEncoder().encode(JSON.stringify(fields));
-  const digest = await browser.crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
-}
-
-// The tab keeps one opaque receipt pointer per principal, site and case. Notes,
-// names, grant tokens and case IDs are never serialized into browser storage.
-function receiptPointers(browser) {
-  const inputs = new Map();
-  return {
-    async scope(user, site, id) {
-      return 'review:' + await tokenDigest(browser, [user, site, id]);
-    },
-    get(key) {
-      const value = browser.sessionStorage.getItem(key);
-      if (!value) return null;
-      const [id, digest] = value.split('.');
-      if (!UUID.test(id) || !/^[0-9a-f]{64}$/.test(digest)) throw Error('Invalid receipt pointer');
-      return {key, id, digest, input: inputs.get(key)};
-    },
-    async prepare(key, kind, reason, previous, stillCurrent) {
-      const id = previous?.id || browser.crypto.randomUUID();
-      const digest = await tokenDigest(browser, [id, kind, reason]);
-      if (!stillCurrent() || (previous && digest !== previous.digest)) return null;
-      const input = {operationId: id, kind, reason};
-      browser.sessionStorage.setItem(key, id + '.' + digest);
-      inputs.set(key, input);
-      return {key, id, digest, input};
-    },
-    clearPrivate() { inputs.clear(); },
-    forget(key) { inputs.delete(key); browser.sessionStorage.removeItem(key); },
-  };
-}
 
 function actorLabel(entry) {
   return entry.reviewed_by_name ? `${entry.reviewed_by_name} (${entry.reviewed_by})` : entry.reviewed_by;
@@ -64,10 +32,12 @@ export function startReviewer(document, browser = document.defaultView) {
     }
   }
   const pointers = receiptPointers(browser);
+  const investigations = investigationPanel({document, browser, request, scopeLost});
   const changes = typeof browser.BroadcastChannel === 'function' ? new browser.BroadcastChannel('review-session') : null;
   if (changes) changes.onmessage = () => { if (!logoutNonce) { ++sessionRequest; purgeSession(); refreshSession(); } };
 
   function purgeCase() {
+    investigations.clear();
     generation++;
     current = currentKey = operation = null;
     preparing = recoveryUnavailable = false;
@@ -237,6 +207,7 @@ export function startReviewer(document, browser = document.defaultView) {
     visible('detail', true);
     visible('disposition', Boolean(assessment) && session.user.role !== 'viewer');
     updateOperation();
+    investigations.show(entry, session.user);
   }
 
   function outcomeLabel(kind) {
@@ -412,7 +383,7 @@ export function startReviewer(document, browser = document.defaultView) {
     preparing = true;
     updateOperation();
     try {
-      const saved = await pointers.prepare(currentKey, kind, reason, reenter ? operation : null, () => seq === generation);
+      const saved = await pointers.prepare(currentKey, {kind, reason}, reenter ? operation : null, () => seq === generation);
       if (seq !== generation) return;
       if (!saved) return text('status', 'The outcome and evidence must match the pending disposition.');
       operation = saved;

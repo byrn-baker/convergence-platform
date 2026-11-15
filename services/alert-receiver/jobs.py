@@ -19,24 +19,41 @@ class JobStore:
     def __init__(self, path, capacity=1000):
         Path(path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.db = sqlite3.connect(path)
-        Path(path).chmod(0o600)
-        self.db.row_factory = sqlite3.Row
-        self.capacity = capacity
-        self.db.execute('PRAGMA journal_mode=WAL')
-        self.db.execute('''CREATE TABLE IF NOT EXISTS jobs (
-            id TEXT PRIMARY KEY, key TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL,
-            state TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0,
-            created REAL NOT NULL, available REAL NOT NULL, dispatched REAL,
-            event_id TEXT, site TEXT, error TEXT)''')
-        self.db.execute("UPDATE jobs SET state='queued' WHERE state='running'")
-        if 'result' not in {r[1] for r in self.db.execute('PRAGMA table_info(jobs)')}:
-            self.db.execute('ALTER TABLE jobs ADD COLUMN result TEXT')
-        # Admission runs once per raw alert, including duplicates. Retained
-        # evidence must not turn dedup, capacity checks, cleanup and worker
-        # polling into repeated full-table scans on the receiver event loop.
-        self.db.execute('CREATE INDEX IF NOT EXISTS jobs_key_created ON jobs(key,created DESC)')
-        self.db.execute('CREATE INDEX IF NOT EXISTS jobs_state_created ON jobs(state,created)')
-        self.db.commit()
+        try:
+            Path(path).chmod(0o600)
+            self.db.row_factory = sqlite3.Row
+            self.capacity = capacity
+            self.db.execute('PRAGMA journal_mode=WAL')
+            self.db.execute('''CREATE TABLE IF NOT EXISTS jobs (
+                id TEXT PRIMARY KEY, key TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL,
+                state TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0,
+                created REAL NOT NULL, available REAL NOT NULL, dispatched REAL,
+                event_id TEXT, site TEXT, error TEXT)''')
+            self.db.execute("UPDATE jobs SET state='queued' WHERE state='running'")
+            if 'result' not in {r[1] for r in self.db.execute('PRAGMA table_info(jobs)')}:
+                self.db.execute('ALTER TABLE jobs ADD COLUMN result TEXT')
+            # Admission runs once per raw alert, including duplicates. Retained
+            # evidence must not turn dedup, capacity checks, cleanup and worker
+            # polling into repeated full-table scans on the receiver event loop.
+            self.db.execute('CREATE INDEX IF NOT EXISTS jobs_key_created ON jobs(key,created DESC)')
+            self.db.execute('CREATE INDEX IF NOT EXISTS jobs_state_created ON jobs(state,created)')
+            self.db.commit()
+            from reviewer_commands import ReviewerCommands
+            self.reviewer = ReviewerCommands(self)
+        except BaseException:
+            self.db.close()
+            raise
+
+    def _check_capacity(self):
+        if self.db.execute("SELECT count(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0] >= self.capacity:
+            raise OverflowError('Investigation inbox full')
+
+    def _insert_job(self, key, kind, payload):
+        """Caller owns the admission transaction and its capacity check."""
+        jid = str(uuid.uuid4())
+        self.db.execute("INSERT INTO jobs(id,key,kind,payload,created,available) VALUES(?,?,?,?,?,?)",
+                        (jid, key, kind, json.dumps(payload), time.time(), time.time()))
+        return jid
 
     def enqueue(self, key, kind, payload, repeat=False, retry_failed=False):
         with self.db:
@@ -50,18 +67,14 @@ class JobStore:
                         raise OverflowError('Investigation inbox full')
                     self.db.execute("UPDATE jobs SET state='queued',attempts=0,available=? WHERE id=? AND state='failed'", (time.time(), previous['id']))
                 return previous['id']
-            if self.db.execute("SELECT count(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0] >= self.capacity:
-                raise OverflowError('Investigation inbox full')
-            jid = str(uuid.uuid4())
-            self.db.execute("INSERT INTO jobs(id,key,kind,payload,created,available) VALUES(?,?,?,?,?,?)",
-                            (jid,key,kind,json.dumps(payload),time.time(),time.time()))
-            return jid
+            self._check_capacity()
+            return self._insert_job(key, kind, payload)
 
     def claim(self, lane='investigation'):
         kinds = {
             'ingest': "kind IN ('alert','resolved')",
             'maintenance': "kind = 'snapshot'",
-            'investigation': "kind IN ('investigate','manual')",
+            'investigation': "kind IN ('investigate','manual','reviewer')",
             'review': "kind = 'jev_review'",
         }[lane]
         with self.db:

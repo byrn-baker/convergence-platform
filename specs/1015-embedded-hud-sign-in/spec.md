@@ -1,6 +1,6 @@
 # Embedded Convergence sign-in for the HUD
 
-**Status** Proposed for design review.
+**Status** Dedicated HTTPS review and attributed reinvestigation are deployed and qualified. Native verified-owner HUD integration remains open.
 
 An operator viewing a case in a trusted local NetClaw HUD or its dedicated HTTPS reviewer entry point should be able to sign in to Convergence and record a disposition without changing applications. For local owners NetClaw checks the owner session and installation. On the dedicated HTTPS reviewer origin the HUD authenticates its installation to Convergence and binds a separate browser session to the reviewer after sign-in. Convergence verifies the user, permitted sites and role on both paths.
 
@@ -12,3 +12,22 @@ An operator viewing a case in a trusted local NetClaw HUD or its dedicated HTTPS
 Two people on separate workstations can review the same investigation using their own accounts. A disposition records the acting user. The dedicated network origin exposes only the review view and its scoped operations. Reviewer sessions cannot reach local HUD owner issuance, consoles, chat, model settings or any general-purpose proxy. Claiming, assignment and handoff are separate case-management features.
 
 The initial write for qualification is a security disposition. Reinvestigation and JEV review enqueue external work and require separate retry and audit qualification before activation.
+
+## Approved next increment: attributed reinvestigation
+
+Implement the reinvestigation command under [dispatch-contract.md](dispatch-contract.md), including durable acceptance, relay, receiver deduplication, explicit ambiguous outcomes and browser recovery. Keep JEV disabled. Preserve reviewer authentication boundaries and existing machine/manual callers.
+
+## Receiver transport increment
+
+Add the optional single-process HTTPS listener and shared queue lifecycle described in [receiver-https.md](receiver-https.md), preserving existing HTTP callers.
+
+## Live commissioning correction: exact tool selection
+
+The first production commissioning reached the investigator and persisted findings,
+but the parent readback selected a fuzzy catalog result by position. Keep Gateway
+error/receipt semantics unchanged. Clarify the existing alert-triage procedure and
+managed hook wrapper so every code-mode MCP call resolves the exact callableName
+and inspects its schema; the case-read example must reject a missing/ambiguous
+match without calling another tool. Qualify this procedure with a decoy-first
+catalog fixture and a subsequent deliberate synthetic commissioning request.
+Preserve the original failed receipt and its case evidence.

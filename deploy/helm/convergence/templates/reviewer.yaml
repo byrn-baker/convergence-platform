@@ -79,6 +79,7 @@ spec:
             {{- end }}
             - {name: REVIEWER_SERVICE_HOST, value: "0.0.0.0"}
             - {name: REVIEWER_SERVICE_PORT, value: "3443"}
+            - {name: REVIEWER_INVESTIGATION_ENABLED, value: {{ ternary "1" "0" $r.investigationEnabled | quote }}}
             - {name: REVIEWER_CLIENT_CA, value: /run/reviewer/service/ca.crt}
             - {name: REVIEWER_TLS_CERT, value: /run/reviewer/service/tls.crt}
             - {name: REVIEWER_TLS_KEY, value: /run/reviewer/service/tls.key}

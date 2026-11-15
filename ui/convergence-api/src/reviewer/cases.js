@@ -118,4 +118,4 @@ async function recordDisposition(client, actor, site, caseId, input) {
   return receipt;
 }
 
-module.exports = {readCase, recordDisposition, readDispositionReceipt};
+module.exports = {readCase, recordDisposition, readDispositionReceipt, requireScope, uuid};
