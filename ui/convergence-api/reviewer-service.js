@@ -6,6 +6,7 @@ const net = require('node:net');
 const path = require('node:path');
 const {pool} = require('./src/db');
 const {createGrantAuthority} = require('./src/reviewer/grants');
+const {identity, watchTls} = require('./src/reviewer/tls-reload');
 const {createReviewerService} = require('./src/reviewer/transport');
 
 async function migrate(pool) {
@@ -27,6 +28,10 @@ async function migrate(pool) {
   }
 }
 
+function enrollmentRecords(text) {
+  try { return JSON.parse(text); } catch { throw new Error('enrollment file is not JSON'); }
+}
+
 async function main() {
   if (!pool) throw new Error('PostgreSQL must be enabled');
   if (process.argv[2] === 'migrate' && process.argv.length === 3) {
@@ -44,7 +49,11 @@ async function main() {
   const server = createReviewerService({tls, enrollments, authority: createGrantAuthority(pool),
     investigationEnabled: process.env.REVIEWER_INVESTIGATION_ENABLED === '1'});
   server.listen(port, host, () => console.log('Convergence reviewer service listening with mutual TLS'));
-  const close = () => server.close(() => pool.end());
+  const watcher = watchTls({files: {ca: process.env.REVIEWER_CLIENT_CA, cert: process.env.REVIEWER_TLS_CERT,
+    key: process.env.REVIEWER_TLS_KEY, enrollments: process.env.REVIEWER_INSTALLATIONS_FILE},
+  build: ({enrollments, ...material}) => ({...identity(material), enrollments: enrollmentRecords(enrollments)}),
+  apply: next => server.reload(next)});
+  const close = () => { watcher.close(); server.close(() => pool.end()); };
   process.once('SIGTERM', close);
   process.once('SIGINT', close);
 }

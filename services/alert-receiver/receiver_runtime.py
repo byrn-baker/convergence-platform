@@ -292,6 +292,26 @@ async def _drain(servers, tasks, timeout):
             _fail_stop()
 
 
+TLS_RELOAD_SECONDS = 10.0
+
+
+def _start_tls_reload(settings, servers):
+    """Apply a renewed reviewer HTTPS certificate to new handshakes without a restart."""
+    if settings.reviewer is None:
+        return None
+    from tls_reload import TLSReloader
+
+    def apply(context):
+        for server in servers:
+            if server.config.app.reviewer:
+                server.config.ssl = context
+                for listener in getattr(server, 'servers', None) or []:
+                    listener.context = context
+    reloader = TLSReloader((settings.reviewer.cert_file, settings.reviewer.key_file),
+                           lambda: validate_tls(settings), apply)
+    return asyncio.create_task(reloader.run(TLS_RELOAD_SECONDS))
+
+
 async def serve(app, settings=None, *, stop_event=None, handle_signals=True):
     """Serve both boundaries around one FastAPI lifespan and one signal owner."""
     import uvicorn
@@ -337,6 +357,7 @@ async def serve(app, settings=None, *, stop_event=None, handle_signals=True):
             async with app.router.lifespan_context(app):
                 tasks = [asyncio.create_task(server.serve(sockets=[sock]))
                          for server, sock in zip(servers, prepared.sockets)]
+                reload_task = _start_tls_reload(settings, servers)
                 waiter = asyncio.create_task(stop.wait())
                 try:
                     done, _ = await asyncio.wait([*tasks, waiter], return_when=asyncio.FIRST_COMPLETED)
@@ -347,7 +368,9 @@ async def serve(app, settings=None, *, stop_event=None, handle_signals=True):
                 finally:
                     async def stop_listeners():
                         waiter.cancel()
-                        await asyncio.gather(waiter, return_exceptions=True)
+                        if reload_task:
+                            reload_task.cancel()
+                        await asyncio.gather(waiter, *([reload_task] if reload_task else []), return_exceptions=True)
                         await _drain(servers, tasks, settings.shutdown_seconds)
                     await complete_cleanup(stop_listeners())
 

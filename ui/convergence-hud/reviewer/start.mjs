@@ -3,6 +3,7 @@ import net from 'node:net';
 import {pathToFileURL} from 'node:url';
 import {createReviewerClient} from './service-client.mjs';
 import {createReviewerServer} from './server.mjs';
+import {identity, watchTls} from './tls-reload.mjs';
 
 export function reviewerAssets() {
   const asset = (file, type) => ({content: fs.readFileSync(new URL('public/' + file, import.meta.url)), type});
@@ -27,7 +28,15 @@ function start() {
     tls: {cert: file('REVIEWER_HUD_CERT'), key: file('REVIEWER_HUD_KEY')},
   });
   server.listen(port, host, () => console.log('Convergence HTTPS reviewer HUD listening'));
+  // Renewed certificates apply in place: restarting would sign every reviewer out.
+  const watchers = [
+    watchTls({files: {cert: env.REVIEWER_HUD_CERT, key: env.REVIEWER_HUD_KEY},
+      build: identity, apply: ({cert, key}) => server.setSecureContext({cert, key, minVersion: 'TLSv1.2'})}),
+    watchTls({files: {ca: env.REVIEWER_SERVICE_CA, cert: env.REVIEWER_INSTALLATION_CERT, key: env.REVIEWER_INSTALLATION_KEY},
+      build: identity, apply: next => client.reload(next)}),
+  ];
   const shutdown = () => server.close(async () => {
+    for (const watcher of watchers) watcher.close();
     try { await server.grantsDrained; } finally { client.close(); }
   });
   process.once('SIGINT', shutdown);
