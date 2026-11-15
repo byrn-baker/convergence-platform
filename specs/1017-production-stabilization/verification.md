@@ -158,3 +158,19 @@ At20:27UTC owner completed independent VM Codex device authorization. Login exit
 OpenClaw native Codex doctor check ok with no findings, selected
 openai/gpt-6.1-sol advertised available/providerready. Authentication and catalog
 readiness are not an executed model or Convergence investigation completion.
+
+Closing operational evidence: one tools-denied Gateway smoke completed with exact
+CONVERGENCE_LAB_OK, native Codex harness, openai/gpt-6.1-sol, OAuth profile,
+no reroute and no successful tools. Runtime reported5884ms,33334input/11output
+tokens; stock prompt overhead is substantial despite the tiny user prompt.
+This qualifies one subscription-backed Gateway turn, not a Convergence
+investigation/receipt/replay or JEV. Test Gateway stopped after evidence collection;
+authentication and data retained. Production ArgoSynced/Healthy and all four host
+user services active. Source clone/export load remains stopped.
+
+Coding/review outcome:BUDGET_EXHAUSTED at20:29:34UTC, with reviewed partial evidence
+published in PR27. No further implementation loop or production clone retry.
+Operational smoke already in flight was collected and the lab Gateway stopped.
+Next: design controlled full-history acquisition and separate blocking SQLite work
+from async request handling before another source-load rehearsal; complete
+Convergence canary/replay and remaining compatibility/browser/profile gates.
