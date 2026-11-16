@@ -1,0 +1,44 @@
+{{- $expected := .Values.monitoring.ids.expectedScrapes -}}
+{{- if $expected }}
+{{- if not .Values.victoria.alerting.enabled }}
+{{- fail "monitoring.ids.expectedScrapes requires victoria.alerting.enabled" }}
+{{- end }}
+{{- $name := printf "%s-ids-monitoring-rules" .Release.Name }}
+{{- $mount := dict "found" false }}
+{{- range .Values.victoria.alerting.extraRuleConfigMaps }}
+{{- if eq (tpl . $) $name }}{{- $_ := set $mount "found" true }}{{- end }}
+{{- end }}
+{{- if not $mount.found }}
+{{- fail "monitoring.ids.expectedScrapes requires its ids-monitoring-rules extraRuleConfigMaps entry" }}
+{{- end }}
+{{- $ids := dict }}
+{{- $targets := dict }}
+{{- $rules := list }}
+{{- range $expected }}
+{{- $target := toJson (list .job .instance) }}
+{{- if or (hasKey $ids .id) (hasKey $targets $target) }}
+{{- fail "monitoring.ids.expectedScrapes has duplicate id or job/instance" }}
+{{- end }}
+{{- if not (hasKey $.Values.siteConfig .site) }}
+{{- fail "monitoring.ids.expectedScrapes site must exist in siteConfig" }}
+{{- end }}
+{{- $_ := set $ids .id true }}
+{{- $_ := set $targets $target true }}
+{{- $rules = append $rules (dict
+  "alert" "IDSMetricsScrapeMissing"
+  "expr" (printf "absent_over_time(up{job=%s,instance=%s}[5m]) == 1" (toJson .job) (toJson .instance))
+  "for" "2m"
+  "labels" (dict "severity" "warning" "investigate" "false" "service" "ids"
+    "inventory_id" .id "site" .site "release" $.Release.Name "namespace" $.Release.Namespace)
+  "annotations" (dict "summary" "Expected IDS scrape series is missing"
+    "description" "An explicitly configured IDS scrape has no samples in the last five minutes.")) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels: {{ include "convergence.labels" . | nindent 4 }}
+data:
+  ids-scrapes.yml: |
+    {{- toYaml (dict "groups" (list (dict "name" "convergence.ids.expected-scrapes" "interval" "30s" "rules" $rules))) | nindent 4 }}
+{{- end }}

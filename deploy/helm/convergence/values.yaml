@@ -1,7 +1,12 @@
 victoria:
   alerting:
-    # Mounted only when it exists: templates/agent-metrics-rules.yaml (agentMetrics.quota).
-    extraRuleConfigMaps: ['{{ .Release.Name }}-agent-metrics-rules']
+    # Optional rule ConfigMaps are rendered only for explicitly configured monitoring.
+    extraRuleConfigMaps: ['{{ .Release.Name }}-agent-metrics-rules', '{{ .Release.Name }}-ids-monitoring-rules']
+monitoring:
+  ids:
+    # Explicit operator-owned scrape inventory; empty means no absence alerts.
+    # Independent of ids.enabled: an external IDS may be scraped by this release.
+    expectedScrapes: []
 agentMetrics:
   # Weekly token-budget alerts for NetClaw's metered models, from the agent metrics exporter
   # (services/agent-metrics, job netclaw-openclaw). Token totals are a proxy for a provider's

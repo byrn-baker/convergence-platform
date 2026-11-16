@@ -460,3 +460,44 @@ equivalence and false removes only enrichment CronJob. Private fixture validatio
 passed actual schema/fingerprint contracts. Browser verifier found missing exact
 case cardinality/type and redirect checks; coordinator corrected both and re-review
 PASS. Actual deployment/telemetry qualification remains open.
+
+S05 upstream RAG candidate attempt1:133unit/19integration/19runner checks pass;
+independent extra negatives found retired-state resurrection, mixed-collection
+publication leakage and selected adapter supersede bypassing ownership. Candidate
+remains undeployed; attempt2 fixes these lifecycle boundaries before VM rehearsal.
+Grok subscription review succeeded on bounded supplied-text crash cases with no
+API fallback; independently tested relevant advice, not treated as acceptance.
+
+S07 isolated runtime progress: IDS baseline0.1.4 pinned digest admitted on fresh
+10Gi claim, exact7event identities/payloads reconciled in Loki/VictoriaLogs and
+two expected cases. Initial reconciliation assertion corrected to include the
+actual stored IP-context decoration in Loki; original payload equality retained.
+Native one-turn investigation and complete original receipt/case hashes unchanged.
+Actual guest agent under50mCPU/64Mi cap retained a heartbeat across transport
+outage plus new PID, drained in5.79s with no drops. SamePVC credential rotation
+and enrollment reassignment reject both old tokens; newB heartbeat and trusted
+browser reporting pass. Disposable-copy tombstones reject binding/credential reuse
+without altering copied rows. Real B expiry still pending. Restricted temporary
+provisioner+trustedbrowser account create/password/disable/reset/explicitreenable/
+logout pass; old grants remain invalid, sameaccountID, wrongsite403, eventtable
+privileges denied. Testaccount left disabled; temporaryprovisioner role removed.
+Independent runtime evidence review remains pending.
+
+S06 expected-scrape inventory change independently87Helm tests PASS/no skips
+using actual promtool2.54.1. No implicit missing alerts for optionaldisabledIDS;
+exact expected targets detect individual absence/staleness. Root must wire actual
+PromQL CI gate (currently optional env) and qualify live evaluator/notification.
+One-shot viewer-only synthetic monitor attempt1 authorized in operational module,
+no new app API or model actions. Exactorigin/site/case, trustedTLS, bounded
+same-origin requests, onlysign-in/out writes, atomic metrics/state and crash-safe
+singleinstance ownership. Actual clientpath and7–14daysoak remain open.
+
+RAG attempt2 independently PASS for isolated VM: all3extra negatives now pass,
+69targeted/19integration independently pass; fullwriter142unit/19integration pass.
+No actual VM candidate qualification yet. CI now installs official checksum-pinned
+promtool2.54.1 and exports it for required expression checks. Exact download/verify
+step executed locally;17monitoring tests pass with resulting binary; independent
+CI review and17-test rerun PASS. Reviewed S06 chart+CI ready for lab application.
+Browser leaf renewal on VM117 replaced the live certificate under the same CA,
+verifiedhostname and changedfingerprint in2.49s; fresh trustedChromium IDS/case
+journey passed afterward. This does not yet qualify all PKI roles or CA rollover.

@@ -209,7 +209,8 @@ def test_quota_rules_are_off_by_default_and_vmalert_mounts_them_optionally():
     pod=vmalert['spec']['template']['spec']
     sources=next(v for v in pod['volumes'] if v['name']=='rules')['projected']['sources']
     assert sources==[{'configMap':{'name':'quota-victoria-rules'}},
-                     {'configMap':{'name':'quota-agent-metrics-rules','optional':True}}]
+                     {'configMap':{'name':'quota-agent-metrics-rules','optional':True}},
+                     {'configMap':{'name':'quota-ids-monitoring-rules','optional':True}}]
     assert '-configCheckInterval=1m' in pod['containers'][0]['args']
 
 
