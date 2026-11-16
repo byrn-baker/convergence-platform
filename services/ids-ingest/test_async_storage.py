@@ -103,7 +103,10 @@ def test_health_responds_while_storage_is_held(tmp_path, monkeypatch, origin):
             finally:
                 gate.release.set()
                 if slow is not None:
-                    assert slow.result(timeout=3).status_code == 200
+                    response = slow.result(timeout=3)
+                    assert response.status_code == 200
+                    if origin == 'metrics':
+                        assert 'netclaw_ids_host_enrollment_valid_until_timestamp_seconds' in response.text
     finally:
         gate.release.set()
         store.db.close()

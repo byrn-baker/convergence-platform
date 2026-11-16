@@ -177,7 +177,7 @@ def create_app(config, store, client_factory=httpx.AsyncClient, *, owns_store=Fa
     async def metrics(request: Request):
         if not hmac.compare_digest(token_hash(request), config['status_token_sha256']):
             return JSONResponse({'error': 'Unauthorized'}, status_code=401)
-        return PlainTextResponse(await storage.run(render_metrics, store, sensors),
+        return PlainTextResponse(await storage.run(render_metrics, store, sensors, host_agents=agents),
                                  media_type='text/plain; version=0.0.4; charset=utf-8')
 
     @app.get('/v1/status')

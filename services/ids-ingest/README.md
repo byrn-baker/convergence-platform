@@ -96,6 +96,27 @@ allowed. Configuration changes, including revocation, require a receiver restart
 Both receipt time and event observation time must fall in the configured validity
 interval; delayed events after expiry are refused rather than reassigned.
 
+
+The existing authenticated `/metrics` endpoint exports three gauges for every
+configured host enrollment, including those with no guest contact:
+`netclaw_ids_host_enrollment_valid_from_timestamp_seconds`,
+`netclaw_ids_host_enrollment_valid_until_timestamp_seconds`, and
+`netclaw_ids_host_enrollment_revoked` (0 or 1). Their only labels are configured
+`site`, `enrollment` and `vm_id`; guest claims, tenant/allocation metadata, token
+hashes and removed historical bindings are not metric labels or values. An empty
+host configuration emits none of these series. Metrics still run through the
+bounded storage worker, outside the async event loop, under the status credential.
+
+The separate canonical `host-enrollment.rules.yml` warns when a nonrevoked binding
+has started and expires within 24 hours (pending for 5 minutes), or is expired
+(pending for 2 minutes). Future and revoked bindings are excluded. These are
+operator configuration warnings with `investigate=false`, not compromise signals.
+Missing metrics do not establish valid enrollment: older IDS images do not export
+these gauges, and scrape loss requires the separate expected-scrape monitor.
+Credential rotation does not extend a binding's fixed validity interval. Use the
+existing new-enrollment/revocation procedure and reconcile retained guest events;
+this change adds no enrollment administration API.
+
 Host rows reuse the existing SQLite delivery queue and checkpoints, but logs and
 archives use `job="host-events"`, kinds `host_heartbeat`/`host_connection`, and an
 explicit `evidence_trust="guest_reported"` envelope. VictoriaLogs stores the whole

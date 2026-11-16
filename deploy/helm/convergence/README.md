@@ -68,6 +68,20 @@ scrape permanently requires removing its inventory entry too; do not remove an
 entry merely to conceal an outage. Retain the inventory when testing lost scrape
 configuration, otherwise the evaluator cannot know that data was expected.
 
+The same explicitly opted-in ConfigMap also includes the separate canonical
+`host-enrollment.rules.yml` asset. It warns for started, nonrevoked host bindings
+expiring within 24 hours (5-minute pending period) or already expired (2-minute
+pending period). It does not load the legacy IDS capture/IP-context rule bundle.
+No expected scrape inventory means neither this ConfigMap nor its enrollment
+rules are created. With no configured host enrollments, these rules remain quiet.
+
+Expiry monitoring requires an IDS image exporting all three
+`netclaw_ids_host_enrollment_{valid_from_timestamp_seconds,valid_until_timestamp_seconds,revoked}`
+gauges. Verify them for each configured enrollment before accepting monitoring;
+older images produce no expiry alert, rather than an implicit missing-inventory
+alarm. Labels come from receiver configuration, not guest reports. Configuration
+expiry is distinct from token rotation and TLS certificate expiry.
+
 Rules use the existing optional ConfigMap projection and reload interval of
 vmalert. If you override `victoria.alerting.extraRuleConfigMaps`, retain
 `'{{ .Release.Name }}-ids-monitoring-rules'`. A nonempty inventory with alerting

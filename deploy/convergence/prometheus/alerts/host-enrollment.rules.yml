@@ -1,0 +1,25 @@
+groups:
+  - name: netclaw-convergence.host-enrollment
+    interval: 30s
+    rules:
+      - alert: IDSHostEnrollmentExpiring
+        expr: |
+          (netclaw_ids_host_enrollment_valid_until_timestamp_seconds - time() <= 86400)
+          and (netclaw_ids_host_enrollment_valid_until_timestamp_seconds > time())
+          and (netclaw_ids_host_enrollment_valid_from_timestamp_seconds <= time())
+          and (netclaw_ids_host_enrollment_revoked == 0)
+        for: 5m
+        labels: {severity: warning, investigate: "false"}
+        annotations:
+          summary: "Host enrollment expires within 24 hours ({{ $labels.enrollment }}, VM {{ $labels.vm_id }})"
+          description: "Operator action is required to replace the configured binding before expiry; credential rotation alone does not extend validity. This is not a guest compromise signal."
+      - alert: IDSHostEnrollmentExpired
+        expr: |
+          (netclaw_ids_host_enrollment_valid_until_timestamp_seconds <= time())
+          and (netclaw_ids_host_enrollment_valid_from_timestamp_seconds <= time())
+          and (netclaw_ids_host_enrollment_revoked == 0)
+        for: 2m
+        labels: {severity: warning, investigate: "false"}
+        annotations:
+          summary: "Host enrollment has expired ({{ $labels.enrollment }}, VM {{ $labels.vm_id }})"
+          description: "Guest reports for this configured binding are rejected. Reconcile retained guest data and replace the binding through the existing enrollment procedure."

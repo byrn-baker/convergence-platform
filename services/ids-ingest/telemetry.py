@@ -4,6 +4,8 @@ import math
 import time
 from datetime import datetime, timezone
 
+from host_events import timestamp
+
 
 def archive_record(row):
     event = json.loads(row['payload'])
@@ -43,7 +45,7 @@ def archive_body(rows):
     return ''.join('{"create":{}}\n'+json.dumps(archive_record(row), allow_nan=False)+'\n' for row in rows)
 
 
-def render_metrics(store, configured, now=None):
+def render_metrics(store, configured, now=None, *, host_agents=()):
     now = time.time() if now is None else now
     lines, declared = [], set()
 
@@ -57,6 +59,16 @@ def render_metrics(store, configured, now=None):
         tags = ','.join(f'{key}="{escape(value)}"' for key, value in sorted(labels.items()))
         number = float(value or 0)
         lines.append(f'{name}{{{tags}}} {number if math.isfinite(number) else 0}')
+
+    # Only operator-validated configuration supplies these identities/instants.
+    # Guest heartbeat claims and historical binding tombstones are not inventory.
+    for agent in host_agents:
+        labels = {'site': agent['site'], 'enrollment': agent['id'], 'vm_id': agent['vm_id']}
+        for field in ('valid_from', 'valid_until'):
+            emit('host_enrollment_'+field+'_timestamp_seconds', timestamp(agent[field]), labels,
+                 'Configured host enrollment validity boundary; not guest-reported health.')
+        emit('host_enrollment_revoked', agent.get('revoked', False), labels,
+             'Configured host enrollment revocation flag (1 revoked, 0 not revoked).')
 
     with store.lock:
         for cfg in configured:

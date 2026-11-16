@@ -1,0 +1,196 @@
+rule_files:
+- ../prometheus/alerts/host-enrollment.rules.yml
+evaluation_interval: 30s
+tests:
+- name: healthy
+  interval: 30s
+  input_series:
+  - series: netclaw_ids_host_enrollment_valid_from_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 1+0x40
+  - series: netclaw_ids_host_enrollment_valid_until_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 172800+0x40
+  - series: netclaw_ids_host_enrollment_revoked{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 0+0x40
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpiring
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpired
+    exp_alerts: []
+- name: expiring
+  interval: 30s
+  input_series:
+  - series: netclaw_ids_host_enrollment_valid_from_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 1+0x40
+  - series: netclaw_ids_host_enrollment_valid_until_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 3600+0x40
+  - series: netclaw_ids_host_enrollment_revoked{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 0+0x40
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpiring
+    exp_alerts:
+    - exp_labels:
+        site: fixture
+        enrollment: guest-one
+        vm_id: vm-one
+        job: ids
+        instance: one
+        severity: warning
+        investigate: 'false'
+      exp_annotations:
+        summary: Host enrollment expires within 24 hours (guest-one, VM vm-one)
+        description: Operator action is required to replace the configured binding
+          before expiry; credential rotation alone does not extend validity. This
+          is not a guest compromise signal.
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpired
+    exp_alerts: []
+- name: expired
+  interval: 30s
+  input_series:
+  - series: netclaw_ids_host_enrollment_valid_from_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 1+0x40
+  - series: netclaw_ids_host_enrollment_valid_until_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 300+0x40
+  - series: netclaw_ids_host_enrollment_revoked{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 0+0x40
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpiring
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpired
+    exp_alerts:
+    - exp_labels:
+        site: fixture
+        enrollment: guest-one
+        vm_id: vm-one
+        job: ids
+        instance: one
+        severity: warning
+        investigate: 'false'
+      exp_annotations:
+        summary: Host enrollment has expired (guest-one, VM vm-one)
+        description: Guest reports for this configured binding are rejected. Reconcile
+          retained guest data and replace the binding through the existing enrollment
+          procedure.
+- name: revoked expiry
+  interval: 30s
+  input_series:
+  - series: netclaw_ids_host_enrollment_valid_from_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 1+0x40
+  - series: netclaw_ids_host_enrollment_valid_until_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 300+0x40
+  - series: netclaw_ids_host_enrollment_revoked{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 1+0x40
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpiring
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpired
+    exp_alerts: []
+- name: revoked expiring
+  interval: 30s
+  input_series:
+  - series: netclaw_ids_host_enrollment_valid_from_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 1+0x40
+  - series: netclaw_ids_host_enrollment_valid_until_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 3600+0x40
+  - series: netclaw_ids_host_enrollment_revoked{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 1+0x40
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpiring
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpired
+    exp_alerts: []
+- name: future binding
+  interval: 30s
+  input_series:
+  - series: netclaw_ids_host_enrollment_valid_from_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 1200+0x40
+  - series: netclaw_ids_host_enrollment_valid_until_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 1800+0x40
+  - series: netclaw_ids_host_enrollment_revoked{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 0+0x40
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpiring
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpired
+    exp_alerts: []
+- name: optional empty inventory
+  interval: 30s
+  input_series: []
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpiring
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: IDSHostEnrollmentExpired
+    exp_alerts: []
+- name: expiry boundary resolves warning and fires expired after delay
+  interval: 30s
+  input_series:
+  - series: netclaw_ids_host_enrollment_valid_from_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 1+0x40
+  - series: netclaw_ids_host_enrollment_valid_until_timestamp_seconds{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 900+0x40
+  - series: netclaw_ids_host_enrollment_revoked{site="fixture",enrollment="guest-one",vm_id="vm-one",job="ids",instance="one"}
+    values: 0+0x40
+  alert_rule_test:
+  - eval_time: 5m
+    alertname: IDSHostEnrollmentExpiring
+    exp_alerts: []
+  - eval_time: 5m
+    alertname: IDSHostEnrollmentExpired
+    exp_alerts: []
+  - eval_time: 6m
+    alertname: IDSHostEnrollmentExpiring
+    exp_alerts:
+    - exp_labels:
+        site: fixture
+        enrollment: guest-one
+        vm_id: vm-one
+        job: ids
+        instance: one
+        severity: warning
+        investigate: 'false'
+      exp_annotations:
+        summary: Host enrollment expires within 24 hours (guest-one, VM vm-one)
+        description: Operator action is required to replace the configured binding
+          before expiry; credential rotation alone does not extend validity. This
+          is not a guest compromise signal.
+  - eval_time: 6m
+    alertname: IDSHostEnrollmentExpired
+    exp_alerts: []
+  - eval_time: 15m
+    alertname: IDSHostEnrollmentExpiring
+    exp_alerts: []
+  - eval_time: 15m
+    alertname: IDSHostEnrollmentExpired
+    exp_alerts: []
+  - eval_time: 17m
+    alertname: IDSHostEnrollmentExpiring
+    exp_alerts: []
+  - eval_time: 17m
+    alertname: IDSHostEnrollmentExpired
+    exp_alerts:
+    - exp_labels:
+        site: fixture
+        enrollment: guest-one
+        vm_id: vm-one
+        job: ids
+        instance: one
+        severity: warning
+        investigate: 'false'
+      exp_annotations:
+        summary: Host enrollment has expired (guest-one, VM vm-one)
+        description: Guest reports for this configured binding are rejected. Reconcile
+          retained guest data and replace the binding through the existing enrollment
+          procedure.

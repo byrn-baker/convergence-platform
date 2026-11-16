@@ -39,6 +39,8 @@ metadata:
   name: {{ $name }}
   labels: {{ include "convergence.labels" . | nindent 4 }}
 data:
+  host-enrollment.rules.yml: |
+{{ .Files.Get "files/host-enrollment.rules.yml" | indent 4 }}
   ids-scrapes.yml: |
     {{- toYaml (dict "groups" (list (dict "name" "convergence.ids.expected-scrapes" "interval" "30s" "rules" $rules))) | nindent 4 }}
 {{- end }}

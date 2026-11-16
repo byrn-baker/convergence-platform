@@ -496,3 +496,45 @@ def test_streaming_admission_rechecks_enrollment_at_full_body_receipt(setup, mon
         assert response.status_code == 401
         assert not store.pending('log')
         assert store.db.execute('SELECT count(*) FROM host_health').fetchone()[0] == 0
+
+
+def test_configured_enrollment_metrics_require_status_role_and_ignore_guest_data(setup):
+    from telemetry import render_metrics
+    store, agent, _, client = setup
+    assert post(client, batch(heartbeat())).status_code == 200
+    # Deliberately corrupt untrusted persisted heartbeat metadata: it must not
+    # supply enrollment labels, validity or revocation metrics.
+    with store.lock, store.db:
+        store.db.execute('UPDATE host_health SET heartbeat=? WHERE id=?',
+            (json.dumps({'site': 'guest-spoofed', 'valid_until': 1, 'revoked': True}), agent['id']))
+    for token in ('', 'ids-secret', 'guest-secret'):
+        assert client.get('/metrics', headers={'Authorization': 'Bearer '+token}).status_code == 401
+    response = client.get('/metrics', headers={'Authorization': 'Bearer status-secret'})
+    assert response.status_code == 200
+    text = response.text
+    labels = 'enrollment="guest-one",site="lab",vm_id="vm-one"'
+    for name, value in [('valid_from_timestamp_seconds', host_events.timestamp(agent['valid_from'])),
+                        ('valid_until_timestamp_seconds', host_events.timestamp(agent['valid_until'])),
+                        ('revoked', 0.)]:
+        assert f'netclaw_ids_host_enrollment_{name}{{{labels}}} {value}' in text
+    for forbidden in ('guest-spoofed', 'tenant-one', 'allocation-one', 'map-one', agent['token_sha256'], 'guest-secret'):
+        assert forbidden not in text
+    # Existing two- and three-positional-argument callers remain host-free.
+    assert 'host_enrollment_' not in render_metrics(store, [])
+    assert 'host_enrollment_' not in render_metrics(store, [], 1000)
+
+
+@pytest.mark.parametrize('revoked', [False, True])
+def test_enrollment_validity_metrics_exist_without_any_guest_contact(tmp_path, revoked):
+    from telemetry import render_metrics
+    store = Store(str(tmp_path/'metrics.sqlite'))
+    try:
+        agent = enrollment(now=1000000, revoked=revoked)
+        text = render_metrics(store, [], 1000000, host_agents=[agent])
+        lines = [line for line in text.splitlines() if line.startswith('netclaw_ids_host_enrollment_')]
+        assert len(lines) == 3
+        assert 'valid_from_timestamp_seconds{enrollment="guest-one",site="lab",vm_id="vm-one"} 913600.0' in text
+        assert 'valid_until_timestamp_seconds{enrollment="guest-one",site="lab",vm_id="vm-one"} 1086400.0' in text
+        assert f'netclaw_ids_host_enrollment_revoked{{enrollment="guest-one",site="lab",vm_id="vm-one"}} {float(revoked)}' in text
+    finally:
+        store.db.close()

@@ -129,3 +129,22 @@ def test_promql_absence_is_per_expected_target_and_recovers(tmp_path):
     (tmp_path / 'tests.yml').write_text(yaml.safe_dump(fixture))
     result = subprocess.run([*command, 'test', 'rules', 'tests.yml'], cwd=tmp_path, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_opted_in_host_enrollment_rules_are_the_canonical_asset(tmp_path):
+    objects = render(tmp_path, TARGETS)
+    config = next(obj for obj in objects if obj['kind'] == 'ConfigMap'
+                  and obj['metadata']['name'] == 'fixture-ids-monitoring-rules')
+    canonical = CHART.parents[2] / 'deploy/convergence/prometheus/alerts/host-enrollment.rules.yml'
+    assert yaml.safe_load(config['data']['host-enrollment.rules.yml']) == yaml.safe_load(canonical.read_text())
+    names = [r['alert'] for g in yaml.safe_load(config['data']['host-enrollment.rules.yml'])['groups'] for r in g['rules']]
+    assert names == ['IDSHostEnrollmentExpiring', 'IDSHostEnrollmentExpired']
+    assert 'IDSIPContextUnavailable' not in config['data']['host-enrollment.rules.yml']
+
+
+@pytest.mark.skipif(not os.environ.get('PROMTOOL_BIN'), reason='set PROMTOOL_BIN for actual PromQL evaluation')
+def test_host_enrollment_rules_cover_validity_and_revocation_boundaries():
+    root = CHART.parents[2] / 'deploy/convergence/ids'
+    result = subprocess.run([*shlex.split(os.environ['PROMTOOL_BIN']), 'test', 'rules',
+                             'tests-host-enrollment-alerts.yml'], cwd=root, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
