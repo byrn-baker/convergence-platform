@@ -15,6 +15,7 @@ Important values:
 | `victoria.metrics.server.persistentVolume`, `victoria.logs.server.persistentVolume` | Long-term store capacity/class |
 | `victoria.storage` | Collection and alerting queue storage |
 | `grafana.enabled` | Optional private Grafana, disabled by default |
+| `ids.ipContextEnabled` | External IP-context database updater; defaults to `true` when IDS is enabled. Set `false` for isolated or unenriched installations; no updater CronJob or `IPINFO_TOKEN` is then required. |
 | `grafana.storage` | Private Grafana PVC; enabled Grafana also requires `GRAFANA_ADMIN_PASSWORD` in the Secret |
 | `victoria.sharedGrafana` | Optional shared provisioning bundle; prefer `registrationMode: external` for GitOps ownership |
 

@@ -89,6 +89,7 @@ ids:
     requests: {cpu: 100m, memory: 512Mi}
     limits: {cpu: '2', memory: 6Gi}
   ipContextSchedule: '17 4 * * *'
+  ipContextEnabled: true   # optional external IP database updater; disable for isolated installs
 # Optional private dashboard for fresh installs. Existing shared Grafana is untouched.
 grafana:
   enabled: false

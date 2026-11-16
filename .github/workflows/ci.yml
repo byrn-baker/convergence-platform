@@ -18,7 +18,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: automateyournetwork/netclaw
+          ref: a5e7c3a3e07d8c8c4f2f26d22b4bd854dd1ba42e
           path: netclaw
+          persist-credentials: false
           sparse-checkout: mcp-servers/jev-mcp
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -136,7 +138,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: automateyournetwork/netclaw
+          ref: a5e7c3a3e07d8c8c4f2f26d22b4bd854dd1ba42e
           path: netclaw
+          persist-credentials: false
           sparse-checkout: mcp-servers/jev-mcp
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:

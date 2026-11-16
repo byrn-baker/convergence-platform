@@ -425,3 +425,38 @@ RAG receiver shutdown must use supported control-group policy and90s stop timeou
 its earlier30s unit is only the RAG-disabled smallest canary. API learning callback
 is best-effort; test explicit operator reconciliation for missing/stale snapshots
 using existing /snapshot and /snapshot/backfill, not an invented durableAPIoutbox.
+
+
+Continuation November16, same authorized run and unchanged feature freeze.
+S03 learning path: real API Pod authenticated CNI callback202/unauthenticated401,
+external controller8099/18443 denied, actual stock RAG indexing/retrieval passed.
+API content update produced a new linked snapshot and superseded the old one.
+Receiver outage leaves a stale link; targeted authenticated /snapshot reconciled
+it, and exact repeat skipped without another document. This is explicit operator
+reconciliation; automatic stale-link catch-up remains unqualified.
+
+S05 RAG interruption attempt1 FAIL, independently reproduced/diagnosed: receiver
+stopped while actual snapshot was embedding, old worker exited in0.417s; after
+restart durable job exhausted3 attempts with UNIQUE(documents.content_hash,kind).
+Registry row remained error with no source_path. Current upstream main is the
+same pinned a5e7c3; rag_reindex rejects snapshots. Failure DB backups/journal remain
+private under VM117 operator/learning-interruption-failure, original stores retained.
+Natural repair belongs in upstream rag_snapshot lifecycle, not adapter registry
+mutation. Bounded upstream candidate attempt1 assigned host_seam in separate
+netclaw-rag-stabilization worktree based on a5e7c3, preserving clean stock checkout.
+Acceptance: retry/reuse identity, partial-index cleanup, concurrency and actual
+interrupted-worker rehearsal. Patched candidate will be labelled separately; it
+cannot be represented as unchanged-stock acceptance. No production changes.
+
+IDS runtime chart opt-out and private fixture scripts are frozen for independent
+review. Writer67 Helm tests passed/3 skipped; no IDS lab deployment yet. Two JEV
+CI jobs now pin the already-qualified upstream commit rather than floating main;
+independent review and17 stock-source JEV tests pass. Changes await combined
+reviewed commit. Guarded full IDS acquisition continues, about5.3GiB accepted at
+23:58UTC; assembly/filesystem/SQLite/full recovery gates remain open.
+
+IDS chart independently PASS:4 focused Helm checks prove default/explicit true
+equivalence and false removes only enrichment CronJob. Private fixture validation
+passed actual schema/fingerprint contracts. Browser verifier found missing exact
+case cardinality/type and redirect checks; coordinator corrected both and re-review
+PASS. Actual deployment/telemetry qualification remains open.

@@ -54,6 +54,7 @@ spec:
       volumes:
         - {name: data, persistentVolumeClaim: {claimName: {{ required "Set ids.existingClaim" .Values.ids.existingClaim }}}}
         - {name: secrets, secret: {secretName: {{ required "Set ids.existingSecret" .Values.ids.existingSecret }}, defaultMode: 0440}}
+{{- if .Values.ids.ipContextEnabled }}
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -89,4 +90,5 @@ spec:
               volumeMounts: [{name: data, mountPath: /data}]
           volumes:
             - {name: data, persistentVolumeClaim: {claimName: {{ .Values.ids.existingClaim }}}}
+{{- end }}
 {{- end }}

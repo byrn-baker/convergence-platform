@@ -65,3 +65,14 @@ aborts and retains incomplete target material. Source stat checks detect changes
 not provide an exclusive lock. Qualify small bounded reads before considering full
 transfer. This is a specifically validated snapshot-format recovery, not a general
 Longhorn backup service or proof of consistency before filesystem/SQLite checks.
+
+
+## RAG interruption correctness repair
+
+The real stock snapshot worker interruption reproduces an upstream lifecycle
+bug: retry collides with the retained failed document hash. Repair the public
+snapshot lifecycle in a separate pinned upstream candidate, with request identity,
+partial-index cleanup and process coordination tests. Keep the Convergence adapter
+on the public API. Preserve original failure evidence and clean stock source;
+record patched qualification separately and export the exact dependency patch/pin
+for the consolidated release. No wholesale fork substitution.
