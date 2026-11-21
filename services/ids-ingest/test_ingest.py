@@ -89,6 +89,35 @@ class IngestionTests(unittest.TestCase):
         self.assertFalse(self.store.prune(limit=2))
         self.assertEqual(self.store.db.execute('SELECT count(*) FROM eve').fetchone()[0], 0)
 
+    def test_pruning_pass_ends_at_rows_too_new_to_expire(self):
+        # A pass must not walk the fresh tail before returning to expirable rows.
+        now = time.time()
+        old = now-3*86400
+        self.store.accept(self.sensor, [event('flow', now=old, src_port=n) for n in range(2)], self.hb, now=old)
+        fresh = now-3600
+        self.store.accept(self.sensor, [event('flow', now=fresh, src_port=n) for n in range(10, 16)], self.hb, now=fresh)
+        rows = self.store.pending('log')
+        for target in ('log', 'case'):
+            self.store.acknowledge(target, [r['id'] for r in rows])
+        cursor = lambda: self.store.db.execute("SELECT value FROM metadata WHERE key='prune_cursor'").fetchone()[0]
+        self.assertTrue(self.store.prune(now=now, limit=2))
+        self.assertFalse(self.store.prune(now=now, limit=2))
+        self.assertEqual(cursor(), 0)
+        self.assertEqual(self.store.db.execute('SELECT count(*) FROM eve').fetchone()[0], 6)
+        self.assertFalse(self.store.prune(now=now, limit=2))
+        self.assertEqual(cursor(), 0)
+
+    def test_future_stamped_rows_do_not_end_a_pruning_pass(self):
+        now = time.time()
+        for group, when in enumerate((now-3*86400, now+86400, now-3*86400)):
+            self.store.accept(self.sensor, [event('flow', now=when, src_port=10*group+n) for n in range(2)], self.hb, now=when)
+        rows = self.store.pending('log')
+        for target in ('log', 'case'):
+            self.store.acknowledge(target, [r['id'] for r in rows])
+        while self.store.prune(now=now, limit=2):
+            pass
+        self.assertEqual(self.store.db.execute('SELECT count(*) FROM eve').fetchone()[0], 2)
+
     def test_retention_windows_separate_cases_from_ordinary_events(self):
         # Defaults: acknowledged ordinary rows go after 1 day, alerts after 7.
         now = time.time()

@@ -145,7 +145,9 @@ customers or use this endpoint as a tenant-facing query service.
 
 As with EVE, pending delivery never expires. Acknowledged alerts and other
 case-bearing rows (EVE and host) remain `case_retention_days` (default 7), ordinary
-rows `event_retention_days` (default 1); pruning is bounded and best-effort. These are
+rows `event_retention_days` (default 1); pruning is bounded and best-effort, scanning in
+rowid order and restarting from the oldest rows once it reaches rows still inside the
+shorter window (passes start hourly). These are
 inbox retention/dedup windows, independent of central log retention, and must exceed
 the sender's 48-hour post-delivery spool replay and any lag of its history cursor
 behind live delivery (for example a multi-day outage), or replays are re-inserted. Shortening them frees SQLite pages
