@@ -17,7 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 import httpx
 
-from store import Store
+from store import CASE_RETENTION_DAYS, EVENT_RETENTION_DAYS, Store
 from async_storage import AsyncStorage, StorageBusy
 import host_events
 import hypervisor_events
@@ -304,5 +304,7 @@ def configured_app():
     config = json.loads(Path(os.environ['IDS_CONFIG_FILE']).read_text())
     Path(config['state_dir']).mkdir(parents=True, exist_ok=True, mode=0o700)
     store = Store(str(Path(config['state_dir'])/'eve.sqlite'), config.get('queue_capacity', 250000),
-                  enricher=IPContext(config.get('ip_enrichment')))
+                  enricher=IPContext(config.get('ip_enrichment')),
+                  event_retention_days=config.get('event_retention_days', EVENT_RETENTION_DAYS),
+                  case_retention_days=config.get('case_retention_days', CASE_RETENTION_DAYS))
     return create_app(config, store, owns_store=True)

@@ -78,14 +78,26 @@ def validate_event(event, now):
         raise ValueError('Stats object required')
 
 
+# Inbox windows for acknowledged rows; central log stores keep the history.
+# A window must outlast sender replay (spool files are kept 48h after delivery),
+# since a replayed ID is deduplicated only while its row is still here.
+EVENT_RETENTION_DAYS = 1
+CASE_RETENTION_DAYS = 7
+
+
 class Store:
-    def __init__(self, path, capacity=250000, enricher=None):
+    def __init__(self, path, capacity=250000, enricher=None,
+                 event_retention_days=EVENT_RETENTION_DAYS, case_retention_days=CASE_RETENTION_DAYS):
+        if not 0 < event_retention_days <= case_retention_days:
+            raise ValueError('Retention needs 0 < event_retention_days <= case_retention_days')
         Path(path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.db = sqlite3.connect(path, check_same_thread=False)
         Path(path).chmod(0o600)
         self.db.row_factory = sqlite3.Row
         self.lock = threading.RLock()
         self.capacity = capacity
+        self.event_retention = event_retention_days*86400
+        self.case_retention = case_retention_days*86400
         self.archive_enabled = False
         self.enricher = enricher
         self.db.execute('PRAGMA journal_mode=WAL')
@@ -269,7 +281,7 @@ class Store:
             # Force a rowid range scan. The delivery indexes otherwise make
             # SQLite revisit millions of acknowledged, retained alerts.
             self.db.execute("DELETE FROM eve NOT INDEXED WHERE rowid>? AND rowid<=? AND log_done=1 AND case_done=1"+archive_guard+" AND received_ns < ? AND ((kind!='alert' AND case_payload IS NULL) OR received_ns < ?)",
-                            (cursor, end, int((now-86400)*1e9), int((now-30*86400)*1e9)))
+                            (cursor, end, int((now-self.event_retention)*1e9), int((now-self.case_retention)*1e9)))
             more = len(rows) == limit
             self.db.execute("INSERT OR REPLACE INTO metadata VALUES('prune_cursor',?)", (end if more else 0,))
             return more

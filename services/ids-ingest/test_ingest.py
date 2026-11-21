@@ -88,6 +88,33 @@ class IngestionTests(unittest.TestCase):
         self.assertFalse(self.store.prune(limit=2))
         self.assertEqual(self.store.db.execute('SELECT count(*) FROM eve').fetchone()[0], 0)
 
+    def test_retention_windows_separate_cases_from_ordinary_events(self):
+        # Defaults: acknowledged ordinary rows go after 1 day, alerts after 7.
+        now = time.time()
+        for age in (2, 6, 8):
+            when = now-age*86400
+            self.store.accept(self.sensor, [event(now=when, src_port=age)], self.hb, now=when)
+        self.store.accept(self.sensor, [event('flow', now=now-2*86400, src_port=99)], self.hb, now=now-2*86400)
+        rows = self.store.pending('log')
+        for target in ('log', 'case'):
+            self.store.acknowledge(target, [r['id'] for r in rows])
+        self.assertFalse(self.store.prune(now=now))
+        kept = sorted(json.loads(r[0])['src_port'] for r in self.store.db.execute('SELECT payload FROM eve'))
+        self.assertEqual(kept, [2, 6])
+
+    def test_retention_windows_are_configurable_and_validated(self):
+        self.store.db.close()
+        self.store = Store(self.path, event_retention_days=1, case_retention_days=30)
+        when = time.time()-8*86400
+        self.store.accept(self.sensor, [event(now=when)], self.hb, now=when)
+        for target in ('log', 'case'):
+            self.store.acknowledge(target, [r['id'] for r in self.store.pending('log')])
+        self.store.prune()
+        self.assertEqual(self.store.db.execute('SELECT count(*) FROM eve').fetchone()[0], 1)
+        for bad in ((0, 7), (2, 1), (-1, 7)):
+            with self.assertRaises(ValueError):
+                Store(self.path, event_retention_days=bad[0], case_retention_days=bad[1])
+
     def test_full_queue_rolls_back_entire_batch(self):
         self.store.capacity = 1
         with self.assertRaises(OverflowError):

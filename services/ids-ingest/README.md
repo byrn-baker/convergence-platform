@@ -143,9 +143,12 @@ return 503. Retain and retry on delivery failures. Credentials never grant statu
 access or access to the EVE endpoint. Do not expose the operator status token to
 customers or use this endpoint as a tenant-facing query service.
 
-As with EVE, pending delivery never expires. Acknowledged host case rows remain
-30 days, ordinary host rows one day; pruning is bounded and best-effort. These are
-inbox retention/dedup windows, independent of central log retention. A receiver
+As with EVE, pending delivery never expires. Acknowledged alerts and other
+case-bearing rows (EVE and host) remain `case_retention_days` (default 7), ordinary
+rows `event_retention_days` (default 1); pruning is bounded and best-effort. These are
+inbox retention/dedup windows, independent of central log retention, and must exceed
+the sender's 48-hour post-delivery spool replay. Shortening them frees SQLite pages
+for reuse; the database file itself does not shrink. A receiver
 outage can fill the guest spool, and a downstream outage can fill the shared
 receiver queue; monitor both. Top-level `host_queue_capacity` defaults to half `queue_capacity` and cannot exceed
 that half, reserving the remainder for EVE. `host_agent_queue_capacity` defaults to
