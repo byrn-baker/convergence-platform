@@ -95,6 +95,10 @@ review. The owner confirmed workstation access; live desktop/mobile browser and
 source-comparison checks passed for v0.1.15. The ordinary native HUD remains in
 place; native verified-owner migration is outside this approved increment.
 
+Native HUD sign-in: a proposal is in [native-hud-plan.md](native-hud-plan.md)
+(2026-11-21), awaiting owner decisions. It records that the production native HUD
+forwards all `/api/home` requests to Convergence with an admin key.
+
 ## 4. Add reviewer JEV actions
 
 Approved contract: [jev-requests.md](jev-requests.md). Separate attributed requests
