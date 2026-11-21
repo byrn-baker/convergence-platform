@@ -28,8 +28,20 @@ Each live step needs owner approval: show the change, then apply it.
   3. `PGUSER` set, because uid 999 has no passwd entry;
   4. stale partial dumps removed.
 
-  The claim-template drift fix rode with attempt 1. No independent review of the
-  manifests yet.
+  The claim-template drift fix rode with attempt 1.
+
+  Independent review (Grok timed out; Claude reviewer): no critical defects; three fixes
+  are prepared on ops branch `identity-review-fixes` (efb959c), not applied:
+  - a Keycloak network policy, because any pod could reach `/admin` past the ingress
+    filter;
+  - optional bootstrap-admin Secret references, because deleting the Secret would block
+    a restart;
+  - a restore procedure that avoids self-heal and the backup job, and runs in one
+    transaction.
+
+  For K2: enable brute-force detection on `master` too, consider returning 404 for
+  `/realms/master` at the ingress, and test admin login through the port-forward before
+  removing the bootstrap admin.
 - [ ] K2: Realm `home` as reviewed configuration: groups, required MFA, the two OIDC
   clients with exact redirect URIs. Owner enrols their own passkey or TOTP.
 - [ ] K3: Restore drill: rebuild the realm from the Git export and database backup on a
