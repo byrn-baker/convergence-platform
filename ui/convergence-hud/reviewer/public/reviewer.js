@@ -33,6 +33,17 @@ export function startReviewer(document, browser = document.defaultView) {
       linkedCase = {id: reference.get('case').toLowerCase(), site: reference.get('site')};
     }
   }
+  // Single sign-on leaves this page and returns to it, which would drop the
+  // reference. It waits in this tab's storage and is consumed once on return.
+  const heldCase = 'review-linked-case';
+  try {
+    const held = browser.sessionStorage.getItem(heldCase);
+    browser.sessionStorage.removeItem(heldCase);
+    const parsed = held && !linkedCase ? JSON.parse(held) : null;
+    if (parsed && UUID.test(parsed.id) && typeof parsed.site === 'string' && parsed.site) {
+      linkedCase = {id: parsed.id.toLowerCase(), site: parsed.site};
+    }
+  } catch { /* storage is optional */ }
   let workspaceMode = 'cases';
   const telemetry = telemetryWorkspace({document, browser, session:() => session, scopeLost, updateExpiry:setExpiry,
     openCase(selectedSite, id) {
@@ -80,7 +91,7 @@ export function startReviewer(document, browser = document.defaultView) {
     form.reset();
     login.reset();
     text('identity', '');
-    for (const id of ['workspace', 'account', 'login', 'reconnect']) visible(id, false);
+    for (const id of ['workspace', 'account', 'login', 'sso', 'reconnect']) visible(id, false);
   }
 
   function setExpiry(value) {
@@ -128,7 +139,9 @@ export function startReviewer(document, browser = document.defaultView) {
     if (changed) purgeSession();
     session = next;
     visible('reconnect', false);
-    visible('login', !user);
+    // An older server reports no methods; it offers password sign-in only.
+    visible('login', !user && next.signIn?.password !== false);
+    visible('sso', !user && next.signIn?.oidc === true);
     visible('account', Boolean(user));
     if (next.capabilities?.telemetry !== true) workspaceMode = 'cases';
     visible('workspace-nav', Boolean(user) && next.capabilities?.telemetry === true);
@@ -351,6 +364,12 @@ export function startReviewer(document, browser = document.defaultView) {
     }
   });
 
+  byId('sso-start').addEventListener('click', () => {
+    if (authBusy || !session || session.user) return;
+    try { if (linkedCase) browser.sessionStorage.setItem(heldCase, JSON.stringify(linkedCase)); } catch { /* optional */ }
+    browser.location.assign('/oidc/login');
+  });
+
   async function logout() {
     if (authBusy || !session?.csrf) return;
     authBusy = true;
@@ -359,9 +378,13 @@ export function startReviewer(document, browser = document.defaultView) {
     const ending = request('/review/sign-out', {});
     purgeSession();
     try {
-      await ending;
+      const ended = await ending;
       changes?.postMessage('changed');
       logoutNonce = null;
+      // The identity provider session ends too, or the next visit signs back in.
+      if (typeof ended?.location === 'string' && ended.location.startsWith('https://')) {
+        return browser.location.assign(ended.location);
+      }
     } catch {
       text('status', 'Sign-out could not be confirmed. Retry sign-out before leaving this browser.');
       visible('reconnect', true);

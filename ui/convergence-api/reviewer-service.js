@@ -6,6 +6,7 @@ const net = require('node:net');
 const path = require('node:path');
 const {pool} = require('./src/db');
 const {createGrantAuthority} = require('./src/reviewer/grants');
+const {createIdTokenVerifier} = require('./src/reviewer/oidc');
 const {identity, watchTls} = require('./src/reviewer/tls-reload');
 const {createReviewerService} = require('./src/reviewer/transport');
 const {createTelemetryReader} = require('./src/reviewer/telemetry');
@@ -47,7 +48,14 @@ async function main() {
   const tls = {ca: input('REVIEWER_CLIENT_CA'), key: input('REVIEWER_TLS_KEY'), cert: input('REVIEWER_TLS_CERT')};
   const enrollments = JSON.parse(input('REVIEWER_INSTALLATIONS_FILE'));
   await pool.query('SELECT 1 FROM reviewer_grants LIMIT 0');
-  const server = createReviewerService({tls, enrollments, authority: createGrantAuthority(pool),
+  // Both settings are required together. Without them only password sign-in exists.
+  const {REVIEWER_OIDC_ISSUER: issuer, REVIEWER_OIDC_CLIENT_ID: audience} = process.env;
+  if (Boolean(issuer) !== Boolean(audience)) throw new Error('Incomplete identity provider settings');
+  const oidc = issuer ? createIdTokenVerifier({issuer, audience,
+    requiredGroup: process.env.REVIEWER_OIDC_REQUIRED_GROUP || ''}) : undefined;
+  const passwordSignIn = process.env.REVIEWER_PASSWORD_SIGN_IN !== '0';
+  if (!oidc && !passwordSignIn) throw new Error('No sign-in method is enabled');
+  const server = createReviewerService({tls, enrollments, authority: createGrantAuthority(pool, {oidc, passwordSignIn}),
     investigationEnabled: process.env.REVIEWER_INVESTIGATION_ENABLED === '1',
     jevEnabled: process.env.REVIEWER_JEV_ENABLED === '1',
     telemetry: process.env.REVIEWER_TELEMETRY_ENABLED === '1' ? createTelemetryReader() : undefined});

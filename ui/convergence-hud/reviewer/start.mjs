@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import net from 'node:net';
 import {pathToFileURL} from 'node:url';
+import {createOidcClient} from './oidc.mjs';
 import {createReviewerClient} from './service-client.mjs';
 import {createReviewerServer} from './server.mjs';
 import {identity, watchTls} from './tls-reload.mjs';
@@ -35,8 +36,17 @@ function start() {
   const client = createReviewerClient({origin: env.REVIEWER_SERVICE_ORIGIN, tls: {
     ca: file('REVIEWER_SERVICE_CA'), cert: file('REVIEWER_INSTALLATION_CERT'), key: file('REVIEWER_INSTALLATION_KEY'),
   }});
+  // The issuer, client and secret file are required together.
+  const provider = [env.REVIEWER_OIDC_ISSUER, env.REVIEWER_OIDC_CLIENT_ID, env.REVIEWER_OIDC_CLIENT_SECRET_FILE];
+  if (provider.some(Boolean) && !provider.every(Boolean)) throw new Error('Incomplete identity provider settings');
+  const oidc = provider[0] ? createOidcClient({issuer: provider[0], clientId: provider[1],
+    clientSecret: fs.readFileSync(provider[2], 'utf8').trim(), origin: env.REVIEWER_HUD_ORIGIN}) : undefined;
+  const addresses = (env.REVIEWER_PASSWORD_SIGN_IN_ADDRESSES || '').split(',').map(item => item.trim()).filter(Boolean);
+  if (!addresses.every(item => net.isIP(item))) throw new Error('Invalid password sign-in address');
+  const passwordSignIn = {enabled: env.REVIEWER_PASSWORD_SIGN_IN !== '0',
+    addresses: addresses.length ? new Set(addresses) : null};
   const server = createReviewerServer({
-    origin: env.REVIEWER_HUD_ORIGIN, assets: reviewerAssets(), client,
+    origin: env.REVIEWER_HUD_ORIGIN, assets: reviewerAssets(), client, oidc, passwordSignIn,
     tls: {cert: file('REVIEWER_HUD_CERT'), key: file('REVIEWER_HUD_KEY')},
   });
   server.listen(port, host, () => console.log('Convergence HTTPS reviewer HUD listening'));
@@ -57,5 +67,5 @@ function start() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try { start(); }
-  catch { console.error('Reviewer HUD could not start. Check the HTTPS origins, bind address and TLS files.'); process.exitCode = 1; }
+  catch { console.error('Reviewer HUD could not start. Check the HTTPS origins, bind address, TLS files and sign-in settings.'); process.exitCode = 1; }
 }

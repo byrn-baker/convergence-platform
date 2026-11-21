@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {randomUUID} = require('node:crypto');
+const {randomBytes, randomUUID} = require('node:crypto');
 const {execFileSync} = require('node:child_process');
 const {readFileSync} = require('node:fs');
 const path = require('node:path');
@@ -71,6 +71,25 @@ test('the deployed runtime and provisioning grants allow a complete review and s
   await assert.rejects(service.query('DELETE FROM reviewer_case_dispositions'), {code: '42501'});
   await assert.rejects(directory.query('SELECT password_hash FROM reviewer_accounts'), {code: '42501'});
   await assert.rejects(directory.query('SELECT id FROM events'), {code: '42501'});
+
+  // Identity-provider sign-in under the same two roles. Token checks are covered
+  // elsewhere; this stand-in accepts one subject.
+  const issuer = 'https://sso.test/realms/home';
+  const oidc = {verify: async () => ({issuer, subject: 'subject-alice', digest: randomBytes(32),
+    expiresAt: new Date(Date.now() + 360_000)})};
+  const sso = createGrantAuthority(service, {oidc, passwordSignIn: false});
+  const exchange = {idToken: 'a.b.c', nonce: 'A'.repeat(43)};
+  await assert.rejects(sso.issueOidc('installation', exchange), {status: 403});
+  await assert.rejects(service.query(`INSERT INTO reviewer_identity_links (issuer, subject, account_id)
+    SELECT $1, 'subject-alice', id FROM reviewer_accounts`, [issuer]), {code: '42501'});
+  await provision(directory, ['link', 'alice', issuer, 'subject-alice']);
+  const linked = await sso.issueOidc('installation', exchange);
+  assert.equal(linked.name, 'alice');
+  await assert.rejects(service.query('DELETE FROM reviewer_identity_links'), {code: '42501'});
+  await assert.rejects(directory.query('SELECT token_digest FROM reviewer_grants'), {code: '42501'});
+  await assert.rejects(directory.query('SELECT * FROM reviewer_oidc_exchanges'), {code: '42501'});
+  await provision(directory, ['unlink', 'alice', issuer, 'subject-alice']);
+  await assert.rejects(sso.withGrant('installation', linked.token, {site: 'home', write: false}, (_db, actor) => actor), {status: 401});
   await authority.revoke('installation', grant.token);
   await provision(directory, ['disable', 'alice']);
 });

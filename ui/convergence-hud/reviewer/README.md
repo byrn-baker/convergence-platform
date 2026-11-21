@@ -25,6 +25,44 @@ Route only the dedicated hostname to this listener. Direct TLS or layer-4 TLS pa
 
 Each sign-in rotates a host-only secure cookie and binds it to one server-held grant. Serve one HUD process per reviewer origin, or route the same session to the same HUD replica. The private API supports multiple replicas. Restarting the HUD ends its in-memory associations. The private API enforces a 30-minute maximum and a 10-minute idle limit. A case read or background poll does not renew the idle limit. An acknowledged write can extend it up to the absolute deadline.
 
+## Sign in through an identity provider
+
+Set these three together to make the HUD an OpenID Connect relying party. The reviewer
+service needs the matching issuer and client ID (see its REVIEWER.md).
+
+| Setting | Purpose |
+| --- | --- |
+| REVIEWER_OIDC_ISSUER | Exact HTTPS issuer, without a trailing slash, e.g. https://sso.example.org/realms/home. |
+| REVIEWER_OIDC_CLIENT_ID | The confidential client registered for this site. Register the redirect address `<origin>/oidc/callback` and the post-logout address `<origin>/`, and require PKCE with S256. |
+| REVIEWER_OIDC_CLIENT_SECRET_FILE | Path to a file holding the client secret. Keep it readable only by the HUD process. |
+| REVIEWER_PASSWORD_SIGN_IN | Set to 0 to remove password sign-in. Any other value, or none, leaves it on. |
+| REVIEWER_PASSWORD_SIGN_IN_ADDRESSES | Comma-separated browser addresses that may use password sign-in. Required when an identity provider is set and password sign-in is on. |
+
+How it works:
+
+- `GET /oidc/login` starts an attempt and redirects to the provider. The state, nonce
+  and PKCE verifier stay in the HUD's memory for ten minutes. The browser holds only an
+  opaque `SameSite=Lax` cookie that names the attempt.
+- `GET /oidc/callback` spends the attempt, redeems the code with the verifier and the
+  client secret, and passes the ID token and nonce to the reviewer service. The HUD
+  does not read the token. The service checks it and returns a grant for the account
+  that an administrator linked to that issuer and subject.
+- The session cookie, CSRF proof and grant lifetimes are the same as for a password
+  sign-in.
+- Sign-out ends the session and grant, then sends the browser to the provider's
+  end-session address.
+
+If the provider cannot be reached, sign-in fails closed and existing sessions run until
+their grants expire. A person whose identity is not linked sees a page that says so.
+
+Password sign-in beside an identity provider is the break-glass path. It works only from
+the listed addresses, so the HUD must see real client addresses (direct TLS, or a
+Kubernetes Service with `externalTrafficPolicy: Local`). Each attempt writes one JSON
+line to standard output: `{"event":"reviewer-password-sign-in","address":…,"username":…,
+"outcome":"accepted"|"rejected","at":…}`. Turn it off again after use.
+
+A restart ends every session, as before, and also drops sign-in attempts in progress.
+
 ## Qualify and roll back
 
 Check certificate trust from a second workstation, run viewer and operator accounts across two test sites, confirm the saved disposition and original reviewer in PostgreSQL, sign out one user and check the other. Exercise hostile origins, direct ingress bypass and rejection of native HUD paths. Verify the readable review still belongs to the authorized site after a refresh. If a submission is interrupted, check its receipt before attempting it again.

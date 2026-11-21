@@ -118,6 +118,14 @@ reviewer:
   telemetryEnabled: false
   telemetryIdsSecret: ''   # optional IDS_STATUS_URL, IDS_STATUS_TOKEN, ids-ca.crt (read-only)
   jevEnabled: false
+  oidc:                     # sign-in through an identity provider; set all of issuer, clientId, clientSecret
+    issuer: ''              # exact HTTPS issuer, no trailing slash
+    clientId: ''
+    clientSecret: ''        # Secret holding client-secret; mounted in the reviewer HUD only
+    requiredGroup: ''       # optional group that the ID token's groups claim must contain
+  passwordSignIn:
+    enabled: true           # with oidc set this is the break-glass path; turn it off after cutover
+    addresses: []           # browser addresses allowed to use it; required when oidc is set
   relay:
     enabled: false
     jevEnabled: false       # can drain accepted JEV requests while acceptance is disabled

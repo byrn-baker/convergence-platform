@@ -29,11 +29,11 @@ h2 { font-size: 1.35rem; }
 h3 { font-size: 1.05rem; }
 p, dl { margin: .35rem 0 .65rem; }
 #status { color: var(--accent); min-height: 1.55rem; }
-#login, #lookup, #detail {
+#login, #sso, #lookup, #detail {
   border: 1px solid var(--line); border-radius: .65rem; padding: clamp(1rem, 3vw, 1.75rem);
   background: var(--panel); margin-top: 1.25rem;
 }
-#login { max-width: 27rem; }
+#login, #sso { max-width: 27rem; }
 #lookup { display: grid; align-items: end; grid-template-columns: minmax(6rem,1fr) minmax(13rem,2.5fr) auto; gap: 1rem; }
 label { display: block; color: var(--muted); font-weight: 500; }
 input, select, textarea, button { font: inherit; }

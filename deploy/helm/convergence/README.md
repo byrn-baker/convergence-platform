@@ -130,6 +130,13 @@ An administrator can run this command in an isolated one-off workload with acces
 
 The chart creates ClusterIP services RELEASE-review-api:3443 and RELEASE-review-hud:3444. The backend has a NetworkPolicy admitting connections only from the same release's HUD pods. Check that the cluster CNI enforces NetworkPolicy. Site-specific routing must expose only the review HUD over trusted HTTPS. Use dedicated TCP/TLS passthrough to preserve the browser's origin and the HUD certificate. The HUD rejects forwarded identity, scheme and address headers. An ordinary HTTP Ingress with default forwarding headers cannot serve this contract.
 
+To sign people in through an identity provider, create a Secret with the key
+`client-secret` and set `reviewer.oidc.issuer`, `clientId`, `clientSecret` (the Secret's
+name) and optionally `requiredGroup`. Only the HUD mounts the Secret. Both pods need
+HTTPS egress to the issuer. With `oidc` set, `reviewer.passwordSignIn` is the break-glass
+path: either turn it off, or list the browser addresses that may use it in
+`passwordSignIn.addresses`. Link each person first with `reviewer-accounts.js link`.
+
 The reviewer HUD has one replica with Recreate strategy because browser sessions are process-local. Rollout ends existing sign-ins. Named user grants, case dispositions and history are durable in PostgreSQL. Certificate changes require process restarts: enroll both client fingerprints and roll API pods, rotate the HUD credentials and roll its pod, then remove the retired enrollment and roll the API again. Renewing the browser certificate also requires restarting the HUD. Disabling reviewer removes its manifests from rendered output. Reconcile removal using the release's normal prune or decommission procedure. Preserve database history.
 
 ### Optional investigation delivery

@@ -5,7 +5,7 @@ const bcrypt = require('bcrypt');
 const {randomUUID} = require('node:crypto');
 const {pool} = require('./src/db');
 
-const usage = 'Usage: node reviewer-accounts.js create|access USERNAME viewer|operator|admin SITE...; or password|disable USERNAME. Supply a new password on stdin for create or password.';
+const usage = 'Usage: node reviewer-accounts.js create|access USERNAME viewer|operator|admin SITE...; or password|disable USERNAME; or link|unlink USERNAME ISSUER SUBJECT. Supply a new password on stdin for create or password.';
 
 async function passwordHash(input) {
   if (input.isTTY) throw new Error('Provide the password through stdin without terminal echo');
@@ -25,7 +25,7 @@ async function passwordHash(input) {
 
 async function provision(database, args, input) {
   const [command, username, role, ...sites] = args;
-  if (!['create', 'access', 'password', 'disable'].includes(command) || typeof username !== 'string' ||
+  if (!['create', 'access', 'password', 'disable', 'link', 'unlink'].includes(command) || typeof username !== 'string' ||
       !username.trim() || username.length > 128 || /[\x00-\x1f\x7f]/.test(username)) throw new Error(usage);
   let result;
   if (command === 'create' || command === 'access') {
@@ -40,6 +40,30 @@ async function provision(database, args, input) {
     } else {
       result = await database.query('UPDATE reviewer_accounts SET role = $2, sites = $3 WHERE username = $1 RETURNING id',
         [username, role, sites]);
+    }
+  } else if (command === 'link' || command === 'unlink') {
+    // The identity is the provider's issuer and immutable subject. An email
+    // address or username can be reassigned, so neither is accepted as a key.
+    const [issuer, subject] = [role, sites[0]];
+    let url;
+    try { url = new URL(issuer); } catch { throw new Error(usage); }
+    if (args.length !== 4 || url.protocol !== 'https:' || issuer.length > 512 || issuer.endsWith('/') ||
+        url.search || url.hash || !subject || subject.length > 255 || /[\x00-\x1f\x7f]/.test(subject)) throw new Error(usage);
+    if (command === 'link') {
+      // One subject signs in as one account. Re-linking needs an explicit unlink.
+      result = await database.query(`INSERT INTO reviewer_identity_links (issuer, subject, account_id)
+        SELECT $2, $3, id FROM reviewer_accounts WHERE username = $1
+        ON CONFLICT (issuer, subject) DO NOTHING RETURNING account_id AS id`, [username, issuer, subject]);
+      if (!result.rowCount) throw new Error('Unknown reviewer, or the identity is already linked');
+    } else {
+      // Sessions that began through the link end with it.
+      result = await database.query(`WITH gone AS (
+          DELETE FROM reviewer_identity_links l USING reviewer_accounts a
+           WHERE a.username = $1 AND l.account_id = a.id AND l.issuer = $2 AND l.subject = $3
+           RETURNING l.account_id AS id),
+        ended AS (DELETE FROM reviewer_grants WHERE account_id IN (SELECT id FROM gone))
+        SELECT id FROM gone`, [username, issuer, subject]);
+      if (!result.rowCount) throw new Error('Unknown reviewer or identity link');
     }
   } else {
     if (args.length !== 2) throw new Error(usage);

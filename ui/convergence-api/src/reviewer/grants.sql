@@ -70,3 +70,22 @@ CREATE TABLE IF NOT EXISTS reviewer_login_buckets (
   PRIMARY KEY (kind, key)
 );
 CREATE INDEX IF NOT EXISTS reviewer_login_bucket_age ON reviewer_login_buckets (started_at);
+
+-- An identity provider subject signs in as the account it is linked to. The key
+-- is the issuer and subject, never an email address or username. Linking is an
+-- explicit directory action (reviewer-accounts.js); sign-in never creates a link.
+CREATE TABLE IF NOT EXISTS reviewer_identity_links (
+  issuer text NOT NULL CHECK (length(issuer) BETWEEN 1 AND 512),
+  subject text NOT NULL CHECK (length(subject) BETWEEN 1 AND 255),
+  account_id text NOT NULL REFERENCES reviewer_accounts(id) ON DELETE CASCADE,
+  linked_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+  PRIMARY KEY (issuer, subject)
+);
+CREATE INDEX IF NOT EXISTS reviewer_identity_links_account ON reviewer_identity_links (account_id);
+
+-- Each ID token buys at most one grant. Only its digest is kept, until it expires.
+CREATE TABLE IF NOT EXISTS reviewer_oidc_exchanges (
+  token_digest bytea PRIMARY KEY CHECK (octet_length(token_digest) = 32),
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS reviewer_oidc_exchanges_expiry ON reviewer_oidc_exchanges (expires_at);

@@ -1,6 +1,11 @@
 import https from 'node:https';
 import {parseTelemetryTarget} from './telemetry-contract.mjs';
+import {OidcTransactions, transactionLifetimeMs} from './oidc.mjs';
 import {Admission, cookieName, failure, ReviewerSessions, tokenPattern} from './sessions.mjs';
+
+// The sign-in attempt cookie returns on the provider's redirect, so it is Lax. It
+// names server-side state only, and the session cookie stays Strict.
+const attemptCookie = '__Host-convergence-oidc';
 
 const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const casePath = new RegExp('^/review/sites/([A-Za-z0-9_.-]{1,128})/cases/(' + uuid +
@@ -11,12 +16,12 @@ const errors = {
   415: 'Expected JSON', 429: 'Too many requests', 503: 'Reviewer service unavailable',
 };
 
-function readCookie(req) {
+function readCookie(req, name = cookieName) {
   let selected;
   for (const pair of (req.headers.cookie || '').split(';')) {
     const item = pair.trim();
-    if (!item.startsWith(cookieName + '=')) continue;
-    const value = item.slice(cookieName.length + 1);
+    if (!item.startsWith(name + '=')) continue;
+    const value = item.slice(name.length + 1);
     if (selected !== undefined || !tokenPattern.test(value)) throw failure(400);
     selected = value;
   }
@@ -33,7 +38,9 @@ function originGate(req, origin) {
   }
   // A link from another site must be able to open the public sign-in document.
   // This exception cannot bootstrap a session, fetch data, submit or frame it.
-  const publicNavigation = req.method === 'GET' && req.url === '/' &&
+  // The identity provider's redirect is the other cross-site navigation. Its
+  // handler accepts nothing without this browser's own sign-in attempt.
+  const publicNavigation = req.method === 'GET' && (req.url === '/' || req.url.startsWith('/oidc/callback?')) &&
     req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document';
   if ((req.headers['sec-fetch-site'] === 'cross-site' && !publicNavigation) || req.headers.authorization !== undefined ||
       req.headers.forwarded !== undefined || Object.keys(req.headers).some(name => name.startsWith('x-forwarded-'))) {
@@ -45,13 +52,45 @@ function originGate(req, origin) {
   }
 }
 
-function cookie(res, value, seconds) {
-  res.setHeader('Set-Cookie', cookieName + '=' + value + '; Path=/; Max-Age=' + seconds + '; Secure; HttpOnly; SameSite=Strict');
+function cookie(res, value, seconds, name = cookieName, sameSite = 'Strict') {
+  res.appendHeader('Set-Cookie', name + '=' + value + '; Path=/; Max-Age=' + seconds + '; Secure; HttpOnly; SameSite=' + sameSite);
 }
 
-function sessionReply(entry) {
+function sessionReply(entry, signIn) {
   return entry.grant ? {user: entry.user, csrf: entry.csrf, capabilities:{telemetry:entry.capabilities?.telemetry === true}, expiresAt: new Date(Math.min(entry.idleUntil,entry.expires)).toISOString()}
-    : {user: null, csrf: entry.csrf};
+    : {user: null, csrf: entry.csrf, signIn};
+}
+
+const signInFailures = {
+  403: 'You are signed in to the identity provider, but that identity is not linked to a Convergence account. Ask an administrator to link it.',
+  429: 'Too many sign-in attempts. Try again later.',
+  503: 'Sign-in is unavailable because the identity provider or the reviewer service could not be reached.',
+};
+
+// The callback is a navigation, so its failures are a document, not JSON.
+function signInFailed(res, status) {
+  if (res.destroyed || res.writableEnded) return;
+  const shown = [403, 429, 503].includes(status) ? status : 401;
+  res.writeHead(shown, {'Content-Type': 'text/html; charset=utf-8'});
+  res.end('<!doctype html><html lang="en"><meta charset="utf-8"><title>Sign-in failed</title>' +
+    '<link rel="stylesheet" href="/reviewer.css"><main><h1>Sign-in failed</h1><p>' +
+    (signInFailures[shown] || 'The sign-in could not be completed.') + '</p><p><a href="/">Return to Convergence</a></p></main></html>');
+}
+
+function redirect(res, location) {
+  res.writeHead(303, {Location: location});
+  res.end();
+}
+
+function callbackParameters(target) {
+  const query = new URLSearchParams(target.slice('/oidc/callback?'.length));
+  const allowed = ['code', 'state', 'session_state', 'iss', 'error', 'error_description'];
+  const values = {};
+  for (const [name, value] of query) {
+    if (!allowed.includes(name) || Object.hasOwn(values, name) || value.length > 2048) throw failure(400);
+    values[name] = value;
+  }
+  return values;
 }
 
 function json(res, status, value) {
@@ -88,7 +127,10 @@ function identity(value) {
   return {id:value.id, name:value.name, role:value.role, sites:value.sites};
 }
 
-export function createReviewerServer({tls, origin, client, assets}) {
+// passwordSignIn.addresses, when set, lists the only browser addresses that may
+// use password sign-in. With an identity provider that is the break-glass path.
+export function createReviewerServer({tls, origin, client, assets, oidc,
+  passwordSignIn = {enabled: true, addresses: null}, audit = record => console.log(JSON.stringify(record))}) {
   const url = new URL(origin);
   if (url.protocol !== 'https:' || url.origin !== origin) throw new Error('Expected a canonical HTTPS reviewer origin');
   if (!(assets instanceof Map)) throw new Error('Expected a static reviewer asset map');
@@ -98,7 +140,16 @@ export function createReviewerServer({tls, origin, client, assets}) {
         /^\/(?:review|api)(?:\/|$)/i.test(path)) throw new Error('Invalid static reviewer asset path');
   }
 
+  if (!oidc && !passwordSignIn.enabled) throw new Error('No sign-in method is enabled');
+  if (oidc && passwordSignIn.enabled && !passwordSignIn.addresses?.size) {
+    throw new Error('Password sign-in beside an identity provider needs an address list');
+  }
   const sessions = new ReviewerSessions();
+  const attempts = new OidcTransactions();
+  const address = req => (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  const passwordAllowed = req => passwordSignIn.enabled &&
+    (!passwordSignIn.addresses || passwordSignIn.addresses.has(address(req)));
+  const signInMethods = req => ({oidc: Boolean(oidc), password: passwordAllowed(req)});
   const bootstrap = new Admission({total:240, perAddress:30});
   const login = new Admission({total:120, perAddress:20});
   let activeLogins = 0;
@@ -121,7 +172,22 @@ export function createReviewerServer({tls, origin, client, assets}) {
     }
   }
 
+  // Shared by both sign-in methods: the service's own view of the new grant
+  // must name the same account before a session exists.
+  async function establish(res, entry, grant) {
+    if (!tokenPattern.test(grant?.token || '') || typeof grant.token !== 'string') throw failure(503);
+    const snapshot = await client.current(grant.token);
+    const user = identity(snapshot);
+    if (res.destroyed || user.id !== grant.id) throw failure(401);
+    const authenticated = sessions.authenticated(entry, grant, user, snapshot);
+    authenticated.capabilities = {telemetry:snapshot.capabilities?.telemetry === true};
+    cookie(res, authenticated.id, Math.ceil((authenticated.expires - Date.now()) / 1000));
+    return authenticated;
+  }
+
   async function signIn(req, res, entry) {
+    if (!passwordSignIn.enabled) throw failure(404);
+    if (!passwordAllowed(req)) throw failure(403);
     sessions.checkCsrf(entry, req.headers['x-review-csrf']);
     if (entry.grant || entry.pending) throw failure(409);
     login.take(req.socket.remoteAddress);
@@ -129,21 +195,59 @@ export function createReviewerServer({tls, origin, client, assets}) {
     activeLogins += 1;
     entry.pending = true;
     let grant;
+    // Beside an identity provider every password attempt is an audited exception.
+    const record = oidc ? {event: 'reviewer-password-sign-in', address: address(req), outcome: 'rejected'} : null;
     try {
       const credentials = await readJSON(req,['username','password']);
+      if (record) record.username = credentials.username.slice(0, 128);
       sessions.requireCurrent(entry);
       grant = await client.issue(credentials);
-      if (!tokenPattern.test(grant?.token || '') || typeof grant.token !== 'string') throw failure(503);
-      const snapshot = await client.current(grant.token);
-      const user = identity(snapshot);
-      if (res.destroyed || user.id !== grant.id) throw failure(401);
-      const authenticated = sessions.authenticated(entry, grant, user, snapshot);
-      authenticated.capabilities = {telemetry:snapshot.capabilities?.telemetry === true};
-      cookie(res, authenticated.id, Math.ceil((authenticated.expires - Date.now()) / 1000));
+      const authenticated = await establish(res, entry, grant);
+      if (record) Object.assign(record, {outcome: 'accepted', account: authenticated.user.id});
       json(res, 200, sessionReply(authenticated));
       grant = null;
     } finally {
       entry.pending = false;
+      activeLogins -= 1;
+      if (record) audit({...record, at: new Date().toISOString()});
+      if (typeof grant?.token === 'string') await client.revoke(grant.token).catch(() => {});
+    }
+  }
+
+  async function startOidc(req, res) {
+    bootstrap.take(req.socket.remoteAddress);
+    const attempt = attempts.begin();
+    const location = await oidc.authorizationUrl(attempt);
+    cookie(res, attempt.id, transactionLifetimeMs / 1000, attemptCookie, 'Lax');
+    redirect(res, location);
+  }
+
+  async function finishOidc(req, res, entry) {
+    login.take(req.socket.remoteAddress);
+    const handle = readCookie(req, attemptCookie);
+    cookie(res, '', 0, attemptCookie, 'Lax');
+    const parameters = callbackParameters(req.url);
+    // Spend the attempt before anything else, so a replayed or forged callback
+    // cannot reach the provider or the reviewer service.
+    const attempt = attempts.take(handle, parameters.state);
+    if (parameters.iss !== undefined && parameters.iss !== oidc.issuer) throw failure(400);
+    if (parameters.error !== undefined || !parameters.code) throw failure(401);
+    if (activeLogins >= 8) throw failure(429);
+    activeLogins += 1;
+    let grant;
+    try {
+      const idToken = await oidc.redeem(parameters.code, attempt.verifier);
+      grant = await client.issueOidc({idToken, nonce: attempt.nonce});
+      // A second sign-in in the same browser replaces the first session.
+      if (entry) {
+        sessions.remove(entry);
+        if (entry.grant) await client.revoke(entry.grant).catch(() => {});
+      }
+      const authenticated = await establish(res, sessions.bootstrap(), grant);
+      authenticated.idToken = idToken;
+      grant = null;
+      redirect(res, '/');
+    } finally {
       activeLogins -= 1;
       if (typeof grant?.token === 'string') await client.revoke(grant.token).catch(() => {});
     }
@@ -169,6 +273,13 @@ export function createReviewerServer({tls, origin, client, assets}) {
       }
 
       let entry = sessions.get(id);
+      if (oidc && method === 'GET' && (target === '/oidc/login' || target.startsWith('/oidc/callback?'))) {
+        try {
+          return await (target === '/oidc/login' ? startOidc(req,res) : finishOidc(req,res,entry));
+        } catch (error) {
+          return signInFailed(res,error?.status);
+        }
+      }
       if (method === 'GET' && target === '/review/session') {
         if (!entry) {
           bootstrap.take(req.socket.remoteAddress);
@@ -176,7 +287,7 @@ export function createReviewerServer({tls, origin, client, assets}) {
           cookie(res, entry.id, 300);
         }
         if (entry.grant) await current(entry);
-        return json(res,200,sessionReply(entry));
+        return json(res,200,sessionReply(entry,signInMethods(req)));
       }
       if (method === 'POST' && target === '/review/sign-in') return await signIn(req,res,entry);
       if (method === 'POST' && target === '/review/sign-out') {
@@ -186,7 +297,10 @@ export function createReviewerServer({tls, origin, client, assets}) {
         sessions.remove(entry);
         cookie(res,'',0);
         if (entry.grant) await client.revoke(entry.grant);
-        return json(res,204);
+        // The page follows this to end the provider session as well. Without it
+        // the next visit would sign straight back in.
+        const location = oidc && entry.idToken ? await oidc.endSessionUrl(entry.idToken) : null;
+        return location ? json(res,200,{location}) : json(res,204);
       }
 
       const telemetry = parseTelemetryTarget(target);

@@ -146,6 +146,48 @@
             "minLength": 1,
             "maxLength": 253,
             "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+          },
+          "oidc": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "issuer": {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^(https://[^\\s?#]*[^\\s?#/])?$"
+              },
+              "clientId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._:-]{0,128}$"
+              },
+              "clientSecret": {
+                "type": "string",
+                "maxLength": 253,
+                "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$"
+              },
+              "requiredGroup": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._:-]{0,128}$"
+              }
+            }
+          },
+          "passwordSignIn": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "addresses": {
+                "type": "array",
+                "maxItems": 16,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Fa-f:.]{2,45}$"
+                }
+              }
+            }
           }
         }
       },
