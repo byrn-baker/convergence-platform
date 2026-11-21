@@ -4,8 +4,12 @@ Each live step needs owner approval: show the change, then apply it.
 
 ## 0. Interim, before any of this
 
-- [ ] I0: nftables table on the HUD VM allowing port 3000 only from approved
+- [x] I0: nftables table on the HUD VM allowing port 3000 only from approved
   workstations; persistent system unit; verified from an allowed and a blocked host.
+  Live 2026-11-21 21:09 UTC: `/etc/netclaw/hud-firewall.nft` loaded by
+  `netclaw-hud-firewall.service` (enabled), allowing 192.168.100.32 only. The IDS VM
+  timed out on port 3000, the receiver on 8446 was unaffected, and the workstation's
+  packets were accepted. Rollback: `sudo systemctl disable --now netclaw-hud-firewall`.
 
 ## 1. Identity provider
 
