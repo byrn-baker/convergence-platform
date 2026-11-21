@@ -15,6 +15,8 @@ Important values:
 | `victoria.metrics.server.persistentVolume`, `victoria.logs.server.persistentVolume` | Long-term store capacity/class |
 | `victoria.storage` | Collection and alerting queue storage |
 | `grafana.enabled` | Optional private Grafana, disabled by default |
+| `ids.ipContextEnabled` | External IP-context database updater; defaults to `true` when IDS is enabled. Set `false` for isolated or unenriched installations; no updater CronJob or `IPINFO_TOKEN` is then required. |
+| `monitoring.ids.expectedScrapes` | Operator-owned exact IDS scrape inventory; empty by default, so optional IDS produces no missing-series alert |
 | `grafana.storage` | Private Grafana PVC; enabled Grafana also requires `GRAFANA_ADMIN_PASSWORD` in the Secret |
 | `victoria.sharedGrafana` | Optional shared provisioning bundle; prefer `registrationMode: external` for GitOps ownership |
 
@@ -27,6 +29,78 @@ Secret values are never included in Helm values. StatefulSet PVCs are retained o
 uninstall; do not delete their namespace or original credentials when retaining data.
 See [operations](../../../docs/convergence/operations.md) for backups, upgrades and
 existing shared Grafana. Old home profiles describe one deployment, not defaults.
+
+## Expected IDS scrape monitoring
+
+Declare only scrapes this release's metrics store is expected to receive. This
+inventory does not create a scrape job, configure authentication, or start IDS.
+The operator who owns the collector configuration also owns this list. Verify
+the actual `up` series' **post-relabeling** `job` and `instance` first:
+
+```yaml
+monitoring:
+  ids:
+    expectedScrapes:
+      - id: primary
+        site: home
+        job: netclaw-ids
+        instance: ids.example.test:8443
+```
+
+Each entry needs a stable lowercase alphanumeric/hyphen ID (at most 63 characters),
+a site present in `siteConfig`, and nonempty exact job/instance labels. The list
+is bounded to 64 entries; duplicate IDs or job/instance pairs fail rendering. One
+scrape can contain sensors for several sites; choose its owning site, not one
+duplicate entry per sensor. Labels are literal strings, not PromQL expressions.
+
+`IDSMetricsScrapeMissing` evaluates
+`absent_over_time(up{job="...",instance="..."}[5m]) == 1` for 2 minutes per expected
+target. Another healthy target cannot mask a missing one. A present `up=0` is
+handled by the existing scrape-failed rules, not by this absence rule. A newly
+enabled expectation with no history can fire after 2 minutes; a vanished target
+must leave the 5-minute lookback and then remain pending for 2 minutes. Evaluation
+intervals and notification grouping add latency. All alerts set `investigate=false`.
+
+The list is independent of `ids.enabled`: external IDS can be monitored without
+deploying an ingest workload in this release. An empty list generates no rules,
+whether the optional IDS workload is enabled or disabled. Turning off an expected
+scrape permanently requires removing its inventory entry too; do not remove an
+entry merely to conceal an outage. Retain the inventory when testing lost scrape
+configuration, otherwise the evaluator cannot know that data was expected.
+
+The same explicitly opted-in ConfigMap also includes the separate canonical
+`host-enrollment.rules.yml` asset. It warns for started, nonrevoked host bindings
+expiring within 24 hours (5-minute pending period) or already expired (2-minute
+pending period). It does not load the legacy IDS capture/IP-context rule bundle.
+No expected scrape inventory means neither this ConfigMap nor its enrollment
+rules are created. With no configured host enrollments, these rules remain quiet.
+
+Expiry monitoring requires an IDS image exporting all three
+`netclaw_ids_host_enrollment_{valid_from_timestamp_seconds,valid_until_timestamp_seconds,revoked}`
+gauges. Verify them for each configured enrollment before accepting monitoring;
+older images produce no expiry alert, rather than an implicit missing-inventory
+alarm. Labels come from receiver configuration, not guest reports. Configuration
+expiry is distinct from token rotation and TLS certificate expiry.
+
+Rules use the existing optional ConfigMap projection and reload interval of
+vmalert. If you override `victoria.alerting.extraRuleConfigMaps`, retain
+`'{{ .Release.Name }}-ids-monitoring-rules'`. A nonempty inventory with alerting
+disabled or its rule projection omitted fails rendering. Before operational
+acceptance, verify the rule loaded in the actual evaluator and that firing and
+resolution reach the intended alert destination. These rules do not monitor
+failure of vmalert or its own configuration; that needs an independent monitor.
+
+Run render and actual PromQL fixtures with an explicitly selected promtool:
+
+```sh
+helm dependency build deploy/helm/convergence --skip-refresh
+PROMTOOL_BIN=/path/to/promtool python3 -m pytest -q deploy/helm/tests/test_monitoring.py
+```
+
+Without `PROMTOOL_BIN`, expression evaluation is reported skipped, not qualified.
+The fixtures cover healthy/down series, one missing target out of two, stale
+markers and recovery, no expected inventory, exact-label escaping and invalid
+configuration. No live targets or credentials are used.
 
 ## Optional HTTPS reviewer workloads
 

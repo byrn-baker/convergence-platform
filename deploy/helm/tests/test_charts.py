@@ -209,7 +209,8 @@ def test_quota_rules_are_off_by_default_and_vmalert_mounts_them_optionally():
     pod=vmalert['spec']['template']['spec']
     sources=next(v for v in pod['volumes'] if v['name']=='rules')['projected']['sources']
     assert sources==[{'configMap':{'name':'quota-victoria-rules'}},
-                     {'configMap':{'name':'quota-agent-metrics-rules','optional':True}}]
+                     {'configMap':{'name':'quota-agent-metrics-rules','optional':True}},
+                     {'configMap':{'name':'quota-ids-monitoring-rules','optional':True}}]
     assert '-configCheckInterval=1m' in pod['containers'][0]['args']
 
 
@@ -344,3 +345,21 @@ def test_quota_alerts_fire_on_metered_burn_only(tmp_path,braces):
     (tmp_path/'tests.yml').write_text(yaml.safe_dump(tests))
     result=subprocess.run([*os.environ['PROMTOOL_BIN'].split(),'test','rules','tests.yml'],cwd=tmp_path,capture_output=True,text=True)
     assert result.returncode==0,result.stdout+result.stderr
+
+
+def test_ids_without_external_enrichment_preserves_ingestion_workloads():
+    args = ('--set', 'existingSecret=lab-core', '--set', 'api.image.tag=fixture',
+            '--set', 'ids.enabled=true', '--set', 'ids.image.tag=fixture',
+            '--set', 'ids.existingSecret=lab-ids', '--set', 'ids.existingClaim=lab-ids')
+    default = render('convergence', 'clean', 'stabilization', *args)
+    enabled = render('convergence', 'clean', 'stabilization', *args,
+                     '--set', 'ids.ipContextEnabled=true')
+    disabled = render('convergence', 'clean', 'stabilization', *args,
+                      '--set', 'ids.ipContextEnabled=false')
+    assert default == enabled, 'Existing enrichment behavior must remain the default'
+    jobs = [o for o in enabled if o['kind'] == 'CronJob' and o['metadata']['name'] == 'clean-ip-context']
+    assert len(jobs) == 1
+    assert disabled == [o for o in enabled if o not in jobs], 'Only the external updater may disappear'
+    ids = [o for o in disabled if o['metadata']['name'] == 'clean-ids']
+    assert {o['kind'] for o in ids} == {'Deployment', 'Service'}
+    assert 'IPINFO_TOKEN' not in json.dumps(disabled)

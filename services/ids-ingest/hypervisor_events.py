@@ -411,7 +411,7 @@ class HypervisorStore:
                 'window_seconds': vm_security.WINDOW_SECONDS, 'sources': result}
 
 
-def install_routes(app, config, sources, persistence, token_hash):
+def install_routes(app, config, sources, persistence, token_hash, storage):
     capacity = config.get('hypervisor_ingress_capacity', 8)
     integer(capacity, 1, 64)
     inflight = 0
@@ -421,13 +421,13 @@ def install_routes(app, config, sources, persistence, token_hash):
     async def security_status(request: Request, site: str):
         if not hmac.compare_digest(token_hash(request), config['status_token_sha256']):
             return JSONResponse({'error': 'Unauthorized'}, status_code=401)
-        return persistence.security_status(sources, site, security_policies)
+        return await storage.run(persistence.security_status, sources, site, security_policies)
 
     @app.get('/v1/hypervisor-status')
     async def status(request: Request, site: str):
         if not hmac.compare_digest(token_hash(request), config['status_token_sha256']):
             return JSONResponse({'error': 'Unauthorized'}, status_code=401)
-        return persistence.status(sources, site)
+        return await storage.run(persistence.status, sources, site)
 
     @app.post('/v1/hypervisor-events')
     async def ingest(request: Request):
@@ -447,7 +447,7 @@ def install_routes(app, config, sources, persistence, token_hash):
                 body.extend(chunk)
             payload = json.loads(body, object_pairs_hook=strict_object,
                 parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Invalid number')))
-            inserted = persistence.accept(source, payload)
+            inserted = await storage.run(persistence.accept, source, payload)
             return {'status': 'accepted', 'received': len(payload['connections']), 'inserted': inserted}
         except ReplayConflict:
             return JSONResponse({'error': 'Conflicting or regressing snapshot'}, status_code=409)

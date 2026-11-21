@@ -78,14 +78,27 @@ def validate_event(event, now):
         raise ValueError('Stats object required')
 
 
+# Inbox windows for acknowledged rows; central log stores keep the history.
+# A window must outlast sender replay (spool files are kept 48h after delivery),
+# since a replayed ID is deduplicated only while its row is still here.
+EVENT_RETENTION_DAYS = 1
+CASE_RETENTION_DAYS = 7
+
+
 class Store:
-    def __init__(self, path, capacity=250000, enricher=None):
+    def __init__(self, path, capacity=250000, enricher=None,
+                 event_retention_days=EVENT_RETENTION_DAYS, case_retention_days=CASE_RETENTION_DAYS):
+        if not 0 < event_retention_days <= case_retention_days:
+            raise ValueError('Retention needs 0 < event_retention_days <= case_retention_days')
         Path(path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.db = sqlite3.connect(path, check_same_thread=False)
         Path(path).chmod(0o600)
         self.db.row_factory = sqlite3.Row
         self.lock = threading.RLock()
+        self.path = path
         self.capacity = capacity
+        self.event_retention = event_retention_days*86400
+        self.case_retention = case_retention_days*86400
         self.archive_enabled = False
         self.enricher = enricher
         self.db.execute('PRAGMA journal_mode=WAL')
@@ -250,7 +263,13 @@ class Store:
                                 ('delivery_success_'+target, int(time.time())))
 
     def prune(self, now=None, limit=512):
-        """Inspect one bounded rowid range; retain progress across restarts."""
+        """Inspect one bounded rowid range; retain progress across restarts.
+
+        Returns True while older rows remain. Rows arrive in received order, so a
+        pass ends at the first batch reaching rows inside the shorter retention
+        window: nothing after it can expire yet, and walking that fresh tail only
+        delays the next pass over rows that can.
+        """
         if limit < 1:
             raise ValueError('Prune limit must be positive')
         now = time.time() if now is None else now
@@ -268,9 +287,14 @@ class Store:
                     (SELECT value FROM metadata WHERE key='archive_backfill_end'))"""
             # Force a rowid range scan. The delivery indexes otherwise make
             # SQLite revisit millions of acknowledged, retained alerts.
+            event_cutoff = int((now-self.event_retention)*1e9)
             self.db.execute("DELETE FROM eve NOT INDEXED WHERE rowid>? AND rowid<=? AND log_done=1 AND case_done=1"+archive_guard+" AND received_ns < ? AND ((kind!='alert' AND case_payload IS NULL) OR received_ns < ?)",
-                            (cursor, end, int((now-86400)*1e9), int((now-30*86400)*1e9)))
+                            (cursor, end, event_cutoff, int((now-self.case_retention)*1e9)))
             more = len(rows) == limit
+            if more:
+                last = self.db.execute('SELECT received_ns FROM eve WHERE rowid=?', (end,)).fetchone()
+                # A row stamped in the future (wall clock stepped back) must not end passes.
+                more = last is None or not event_cutoff <= last[0] <= int(now*1e9)
             self.db.execute("INSERT OR REPLACE INTO metadata VALUES('prune_cursor',?)", (end if more else 0,))
             return more
 

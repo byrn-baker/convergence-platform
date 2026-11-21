@@ -1,8 +1,12 @@
 """Bounded-cardinality metrics and a structured, lossless VictoriaLogs envelope."""
 import json
 import math
+import shutil
 import time
 from datetime import datetime, timezone
+from pathlib import Path
+
+from host_events import timestamp
 
 
 def archive_record(row):
@@ -43,7 +47,7 @@ def archive_body(rows):
     return ''.join('{"create":{}}\n'+json.dumps(archive_record(row), allow_nan=False)+'\n' for row in rows)
 
 
-def render_metrics(store, configured, now=None):
+def render_metrics(store, configured, now=None, *, host_agents=()):
     now = time.time() if now is None else now
     lines, declared = [], set()
 
@@ -57,6 +61,21 @@ def render_metrics(store, configured, now=None):
         tags = ','.join(f'{key}="{escape(value)}"' for key, value in sorted(labels.items()))
         number = float(value or 0)
         lines.append(f'{name}{{{tags}}} {number if math.isfinite(number) else 0}')
+
+    # Only operator-validated configuration supplies these identities/instants.
+    # Guest heartbeat claims and historical binding tombstones are not inventory.
+    for agent in host_agents:
+        labels = {'site': agent['site'], 'enrollment': agent['id'], 'vm_id': agent['vm_id']}
+        for field in ('valid_from', 'valid_until'):
+            emit('host_enrollment_'+field+'_timestamp_seconds', timestamp(agent[field]), labels,
+                 'Configured host enrollment validity boundary; not guest-reported health.')
+        emit('host_enrollment_revoked', agent.get('revoked', False), labels,
+             'Configured host enrollment revocation flag (1 revoked, 0 not revoked).')
+
+    # The ingest rejects batches below its free-space reserve; alert well before.
+    disk = shutil.disk_usage(Path(store.path).parent)
+    emit('store_disk_free_bytes', disk.free, {}, 'Free space on the ingest state volume.')
+    emit('store_disk_total_bytes', disk.total, {}, 'Size of the ingest state volume.')
 
     with store.lock:
         for cfg in configured:

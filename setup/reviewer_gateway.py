@@ -29,6 +29,27 @@ def module(name, path):
     return result
 
 
+def validate_hook_sessions(hooks):
+    """Check reviewer admission and the stock Gateway's default-key constraint."""
+    raw_prefixes = hooks.get('allowedSessionKeyPrefixes')
+    if not isinstance(raw_prefixes, list):
+        raise ValueError('hooks.allowedSessionKeyPrefixes must explicitly permit reviewer sessions')
+    prefixes = [p.strip().lower() for p in raw_prefixes if isinstance(p, str) and p.strip()]
+    if hooks.get('allowRequestSessionKey') is not True or not any(
+            'hook:convergence-reviewer:'.startswith(p) for p in prefixes):
+        raise ValueError('Hooks must permit the deterministic reviewer session prefix')
+    default = hooks.get('defaultSessionKey')
+    if default is not None and not isinstance(default, str):
+        raise ValueError('hooks.defaultSessionKey must be a string')
+    default = (default or '').strip().lower()
+    # OpenClaw 2026.10.9 resolveHooksConfig checks hook:example when unset,
+    # even if every reviewer request supplies its own deterministic key.
+    if not any((default or 'hook:example').startswith(p) for p in prefixes):
+        raise ValueError('hooks.defaultSessionKey must match hooks.allowedSessionKeyPrefixes; '
+                         'set it explicitly to hook:convergence-reviewer:default for the '
+                         'restricted reviewer prefix (do not broaden session permissions)')
+
+
 def managed_policy(config, state):
     helper = module('convergence_netclaw_setup', ROOT/'setup/netclaw.py')
     adapter = module('convergence_gateway_policy', ROOT/'services/alert-receiver/gateway_investigations.py')
@@ -40,11 +61,7 @@ def managed_policy(config, state):
         raise ValueError('Expected enabled hooks at /hooks')
     if agent not in (hooks.get('allowedAgentIds') or []):
         raise ValueError('The alert agent must be explicitly allowed for hooks')
-    prefix = 'hook:convergence-reviewer:'
-    prefixes = hooks.get('allowedSessionKeyPrefixes') or []
-    if hooks.get('allowRequestSessionKey') is not True or not any(
-            isinstance(p, str) and p.strip() and prefix.startswith(p.strip().lower()) for p in prefixes):
-        raise ValueError('Hooks must permit the deterministic reviewer session prefix')
+    validate_hook_sessions(hooks)
     mappings = [m for m in hooks.get('mappings') or [] if isinstance(m, dict) and
                 (m.get('id') == helper.MAPPING_ID or (m.get('match') or {}).get('path') == 'alert')]
     if len(mappings) != 1:

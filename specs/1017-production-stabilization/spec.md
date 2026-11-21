@@ -19,3 +19,16 @@ Production remains running: no live service restarts, deployment changes, DNS/fi
 Use existing component boundaries. Stop before a necessary architectural refactor and explain it to the owner. Do not solve integration failures by copying the working fork wholesale.
 
 Local offline embeddings and separately owner-authorized Grok subscription reviews are permitted and recorded explicitly; they do not qualify external investigation/JEV provider execution.
+
+## Authorized continuation: VM115 and subscription-backed AI testing
+
+On November15 the owner authorized proceeding through the stabilization gates,
+using Proxmox test VMs (VMID115 already used for this purpose), and existing Codex
+subscriptions for AI testing in OpenClaw/NetClaw/Convergence. Inspect VM115 before
+reuse; preserve prior contents and identify its role. Scope includes isolated test
+VM provisioning/configuration and bounded synthetic AI tests through supported
+subscription authentication. Production services remain running and unchanged.
+This supersedes the initial run's no-external-test-call restriction only for the
+authorized isolated subscription-backed tests. No API-key billing fallback is
+implied. Retain production credentials offline; do not attach them to active
+test agents. Necessary architecture changes still require explanation first.

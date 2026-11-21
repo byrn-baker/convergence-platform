@@ -17,6 +17,24 @@ health. Delivery retries without expiring pending records. Use one Uvicorn worke
 and durable local storage. Credentials and TLS keys are generated outside source
 control by `deploy/convergence/ids/prepare-ingest.py`.
 
+Blocking storage operations share one serialized worker outside the async request
+loop. At most 64 operations, including background delivery/maintenance and cancelled
+queue entries that have not drained, may be admitted. Saturated requests return 503;
+callers retain their batch and retry. Database transaction methods remain atomic.
+Host enrollment is checked again when queued admission actually executes.
+
+A cancelled queued operation is skipped; an already running transaction finishes
+before its slot is released. Shutdown rejects new storage work, drains admitted
+operations, then closes owned connections. Maintenance retries transient storage
+errors with backoff. Health remains schedulable during a disk stall; metrics and
+status still read actual storage and may wait or fail. A live `/healthz` response
+is therefore not proof that ingestion, capture or delivery is progressing: monitor
+scrape freshness, sensor timestamps, queue age, storage headroom and errors.
+
+These controls do not throttle backup I/O. Recovery copying must have its own
+measured pacing and application-health abort controls before running against live
+storage.
+
 For distributed switch capture, configure each sensor's `capture_sources`
 using the reviewed source inventory. Each entry needs `id`, `ip`, `sessionId`,
 `name` and `scope`; copy the same array to the sensor's `capture-sources.json`.
@@ -31,7 +49,7 @@ payload decryption is explicitly disabled.
 Run tests from the repository root:
 
 ```bash
-.venv/bin/python -m unittest discover -s services/ids-ingest -v
+.venv/bin/python -m pytest services/ids-ingest -q
 ```
 
 ## Host telemetry prototype (spec 1013)
@@ -78,6 +96,27 @@ allowed. Configuration changes, including revocation, require a receiver restart
 Both receipt time and event observation time must fall in the configured validity
 interval; delayed events after expiry are refused rather than reassigned.
 
+
+The existing authenticated `/metrics` endpoint exports three gauges for every
+configured host enrollment, including those with no guest contact:
+`netclaw_ids_host_enrollment_valid_from_timestamp_seconds`,
+`netclaw_ids_host_enrollment_valid_until_timestamp_seconds`, and
+`netclaw_ids_host_enrollment_revoked` (0 or 1). Their only labels are configured
+`site`, `enrollment` and `vm_id`; guest claims, tenant/allocation metadata, token
+hashes and removed historical bindings are not metric labels or values. An empty
+host configuration emits none of these series. Metrics still run through the
+bounded storage worker, outside the async event loop, under the status credential.
+
+The separate canonical `host-enrollment.rules.yml` warns when a nonrevoked binding
+has started and expires within 24 hours (pending for 5 minutes), or is expired
+(pending for 2 minutes). Future and revoked bindings are excluded. These are
+operator configuration warnings with `investigate=false`, not compromise signals.
+Missing metrics do not establish valid enrollment: older IDS images do not export
+these gauges, and scrape loss requires the separate expected-scrape monitor.
+Credential rotation does not extend a binding's fixed validity interval. Use the
+existing new-enrollment/revocation procedure and reconcile retained guest events;
+this change adds no enrollment administration API.
+
 Host rows reuse the existing SQLite delivery queue and checkpoints, but logs and
 archives use `job="host-events"`, kinds `host_heartbeat`/`host_connection`, and an
 explicit `evidence_trust="guest_reported"` envelope. VictoriaLogs stores the whole
@@ -104,9 +143,15 @@ return 503. Retain and retry on delivery failures. Credentials never grant statu
 access or access to the EVE endpoint. Do not expose the operator status token to
 customers or use this endpoint as a tenant-facing query service.
 
-As with EVE, pending delivery never expires. Acknowledged host case rows remain
-30 days, ordinary host rows one day; pruning is bounded and best-effort. These are
-inbox retention/dedup windows, independent of central log retention. A receiver
+As with EVE, pending delivery never expires. Acknowledged alerts and other
+case-bearing rows (EVE and host) remain `case_retention_days` (default 7), ordinary
+rows `event_retention_days` (default 1); pruning is bounded and best-effort, scanning in
+rowid order and restarting from the oldest rows once it reaches rows still inside the
+shorter window (passes start hourly). These are
+inbox retention/dedup windows, independent of central log retention, and must exceed
+the sender's 48-hour post-delivery spool replay and any lag of its history cursor
+behind live delivery (for example a multi-day outage), or replays are re-inserted. Shortening them frees SQLite pages
+for reuse; the database file itself does not shrink. A receiver
 outage can fill the guest spool, and a downstream outage can fill the shared
 receiver queue; monitor both. Top-level `host_queue_capacity` defaults to half `queue_capacity` and cannot exceed
 that half, reserving the remainder for EVE. `host_agent_queue_capacity` defaults to

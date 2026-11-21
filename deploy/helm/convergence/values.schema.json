@@ -215,6 +215,64 @@
           "type": "boolean"
         }
       }
+    },
+    "monitoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ids"
+      ],
+      "properties": {
+        "ids": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "expectedScrapes"
+          ],
+          "properties": {
+            "expectedScrapes": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "site",
+                  "job",
+                  "instance"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[a-z0-9][a-z0-9-]*$"
+                  },
+                  "site": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[a-zA-Z0-9_.-]+$"
+                  },
+                  "job": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[^\\x00-\\x20\\x7f]+$"
+                  },
+                  "instance": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[^\\x00-\\x20\\x7f]+$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

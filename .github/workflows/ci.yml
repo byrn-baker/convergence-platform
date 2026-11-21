@@ -18,7 +18,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: automateyournetwork/netclaw
+          ref: a5e7c3a3e07d8c8c4f2f26d22b4bd854dd1ba42e
           path: netclaw
+          persist-credentials: false
           sparse-checkout: mcp-servers/jev-mcp
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -30,6 +32,17 @@ jobs:
         run: |
           pip install pytest pyyaml
           pip install -r services/ids-ingest/requirements.txt -r services/alert-receiver/requirements.txt
+      - name: Install pinned PromQL rule verifier
+        run: |
+          promtool_root="$(mktemp -d "$RUNNER_TEMP/promtool.XXXXXX")"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/prometheus/prometheus/releases/download/v2.54.1/prometheus-2.54.1.linux-amd64.tar.gz \
+            --output "$promtool_root/release.tar.gz"
+          echo "31715ef65e8a898d0f97c8c08c03b6b9afe485ac84e1698bcfec90fc6e62924f  $promtool_root/release.tar.gz" | sha256sum --check --strict
+          tar -xzf "$promtool_root/release.tar.gz" --directory "$promtool_root" --strip-components=1 \
+            prometheus-2.54.1.linux-amd64/promtool
+          "$promtool_root/promtool" --version
+          echo "PROMTOOL_BIN=$promtool_root/promtool" >> "$GITHUB_ENV"
       - name: Build chart dependencies
         run: helm dependency build deploy/helm/convergence
       - name: Setup, cluster and chart tests
@@ -136,7 +149,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: automateyournetwork/netclaw
+          ref: a5e7c3a3e07d8c8c4f2f26d22b4bd854dd1ba42e
           path: netclaw
+          persist-credentials: false
           sparse-checkout: mcp-servers/jev-mcp
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:

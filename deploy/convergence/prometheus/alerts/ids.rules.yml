@@ -49,6 +49,25 @@ groups:
         labels: {severity: warning, investigate: "false"}
         annotations:
           summary: "IDS destination has stopped acknowledging data ({{ $labels.destination }})"
+      # Ingest refuses batches below 512 MiB free; sensors then spool until they fill.
+      - alert: IDSStorageLow
+        expr: netclaw_ids_store_disk_free_bytes / netclaw_ids_store_disk_total_bytes < 0.20
+        for: 15m
+        labels: {severity: warning, investigate: "false"}
+        annotations:
+          summary: "IDS ingest volume is below 20% free"
+      - alert: IDSStorageCritical
+        expr: netclaw_ids_store_disk_free_bytes / netclaw_ids_store_disk_total_bytes < 0.10
+        for: 5m
+        labels: {severity: critical, investigate: "false"}
+        annotations:
+          summary: "IDS ingest volume is below 10% free; ingestion stops at 512 MiB"
+      - alert: IDSStorageMetricsMissing
+        expr: up{job="netclaw-ids"} == 1 unless on() netclaw_ids_store_disk_total_bytes
+        for: 15m
+        labels: {severity: warning, investigate: "false"}
+        annotations:
+          summary: "IDS ingest is scraped but reports no volume space; storage alerts are blind"
       - alert: IDSMetricsScrapeFailed
         expr: up{job="netclaw-ids"} == 0
         for: 2m

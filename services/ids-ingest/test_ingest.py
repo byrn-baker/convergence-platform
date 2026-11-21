@@ -1,4 +1,5 @@
 import hashlib
+import shutil
 import importlib.util
 import json
 import socket
@@ -87,6 +88,62 @@ class IngestionTests(unittest.TestCase):
             self.store.acknowledge(target, [rows[0]['id']])
         self.assertFalse(self.store.prune(limit=2))
         self.assertEqual(self.store.db.execute('SELECT count(*) FROM eve').fetchone()[0], 0)
+
+    def test_pruning_pass_ends_at_rows_too_new_to_expire(self):
+        # A pass must not walk the fresh tail before returning to expirable rows.
+        now = time.time()
+        old = now-3*86400
+        self.store.accept(self.sensor, [event('flow', now=old, src_port=n) for n in range(2)], self.hb, now=old)
+        fresh = now-3600
+        self.store.accept(self.sensor, [event('flow', now=fresh, src_port=n) for n in range(10, 16)], self.hb, now=fresh)
+        rows = self.store.pending('log')
+        for target in ('log', 'case'):
+            self.store.acknowledge(target, [r['id'] for r in rows])
+        cursor = lambda: self.store.db.execute("SELECT value FROM metadata WHERE key='prune_cursor'").fetchone()[0]
+        self.assertTrue(self.store.prune(now=now, limit=2))
+        self.assertFalse(self.store.prune(now=now, limit=2))
+        self.assertEqual(cursor(), 0)
+        self.assertEqual(self.store.db.execute('SELECT count(*) FROM eve').fetchone()[0], 6)
+        self.assertFalse(self.store.prune(now=now, limit=2))
+        self.assertEqual(cursor(), 0)
+
+    def test_future_stamped_rows_do_not_end_a_pruning_pass(self):
+        now = time.time()
+        for group, when in enumerate((now-3*86400, now+86400, now-3*86400)):
+            self.store.accept(self.sensor, [event('flow', now=when, src_port=10*group+n) for n in range(2)], self.hb, now=when)
+        rows = self.store.pending('log')
+        for target in ('log', 'case'):
+            self.store.acknowledge(target, [r['id'] for r in rows])
+        while self.store.prune(now=now, limit=2):
+            pass
+        self.assertEqual(self.store.db.execute('SELECT count(*) FROM eve').fetchone()[0], 2)
+
+    def test_retention_windows_separate_cases_from_ordinary_events(self):
+        # Defaults: acknowledged ordinary rows go after 1 day, alerts after 7.
+        now = time.time()
+        for age in (2, 6, 8):
+            when = now-age*86400
+            self.store.accept(self.sensor, [event(now=when, src_port=age)], self.hb, now=when)
+        self.store.accept(self.sensor, [event('flow', now=now-2*86400, src_port=99)], self.hb, now=now-2*86400)
+        rows = self.store.pending('log')
+        for target in ('log', 'case'):
+            self.store.acknowledge(target, [r['id'] for r in rows])
+        self.assertFalse(self.store.prune(now=now))
+        kept = sorted(json.loads(r[0])['src_port'] for r in self.store.db.execute('SELECT payload FROM eve'))
+        self.assertEqual(kept, [2, 6])
+
+    def test_retention_windows_are_configurable_and_validated(self):
+        self.store.db.close()
+        self.store = Store(self.path, event_retention_days=1, case_retention_days=30)
+        when = time.time()-8*86400
+        self.store.accept(self.sensor, [event(now=when)], self.hb, now=when)
+        for target in ('log', 'case'):
+            self.store.acknowledge(target, [r['id'] for r in self.store.pending('log')])
+        self.store.prune()
+        self.assertEqual(self.store.db.execute('SELECT count(*) FROM eve').fetchone()[0], 1)
+        for bad in ((0, 7), (2, 1), (-1, 7)):
+            with self.assertRaises(ValueError):
+                Store(self.path, event_retention_days=bad[0], case_retention_days=bad[1])
 
     def test_full_queue_rolls_back_entire_batch(self):
         self.store.capacity = 1
@@ -332,6 +389,15 @@ class IngestionTests(unittest.TestCase):
         self.store.accept(self.sensor, [record], self.hb)
         text = render_metrics(self.store, [self.sensor])
         self.assertIn('netclaw_ids_alerts_ingested_total{priority="1",sensor="sensor-home",site="home"} 1.0', text)
+
+    def test_metrics_report_state_volume_space(self):
+        from unittest import mock
+        usage = shutil.disk_usage(Path(self.path).parent)._replace(total=1000, used=900, free=100)
+        with mock.patch('telemetry.shutil.disk_usage', return_value=usage) as disk:
+            text = render_metrics(self.store, [self.sensor])
+        disk.assert_called_once_with(Path(self.path).parent)
+        self.assertIn('netclaw_ids_store_disk_free_bytes{} 100.0', text)
+        self.assertIn('netclaw_ids_store_disk_total_bytes{} 1000.0', text)
 
     def test_metric_counters_follow_engine_resets_and_ignore_old_stats(self):
         now = time.time()
