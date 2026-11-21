@@ -501,3 +501,29 @@ CI review and17-test rerun PASS. Reviewed S06 chart+CI ready for lab application
 Browser leaf renewal on VM117 replaced the live certificate under the same CA,
 verifiedhostname and changedfingerprint in2.49s; fresh trustedChromium IDS/case
 journey passed afterward. This does not yet qualify all PKI roles or CA rollover.
+
+### 2026-11-21 production IDS storage and HUD exposure (Claude)
+
+Owner-approved live changes, each shown first with verification and rollback. Operations
+record: k3s-observability-stack `gitops/home/convergence/CLAUDE-HANDOFF.md` (entries dated
+2026-11-21).
+
+- S08c: overlay image `stabilization-9e1be50@sha256:4df8ba17`, ops c76b558. The pod was
+  ready in about 20 s; the new gauges were present, the rules loaded and inactive, and the
+  sensors fresh. Rollback: revert c76b558.
+- S08d: the prune walked fresh rows at about 830 rowids/s against about 560/s ingest, so
+  nothing was deleted. After the cursor reset, used pages fell by 300–550 pages/s. The
+  image `stabilization-c913455@sha256:0ad2813c`, ops 5bfa208, was verified: pod ready,
+  sensors fresh, delivery current, no IDS alerts, cursor kept across restart. Grok review
+  stopped at max turns, so a Claude reviewer was used and found no defects. Rollback:
+  revert 5bfa208.
+- S08e: `/opt/netclaw-ids/config/threshold.config`, source 553e24b. The three signature
+  IDs went from 1110/808/808 per 5 minutes to 0. Rollback:
+  `/opt/netclaw-ids/rollback/threshold.config.before-noise-suppression-20261121T134103Z`
+  and a restart of netclaw-ids-capture.
+- S07a: `/etc/netclaw/hud-firewall.nft` via `netclaw-hud-firewall.service`. From
+  192.168.3.200, port 3000 times out; the receiver on 8446 is unaffected; packets from the
+  workstation are accepted. Rollback: `systemctl disable --now netclaw-hud-firewall`.
+- Process gap, corrected here: this evidence was first recorded only in the operations
+  handoff, not in this checklist.
+
