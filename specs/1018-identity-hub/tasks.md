@@ -30,8 +30,9 @@ Each live step needs owner approval: show the change, then apply it.
 
   The claim-template drift fix rode with attempt 1.
 
-  Independent review (Grok timed out; Claude reviewer): no critical defects; three fixes
-  are prepared on ops branch `identity-review-fixes` (efb959c), not applied:
+  Independent review (Grok timed out; Claude reviewer): no critical defects. Three fixes
+  were applied on 2026-11-21 at 21:49 UTC (ops 48f1ae8, owner approved), and a pod in
+  another namespace was verified blocked:
   - a Keycloak network policy, because any pod could reach `/admin` past the ingress
     filter;
   - optional bootstrap-admin Secret references, because deleting the Secret would block

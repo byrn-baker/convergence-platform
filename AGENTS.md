@@ -1,7 +1,9 @@
 # Convergence stabilization
 
-New features are frozen. For compatibility, installation, recovery, maintenance or
-qualification work, read `specs/1017-production-stabilization/spec.md`, `plan.md`,
+New features are frozen, except those the owner exempts in writing. The only exemption is
+spec 1018 (identity hub), granted 2026-11-21; its own spec, plan and tasks govern it, and
+its live changes need owner approval. For compatibility, installation, recovery,
+maintenance or qualification work, read `specs/1017-production-stabilization/spec.md`, `plan.md`,
 `tasks.md` and the current run in `verification.md` before acting. Preserve running
 production and existing work; record actual evidence before completing a task.
 
