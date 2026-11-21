@@ -13,11 +13,16 @@ Each live step needs owner approval: show the change, then apply it.
 
 ## 1. Identity provider
 
-- [ ] K1: Argo application for Keycloak and its PostgreSQL, ingress, certificate,
+- [x] K1: Argo application for Keycloak and its PostgreSQL, ingress, certificate,
   backup CronJob; admin console not routed (port-forward only). Render and review the
   manifests before sync. Prepared on ops branch `identity-keycloak`; local smoke test of
   the pinned images passed (ready in about 35 s, issuer correct behind proxy headers,
-  admin console on localhost). Not deployed.
+  admin console on localhost). Deployed 2026-11-21 (owner approved): ops commits
+  b1753a1, 388fb2f, eac135f, a4b83b0 and 71e63ec, manual sync, Synced/Healthy. pfSense
+  override `sso` -> 192.168.13.201. The certificate is from Let's Encrypt, valid to
+  2027-02-19. The issuer is correct over HTTPS, and `/admin`, `/health` and `/metrics`
+  return 404. The backup produced a valid dump (202 table entries). The network policy
+  blocks unlabelled pods. Automated sync is still off.
 - [ ] K2: Realm `home` as reviewed configuration: groups, required MFA, the two OIDC
   clients with exact redirect URIs. Owner enrols their own passkey or TOTP.
 - [ ] K3: Restore drill: rebuild the realm from the Git export and database backup on a
