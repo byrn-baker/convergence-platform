@@ -1,6 +1,9 @@
 # Native HUD sign-in plan
 
-**Status** Proposal for owner approval, 2026-11-21. No code or live change has been made.
+**Status** Option 1 chosen by the owner, 2026-11-21, together with the identity hub in
+[spec 1018](../1018-identity-hub/spec.md). With single sign-on, "Review this case" opens
+the Cases site already signed in, and the HUD itself sits behind an authenticated front
+door. No code or live change has been made yet.
 
 ## Goal
 
