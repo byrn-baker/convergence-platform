@@ -20,6 +20,7 @@ S01/S02 COMPLETE with independent review PASS. S03 PARTIAL: clean stock componen
 ## Additional owner request
 
 - [x] A01 — Configure suitable Grok Build subscription delegation, verify invocation and record one checked offload. This is agent tooling, not a new Convergence feature.
+- [x] A02 — Feature-freeze exemption: the owner exempted spec 1018 (identity hub) on 2026-11-21. It is tracked in its own spec; the freeze otherwise stands.
 
 ## Decisions to resolve from evidence
 - Recovery-point/recovery-time and acceptable maintenance targets: measure initial rehearsals, then propose concrete targets to the owner.

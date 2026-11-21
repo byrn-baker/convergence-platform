@@ -1,8 +1,9 @@
 # Identity hub: single sign-on for the HUD and Cases
 
-**Status** New feature during the spec 1017 feature freeze (AGENTS.md). The owner approved
-the design and the K1 Keycloak deployment on 2026-11-21, but the freeze was not raised at
-the time. Further work needs an explicit owner decision on a freeze exception. Stage 1 of
+**Status** New feature, exempted from the spec 1017 feature freeze by the owner on
+2026-11-21 (AGENTS.md; spec 1017 A02). The freeze was not raised before the K1 Keycloak
+deployment, which the owner had approved. Each live step still needs owner approval.
+Stage 1 of
 the identity recommendation; stage 2 is the upstream proposal in
 [upstream-proposal.md](upstream-proposal.md).
 
