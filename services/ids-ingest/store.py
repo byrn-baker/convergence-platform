@@ -95,6 +95,7 @@ class Store:
         Path(path).chmod(0o600)
         self.db.row_factory = sqlite3.Row
         self.lock = threading.RLock()
+        self.path = path
         self.capacity = capacity
         self.event_retention = event_retention_days*86400
         self.case_retention = case_retention_days*86400

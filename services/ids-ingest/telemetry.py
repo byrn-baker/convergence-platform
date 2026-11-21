@@ -1,8 +1,10 @@
 """Bounded-cardinality metrics and a structured, lossless VictoriaLogs envelope."""
 import json
 import math
+import shutil
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from host_events import timestamp
 
@@ -69,6 +71,11 @@ def render_metrics(store, configured, now=None, *, host_agents=()):
                  'Configured host enrollment validity boundary; not guest-reported health.')
         emit('host_enrollment_revoked', agent.get('revoked', False), labels,
              'Configured host enrollment revocation flag (1 revoked, 0 not revoked).')
+
+    # The ingest rejects batches below its free-space reserve; alert well before.
+    disk = shutil.disk_usage(Path(store.path).parent)
+    emit('store_disk_free_bytes', disk.free, {}, 'Free space on the ingest state volume.')
+    emit('store_disk_total_bytes', disk.total, {}, 'Size of the ingest state volume.')
 
     with store.lock:
         for cfg in configured:

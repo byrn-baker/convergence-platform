@@ -1,4 +1,5 @@
 import hashlib
+import shutil
 import importlib.util
 import json
 import socket
@@ -359,6 +360,15 @@ class IngestionTests(unittest.TestCase):
         self.store.accept(self.sensor, [record], self.hb)
         text = render_metrics(self.store, [self.sensor])
         self.assertIn('netclaw_ids_alerts_ingested_total{priority="1",sensor="sensor-home",site="home"} 1.0', text)
+
+    def test_metrics_report_state_volume_space(self):
+        from unittest import mock
+        usage = shutil.disk_usage(Path(self.path).parent)._replace(total=1000, used=900, free=100)
+        with mock.patch('telemetry.shutil.disk_usage', return_value=usage) as disk:
+            text = render_metrics(self.store, [self.sensor])
+        disk.assert_called_once_with(Path(self.path).parent)
+        self.assertIn('netclaw_ids_store_disk_free_bytes{} 100.0', text)
+        self.assertIn('netclaw_ids_store_disk_total_bytes{} 1000.0', text)
 
     def test_metric_counters_follow_engine_resets_and_ignore_old_stats(self):
         now = time.time()
