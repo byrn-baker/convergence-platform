@@ -14,8 +14,10 @@ Each live step needs owner approval: show the change, then apply it.
 ## 1. Identity provider
 
 - [ ] K1: Argo application for Keycloak and its PostgreSQL, ingress, certificate,
-  backup CronJob; admin console limited to the owner workstation. Render and review the
-  manifests before sync.
+  backup CronJob; admin console not routed (port-forward only). Render and review the
+  manifests before sync. Prepared on ops branch `identity-keycloak`; local smoke test of
+  the pinned images passed (ready in about 35 s, issuer correct behind proxy headers,
+  admin console on localhost). Not deployed.
 - [ ] K2: Realm `home` as reviewed configuration: groups, required MFA, the two OIDC
   clients with exact redirect URIs. Owner enrols their own passkey or TOTP.
 - [ ] K3: Restore drill: rebuild the realm from the Git export and database backup on a

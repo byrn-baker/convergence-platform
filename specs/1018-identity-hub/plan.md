@@ -20,7 +20,10 @@ both ───────OIDC──> sso.internal.byrnbaker.me  Keycloak (k3s) 
   Git so it can be reviewed and rebuilt.
 - Ingress `sso.internal.byrnbaker.me` through ingress-nginx, certificate from the existing
   `letsencrypt-prod` issuer (Cloudflare DNS-01).
-- The admin console is reachable only from the owner workstation.
+- The admin console is not on the network at all. The ingress routes only `/realms/` and
+  `/resources/`, and administration uses `kubectl port-forward`. A source-address limit
+  is not possible here, because ingress-nginx does not see client addresses (its traffic
+  policy is Cluster).
 - Realm `home`. Groups:
   - `netclaw-owners`: may pass the HUD front door;
   - `convergence-users`: may sign in to Cases.
