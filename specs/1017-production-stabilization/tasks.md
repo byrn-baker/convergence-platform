@@ -62,3 +62,39 @@ stabilization branch; create one consolidated PR when the agreed work is ready.
 
 - [x] S04d1c1 — Sustained guarded source chunks, real cancellation and resume passed independent review. Full transfer and restored-data validation remain open.
 - [x] S08b1 — Measured150/s and300/s application intake with injected storage/downstream failures, real restart and exact replay passed independent review. Full-history/physical-capture qualification remains open.
+
+## Production IDS storage (2026-11-21, owner approved)
+
+The 100 GiB ingest volume filled on 2026-11-20 (expanded offline to 200 GiB). Merged in
+PR #28 (40bb13d); built as overlay images on the 5c37a29 production base.
+
+- [x] S08c — Acknowledged alerts and case rows kept 7 days, ordinary rows 1 day
+  (configurable, validated); volume free-space gauges; alerts `IDSStorageLow`,
+  `IDSStorageCritical` and `IDSStorageMetricsMissing`. Live 04:38 UTC
+  (`stabilization-9e1be50`). Attempts 2/10: an independent review found the missing-metrics
+  gap, fixed in 849b5bf. Review PASS_WITH_LIMITS.
+- [x] S08d — A prune pass ends at rows too new to expire. Production grew about 3.5 GB/h,
+  with ordinary rows 95 h old. The live prune cursor was reset at 15:20 UTC; the image
+  `stabilization-c913455` went live at 16:12 UTC. Attempts 2/10: attempt 2 added a guard
+  against future-stamped rows after independent review, and corrected two tests. 225
+  tests pass.
+- [x] S08e — Sensor noise suppression on netclaw-ids-01 (reports as `home-ids-01`):
+  three measured signatures. Alerts fell from 663/min to 74/min with flow, DNS and TLS
+  unchanged and capture loss 0. Attempts 1/10.
+- [ ] S08f — After the backlog clears, confirm ordinary rows are at most about 1 day old,
+  alerts at most about 7 days, that the cursor returns to 0 each pass, and that the
+  database file is flat.
+
+## Native HUD exposure (2026-11-21)
+
+The fork HUD forwards every `/api/home` request to Convergence with an admin API key, from
+an unauthenticated LAN listener. Plan:
+[native-hud-plan.md](../1015-embedded-hud-sign-in/native-hud-plan.md).
+
+- [x] S07a — Interim, owner approved: an nftables table on the HUD VM limits port 3000 to
+  the owner workstation. Live 21:09 UTC; a blocked host and an allowed host were verified.
+  Attempts 1/10.
+- [ ] S07b — Replace the admin proxy with the platform's read-only adapter in the
+  platform-managed HUD build (Stage 9 cutover, never by editing the retiring fork), then
+  remove the `hud` admin key.
+

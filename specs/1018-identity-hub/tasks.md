@@ -22,7 +22,14 @@ Each live step needs owner approval: show the change, then apply it.
   override `sso` -> 192.168.13.201. The certificate is from Let's Encrypt, valid to
   2027-02-19. The issuer is correct over HTTPS, and `/admin`, `/health` and `/metrics`
   return 404. The backup produced a valid dump (202 table entries). The network policy
-  blocks unlabelled pods. Automated sync is still off.
+  blocks unlabelled pods. Automated sync is still off. Attempts 4/10:
+  1. deploy and the first backup failed;
+  2. backup waits for the database;
+  3. `PGUSER` set, because uid 999 has no passwd entry;
+  4. stale partial dumps removed.
+
+  The claim-template drift fix rode with attempt 1. No independent review of the
+  manifests yet.
 - [ ] K2: Realm `home` as reviewed configuration: groups, required MFA, the two OIDC
   clients with exact redirect URIs. Owner enrols their own passkey or TOTP.
 - [ ] K3: Restore drill: rebuild the realm from the Git export and database backup on a
@@ -52,7 +59,8 @@ Each live step needs owner approval: show the change, then apply it.
 
 ## 3. HUD front door
 
-- [ ] F1: `HUD_PUBLIC_ORIGIN` in the fork's local-access check, loopback only, with tests;
+- [ ] F1: `HUD_PUBLIC_ORIGIN` as a platform overlay patch to the managed HUD build (never
+  the fork), loopback only, with tests;
   a test that gateway traffic cannot unlock Convergence local-owner mode.
 - [ ] F2: oauth2-proxy unit and configuration, certificate installed by the renewal
   timer, DNS record for `hud.internal.byrnbaker.me`.

@@ -1,7 +1,10 @@
 # Identity hub: single sign-on for the HUD and Cases
 
-**Status** Proposal for owner approval, 2026-11-21. Stage 1 of the identity
-recommendation; stage 2 is the upstream proposal in [upstream-proposal.md](upstream-proposal.md).
+**Status** New feature during the spec 1017 feature freeze (AGENTS.md). The owner approved
+the design and the K1 Keycloak deployment on 2026-11-21, but the freeze was not raised at
+the time. Further work needs an explicit owner decision on a freeze exception. Stage 1 of
+the identity recommendation; stage 2 is the upstream proposal in
+[upstream-proposal.md](upstream-proposal.md).
 
 ## Problem
 

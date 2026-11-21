@@ -62,10 +62,12 @@ both ───────OIDC──> sso.internal.byrnbaker.me  Keycloak (k3s) 
   192.168.3.252:443 for `hud.internal.byrnbaker.me`, requires group `netclaw-owners`, and
   proxies to `http://127.0.0.1:3000`, WebSockets included. The session cookie is Secure,
   HttpOnly and SameSite=Lax (the OIDC callback needs Lax).
-- **NetClaw HUD** binds to loopback (`HUD_HOST=127.0.0.1`). It needs one fork-local
-  setting, `HUD_PUBLIC_ORIGIN`, so its local-access check accepts that origin's Host and
-  Origin headers, but only on loopback connections. This is the small seam that the
-  upstream proposal generalizes.
+- **NetClaw HUD** is the platform-managed build (`setup/hud.py` from the production
+  candidate, the Stage 9 cutover), never the retiring fork in `~/netclaw`, which must not
+  be modified. It binds to loopback (`HUD_HOST=127.0.0.1`). It needs one setting,
+  `HUD_PUBLIC_ORIGIN`, carried as a platform overlay patch in `integrations/netclaw/hud`,
+  so its local-access check accepts that origin's Host and Origin headers, but only on
+  loopback connections. This is the small seam that the upstream proposal generalizes.
 - Convergence local-owner mode stays off. The gateway is a loopback hop, and the
   platform's owner check already rejects requests carrying forwarded headers; a test
   proves the gateway cannot unlock it.

@@ -146,14 +146,14 @@ hand-off proves inconvenient in practice.
 
 ### B. Production preparation, no live change
 
-1. **Choose the deployment method.**
-   - Run `setup/hud.py plan` against the fork checkout. It is read-only.
-   - Compare what the built HUD contains with the running fork: its routes, modules and
-     dashboard panels.
-   - If the built HUD loses any fork feature, use a smaller swap instead: replace only
-     the fork's Convergence module and views, and pass `hudHost` and the local-access
-     check to modules in the fork's `server.js`.
-   - Record the comparison either way.
+1. **Deployment method: the platform-managed HUD build, never an edit to the fork.**
+   The fork in `~/netclaw` is being retired and must not be modified (operations home
+   rules; Stage 9/10).
+   - Run `setup/hud.py plan` against the production candidate
+     (`~/netclaw-production-candidate`). It is read-only.
+   - Compare the built HUD's routes, modules and dashboard panels with the running fork.
+   - A missing feature becomes a platform overlay or upstream task, not a fork patch.
+   - Record the comparison.
 2. **Side-by-side run.** Start the candidate on loopback at other ports with a
    temporary viewer key. Compare the 11 telemetry resources used for H5 against the
    running HUD.
@@ -186,9 +186,8 @@ hand-off proves inconvenient in practice.
 
 ### Rollback
 
-- **Before step C4:** run `setup/hud.py remove --restart`, or restore the fork module
-  from Git. This puts the current fork back with the admin key, which is still
-  configured.
+- **Before step C4:** run `setup/hud.py remove --restart`. This puts the current fork
+  units back, with the admin key still configured.
 - **After step C4:** do the same, and also re-add the `hud` key from its owner-private
   file.
 - **Firewall:** delete the nftables table.
