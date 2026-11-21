@@ -62,6 +62,12 @@ groups:
         labels: {severity: critical, investigate: "false"}
         annotations:
           summary: "IDS ingest volume is below 10% free; ingestion stops at 512 MiB"
+      - alert: IDSStorageMetricsMissing
+        expr: up{job="netclaw-ids"} == 1 unless on() netclaw_ids_store_disk_total_bytes
+        for: 15m
+        labels: {severity: warning, investigate: "false"}
+        annotations:
+          summary: "IDS ingest is scraped but reports no volume space; storage alerts are blind"
       - alert: IDSMetricsScrapeFailed
         expr: up{job="netclaw-ids"} == 0
         for: 2m

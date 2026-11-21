@@ -147,7 +147,8 @@ As with EVE, pending delivery never expires. Acknowledged alerts and other
 case-bearing rows (EVE and host) remain `case_retention_days` (default 7), ordinary
 rows `event_retention_days` (default 1); pruning is bounded and best-effort. These are
 inbox retention/dedup windows, independent of central log retention, and must exceed
-the sender's 48-hour post-delivery spool replay. Shortening them frees SQLite pages
+the sender's 48-hour post-delivery spool replay and any lag of its history cursor
+behind live delivery (for example a multi-day outage), or replays are re-inserted. Shortening them frees SQLite pages
 for reuse; the database file itself does not shrink. A receiver
 outage can fill the guest spool, and a downstream outage can fill the shared
 receiver queue; monitor both. Top-level `host_queue_capacity` defaults to half `queue_capacity` and cannot exceed

@@ -60,3 +60,22 @@ tests:
               summary: "IDS ingest volume is below 10% free; ingestion stops at 512 MiB"
       - eval_time: 55m
         alertname: IDSStorageLow
+  - name: A scraped ingest without volume metrics leaves storage alerts blind
+    interval: 1m
+    input_series:
+      - series: 'up{job="netclaw-ids",instance="ids:8445"}'
+        values: '1+0x40'
+      - series: 'netclaw_ids_store_disk_total_bytes'
+        values: '_x19 100+0x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: IDSStorageMetricsMissing
+      - eval_time: 16m
+        alertname: IDSStorageMetricsMissing
+        exp_alerts:
+          - exp_labels: {job: netclaw-ids, instance: "ids:8445", severity: warning, investigate: "false"}
+            exp_annotations:
+              summary: "IDS ingest is scraped but reports no volume space; storage alerts are blind"
+      - eval_time: 25m
+        alertname: IDSStorageMetricsMissing
+
