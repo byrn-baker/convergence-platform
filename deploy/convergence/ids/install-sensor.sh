@@ -37,6 +37,7 @@ trap 'docker rm "$container" >/dev/null 2>&1 || true' EXIT
 docker cp "$container:/etc/suricata/." config/
 cp config/suricata.yaml config/upstream.yaml
 cp local.rules config/local.rules
+cp threshold.config config/threshold.config
 python3 render-sensor.py --base config/upstream.yaml --output config/suricata.yaml \
   --interface "$IDS_INTERFACE" --switch-ip "$IDS_SWITCH_IP" --sensor-ip "$IDS_SENSOR_IP" \
   --home-net "$IDS_HOME_NET"
