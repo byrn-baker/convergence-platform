@@ -27,7 +27,7 @@ both ───────OIDC──> sso.internal.byrnbaker.me  Keycloak (k3s) 
 
   Group membership only admits a person. Convergence still owns roles and sites.
 - MFA is required: WebAuthn (a security key or passkey) preferred, TOTP accepted.
-- Directory: no federation at first. Adding AD or LDAP later is a realm change: read-only
+- Directory: none exists (owner, 2026-11-21), so Keycloak holds the accounts. No federation at first. Adding AD or LDAP later is a realm change: read-only
   federation over LDAPS, a dedicated bind account in a Kubernetes Secret, and a group
   mapper.
 - Clients: `netclaw-hud` and `convergence-cases`, both confidential, authorization code
@@ -74,6 +74,10 @@ both ───────OIDC──> sso.internal.byrnbaker.me  Keycloak (k3s) 
   host by the existing renewal timer (`convergence-reviewer-tls`, spec 1016), which
   already handles key/certificate checks and reload. The alternative is lego with DNS-01
   on the host.
+- **DNS.** Internal names are host overrides in the pfSense DNS Resolver, created through
+  its REST API (v2) with the existing credentials: `sso` points to the k3s ingress
+  (192.168.13.201) and `hud` to the HUD VM (192.168.3.252). Each record is added at its
+  cutover step, with approval.
 - **Network.** Ports 3000 and 3001 have no network listener. The interim nftables table
   restricting port 3000 is then removed. Port 443 is open to the LAN, and the front door
   authenticates every request.
