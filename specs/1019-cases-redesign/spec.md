@@ -37,12 +37,19 @@ worth a person's time.
 8. Authorization does not change. A reviewer sees only cases for sites their account
    holds, every list and count is scoped on the service, and every disposition keeps the
    person's name. The queue and lists answer within one second at production size.
+9. Bulk review (owner decision 2026-11-22). From a signature, an operator can record one
+   decision for every case of that signature that still needs review in the chosen
+   window, or only those from one source host. The reviewer picks an outcome and writes
+   a reason once, sees the exact number of cases, and confirms it before anything is
+   saved. It is stored as one audited decision under that person's name; each case it
+   covers shows it in its history and can still be reviewed on its own afterwards. A
+   case reviewed by someone else in the meantime is left alone. Viewers cannot use it.
 
 ## Out of scope
 
-- Disposition of many cases in one action. The audit model records one attributed
-  decision per case. Bulk review needs its own design and is an open question for the
-  owner (plan.md).
+- Standing rules that decide future cases automatically. Bulk review covers cases that
+  already exist. Whether to add a time-limited rule for future matches is an open
+  question for the owner (plan.md).
 - Changes to accounts, roles, sign-in, IDS ingestion or alert routing.
 - The NetClaw HUD. This is the Cases site only.
 - Other alert kinds. The queue lists intrusion cases; other events stay readable by ID.

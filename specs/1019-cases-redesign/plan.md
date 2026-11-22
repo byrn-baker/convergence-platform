@@ -68,17 +68,45 @@ magenta accents, and one warning colour reserved for confirmed threats. Grid and
 wireframe motifs are drawn in CSS. Effects are decoration only and are removed under
 `prefers-reduced-motion`. All artwork is original.
 
-## Open questions for the owner
+## Bulk review
 
-1. Bulk review. With about 700,000 undispositioned cases, one decision per case will not
-   clear the backlog. Options: leave it out (this spec), or add a later spec for a
-   signature-level decision that records one audited rule and marks its cases. Not
-   decided here.
-2. Default queue. Proposed: cases that need review from the last 24 hours, highest
-   severity first.
+A bulk decision is its own record, not a loop over the single-case write. New table
+`reviewer_bulk_dispositions`: operation ID (the idempotency key, as for a single
+disposition), installation, actor ID and name, site, signature ID, window bounds,
+optional source host, outcome, reason, reviewed-at time and the number of cases covered.
+It is insert-only for the runtime role, like `reviewer_case_dispositions`.
+
+`POST /v1/sites/:site/signatures/:id/dispositions` takes the scope, outcome, reason,
+operation ID and the count the reviewer confirmed. In one transaction the service locks
+and updates the matching cases that still have no disposition, writes each one's
+`security_disposition` with the reviewer's name and a reference to the bulk operation,
+and inserts the one bulk record. The event-history trigger keeps the previous state of
+every case. If the number of matching cases differs from the confirmed count by more
+than cases that arrived or were reviewed meanwhile can explain, or exceeds a fixed
+ceiling (to be set from A3's measurements), the request fails with a conflict and
+nothing is written. Replaying the same operation returns the original receipt.
+
+Only `operator` and `admin` roles may use it. A case page reads the bulk reference and
+shows "reviewed as part of a bulk decision" with its reason. Reviewing such a case on
+its own afterwards is an ordinary single disposition.
+
+The preview count comes from `GET …/signatures/:id/dispositions/preview` with the same
+scope parameters, so the number shown and the number written use one query.
+
+## Decisions and open questions
+
+Decided by the owner on 2026-11-22: bulk review is in scope; the default queue is cases
+that need review from the last 24 hours, highest severity first; the D1 mock-up is
+approved (https://claude.ai/artifact/V1wiNe6rfniysZuAJDjcrr, private to the owner).
+
+Open: the mock-up shows a third bulk scope, "also future matches for 7 days". That is a
+standing rule that decides cases nobody has seen, so it is not built until the owner
+asks for it explicitly.
 
 ## Failure and rollback
 
-The change is additive: two read routes, two indexes, new static files. Rollback is the
-previous image digests in the ops repository; the indexes stay and are harmless. No
-data is rewritten, and the disposition write path is not touched.
+The queue is additive: read routes, two indexes, new static files. Bulk review adds one
+table and one write route, and it changes case rows; the single-case write path is not
+touched. Rollback is the previous image digests in the ops repository; the indexes and
+the table stay and are harmless. A mistaken bulk decision is not undone by rollback:
+its record lists what it covered, and the event history holds each case's prior state.
