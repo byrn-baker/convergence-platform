@@ -23,22 +23,50 @@ Both select fixed columns with the same length caps as `readCase`, validate ever
 parameter against a closed set or a strict pattern, and run under a short statement
 timeout so a bad plan fails instead of loading the database.
 
-The runtime role already has `SELECT` on `events`, so `permissions.sql` does not change.
-A test asserts that.
+### Case queue table (chosen in task A3)
 
-Indexes, added in `grants.sql` so `migrate` creates them:
+Grouping `events` directly is too slow: a row is about 2 kB and the signature ID is
+inside its JSON evidence. On production the 24-hour summary took over four seconds.
+Adding a column to `events` was rejected: backfilling it would fire the history
+trigger for every row (about 700,000 copies into `event_history`) and rewrite a 1.1 GB
+table that ingestion writes to.
 
-- `(site_id, timestamp DESC) WHERE alert_name = 'SuricataIntrusion' AND
-  security_disposition IS NULL` for the needs-review queue;
-- `(site_id, (source_evidence #>> '{labels,signature_id}'), timestamp DESC) WHERE
-  alert_name = 'SuricataIntrusion'` for a signature's cases.
+Instead `queue.sql` adds `reviewer_case_queue`, one narrow row per intrusion case: case
+ID (foreign key to `events`, deleted with it), site, time, signature ID, severity and
+whether it needs review. Two triggers on `events` keep it exact: after insert, and after
+an update of the columns it copies. The trigger function runs as the schema owner, so
+ingestion and the reviewer runtime need no write privilege on the queue. The runtime
+role gets `SELECT` on it and nothing else; `permissions.sql` changes by that one grant.
 
-Building them takes a lock on a 1.6 GB table that IDS ingestion writes to. Task A3
-measures the build and both queries on a restored copy of production before choosing
-between a plain build in the migration and a separate `CREATE INDEX CONCURRENTLY` step.
-If the windowed signature summary cannot meet one second from indexes alone, the
-fallback is a small per-signature rollup table maintained by the service; do not start
-with it.
+Indexes: `(site_id, occurred_at DESC)` including signature, severity and review state
+for the summary, and `(site_id, signature_id, occurred_at DESC, case_id DESC)` for a
+signature's cases and the bulk preview count. The summary reads one `events` row per
+signature for its name; case lists join `events` only for the rows on the page.
+
+Rollout order matters. `migrate` creates the table and triggers in its transaction,
+which locks `events` against writes until commit, so it sets a five-second lock timeout
+and does no copying. `reviewer-service.js backfill-queue` then copies existing cases one
+site and one day per statement, skipping rows the triggers already wrote. It can be
+stopped and re-run. Until it finishes, older windows undercount; cases from after the
+migration are always present.
+
+Measured on a restored copy of production (2026-11-22 dump, 702,901 cases, production
+memory settings, idle host), evidence in `~/.local/state/convergence-spec1019/a3-*`:
+
+| Query | On `events` | On the queue table |
+|---|---|---|
+| Summary, 24 hours (56,095 cases) | 427–507 ms | 27–28 ms |
+| Summary, 7 days (185,226) | 1,261 ms | 98 ms |
+| Summary, 30 days (702,900) | 4,865 ms | 144 ms |
+| One page of a signature's cases | not measured | 97 ms |
+
+Production itself was about ten times slower than the copy on the first row, so the
+one-second target is met with margin only on the queue table. Table 51 MB, indexes
+101 MB. The real commands on the copy: `migrate` 0.2 s; `backfill-queue` 63 s in 122
+statements, every intrusion case copied, `event_history` untouched, and a second run
+copied nothing in 24 s. An event insert costs about 0.13 ms more (0.07 to 0.20 ms per
+row over 20,000 rows). Not measured: lock wait and backfill
+time under production's ingestion load. R2 measures those when it runs.
 
 ## Site (ui/convergence-hud/reviewer)
 
@@ -105,7 +133,7 @@ asks for it explicitly.
 
 ## Failure and rollback
 
-The queue is additive: read routes, two indexes, new static files. Bulk review adds one
+The queue is additive: read routes, one table with two triggers on `events`, new static files. Bulk review adds one
 table and one write route, and it changes case rows; the single-case write path is not
 touched. Rollback is the previous image digests in the ops repository; the indexes and
 the table stay and are harmless. A mistaken bulk decision is not undone by rollback:

@@ -19,21 +19,23 @@ Each live step needs owner approval: show the change, then apply it.
 - [x] A1: Signature summary route with parameter validation, site scope and tests,
   including a reviewer without the site and a disabled account.
   2026-11-22: `GET /v1/sites/:site/signatures` (`src/reviewer/queue.js`), 6 new tests
-  pass; full API suite 111 pass, 0 fail, 4 skipped for missing fixtures. Correct but
-  not yet fast enough for production: see A3. Not deployable before A3.
+  pass; full API suite 111 pass, 0 fail, 4 skipped for missing fixtures. Reading
+  `events` directly was too slow in production; A3 moved it to the queue table.
 - [ ] A2: Case list route with keyset pagination, cursor validation and tests for page
   boundaries and equal timestamps.
-- [ ] A3: Measured read-only on production 2026-11-22 (site `home`, about 55,000 cases
-  in 24 hours): the A1 grouping took 4.1 s once and exceeded the 5 s limit on a second
-  run; 7 and 30 days exceeded it. It walks `idx_events_site_timestamp` and reads
-  `source_evidence` for every row, so an index for a signature's cases will not fix the
-  summary. Expect to need the signature ID outside the JSON (a stored column with an
-  index, or the rollup table in plan.md). Decide from measurements on a restored copy.
-  Indexes. Measure build time, lock impact and both queries on a restored copy
-  of production; record the plans and timings; choose the build method.
-- [ ] A4: Test that `permissions.sql` is unchanged and the runtime role needs no new
-  grant.
-
+- [x] A3: Measure on a restored copy of production and choose how the queue is made
+  fast enough.
+  2026-11-22: chose a narrow `reviewer_case_queue` table kept by triggers on `events`
+  (plan.md has the reasons, the rejected column option and the timings). The 24-hour
+  summary went from 427–507 ms to 27–28 ms on the copy and 30 days from 4.9 s to
+  144 ms. Implemented: `queue.sql` in `migrate`, the `backfill-queue` command, the
+  startup check, and A1's summary reading the queue table. Full API suite 130 pass,
+  0 fail, 1 skipped locally, including the permissions test with its restricted roles.
+  Not measured: lock wait and backfill time under production load (R2).
+- [x] A4: The runtime role's only new privilege is `SELECT` on the queue table.
+  `test-reviewer-permissions.cjs` shows the runtime reading the queue, a runtime
+  disposition updating it through the trigger, and the runtime's insert, update, delete
+  and truncate refused; the provisioning role cannot read it.
 - [ ] B1: Bulk decision table, grants (insert-only for the runtime role) and the
   permissions test.
 - [ ] B2: Preview and write routes: one transaction, idempotent operation ID, confirmed
@@ -57,6 +59,8 @@ Each live step needs owner approval: show the change, then apply it.
 ## 4. Release
 
 - [ ] R1: Independent review; fix findings.
-- [ ] R2: Release; build the indexes on production by the method A3 chose; move the
+- [ ] R2: Release. On production: dump, `migrate` (creates the queue table and
+  triggers; record the lock wait), `backfill-queue` (record its duration and row count
+  against the count of intrusion cases), re-apply `permissions.sql`, then move the
   reviewer digests in the ops repository. The owner signs in, works a case from the
   queue and confirms the site.

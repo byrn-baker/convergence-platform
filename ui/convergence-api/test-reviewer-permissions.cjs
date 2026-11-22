@@ -7,6 +7,7 @@ const {execFileSync} = require('node:child_process');
 const {readFileSync} = require('node:fs');
 const path = require('node:path');
 const {Readable} = require('node:stream');
+const {listSignatures, parseSignatureQuery} = require('./src/reviewer/queue');
 const {Pool} = require('pg');
 const {migrate} = require('./reviewer-service');
 const {provision} = require('./reviewer-accounts');
@@ -64,6 +65,23 @@ test('the deployed runtime and provisioning grants allow a complete review and s
   assert.equal(receipt.reviewed_by_name, 'alice');
   assert.equal(reviewed.review_history[0].operation_id, command.operationId);
   assert.equal((await owner.query('SELECT 1 FROM event_history WHERE event_id=$1', [item.id])).rowCount, 1);
+
+  // The case queue: triggers running as the schema owner keep it current when the
+  // restricted runtime writes a disposition. The runtime can read it and nothing more.
+  const queued = async () => (await service.query('SELECT needs_review FROM reviewer_case_queue WHERE case_id=$1', [item.id])).rows[0];
+  assert.equal((await queued()).needs_review, true);
+  await authority.withGrant('installation', grant.token, {site: 'home', write: true},
+    (db, actor) => recordDisposition(db, actor, 'home', item.id,
+      {operationId: randomUUID(), kind: 'false_positive', reason: 'Synthetic duplicate capture'}));
+  assert.equal((await queued()).needs_review, false);
+  const queue = await authority.withGrant('installation', grant.token, {site: 'home', write: false},
+    (db, actor) => listSignatures(db, actor, 'home', parseSignatureQuery('state=all')));
+  assert.deepEqual(queue.signatures.map(row => [row.cases, row.needs_review]), [[1, 0]]);
+  for (const statement of ["INSERT INTO reviewer_case_queue VALUES (gen_random_uuid(),'home',now(),'1','info',true)",
+    'UPDATE reviewer_case_queue SET needs_review = true', 'DELETE FROM reviewer_case_queue', 'TRUNCATE reviewer_case_queue']) {
+    await assert.rejects(service.query(statement), {code: '42501'});
+  }
+  await assert.rejects(directory.query('SELECT 1 FROM reviewer_case_queue'), {code: '42501'});
 
   for (const column of ['name', 'role', 'sites', 'id', 'password_hash', 'enabled', 'credential_revision']) {
     await assert.rejects(service.query('UPDATE reviewer_accounts SET ' + column + ' = ' + column), {code: '42501'});

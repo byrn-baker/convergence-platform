@@ -15,6 +15,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON reviewer_oidc_exchanges TO :"reviewer_ru
 GRANT SELECT, INSERT ON reviewer_case_dispositions TO :"reviewer_runtime";
 GRANT SELECT, INSERT ON reviewer_operation_keys TO :"reviewer_runtime";
 GRANT SELECT, UPDATE (security_disposition) ON events TO :"reviewer_runtime";
+-- The case queue is maintained by triggers that run as the schema owner; the runtime only reads it.
+GRANT SELECT ON reviewer_case_queue TO :"reviewer_runtime";
 GRANT INSERT ON event_history TO :"reviewer_runtime";
 GRANT USAGE ON SEQUENCE event_history_sequence_seq TO :"reviewer_runtime";
 GRANT SELECT (id) ON sites TO :"reviewer_provisioner";
