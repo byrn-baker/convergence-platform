@@ -5,7 +5,9 @@ const { readCase, readDispositionReceipt, recordDisposition } = require('./cases
 const {requestInvestigation, readInvestigationReceipt} = require('./investigations');
 const {requestJevReview,readJevReceipt}=require('./jev');
 const {parseTelemetryTarget} = require('./telemetry-contract');
+const {listSignatures, parseSignatureQuery} = require('./queue');
 
+const signaturesPath = /^\/v1\/sites\/([a-zA-Z0-9_.-]{1,128})\/signatures(?:\?(.*))?$/;
 const casePath = /^\/v1\/sites\/([a-zA-Z0-9_.-]{1,128})\/cases\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/(disposition|investigation|jev-review)(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}))?)?$/i;
 const messages = {
   400: 'Invalid request', 401: 'Invalid credentials or grant', 403: 'Access denied',
@@ -124,6 +126,14 @@ function createReviewerService({tls, enrollments, authority, investigationEnable
           clearTimeout(timeout);
           res.removeListener('close',cancel);
         }
+      }
+      const queue = signaturesPath.exec(req.url);
+      if (queue) {
+        if (req.method !== 'GET') reject(404);
+        if (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) !== 0) reject(400);
+        const query = parseSignatureQuery(queue[2]);
+        return reply(res, 200, await authority.withGrant(installation, bearer(req), {site: queue[1], write: false},
+          (client, actor) => listSignatures(client, actor, queue[1], query)));
       }
       const match = casePath.exec(req.url);
       const status = req.method === 'GET' && req.url === '/v1/grants/current';

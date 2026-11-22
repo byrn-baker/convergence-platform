@@ -16,11 +16,20 @@ Each live step needs owner approval: show the change, then apply it.
 
 ## 2. Reviewer service
 
-- [ ] A1: Signature summary route with parameter validation, site scope and tests,
+- [x] A1: Signature summary route with parameter validation, site scope and tests,
   including a reviewer without the site and a disabled account.
+  2026-11-22: `GET /v1/sites/:site/signatures` (`src/reviewer/queue.js`), 6 new tests
+  pass; full API suite 111 pass, 0 fail, 4 skipped for missing fixtures. Correct but
+  not yet fast enough for production: see A3. Not deployable before A3.
 - [ ] A2: Case list route with keyset pagination, cursor validation and tests for page
   boundaries and equal timestamps.
-- [ ] A3: Indexes. Measure build time, lock impact and both queries on a restored copy
+- [ ] A3: Measured read-only on production 2026-11-22 (site `home`, about 55,000 cases
+  in 24 hours): the A1 grouping took 4.1 s once and exceeded the 5 s limit on a second
+  run; 7 and 30 days exceeded it. It walks `idx_events_site_timestamp` and reads
+  `source_evidence` for every row, so an index for a signature's cases will not fix the
+  summary. Expect to need the signature ID outside the JSON (a stored column with an
+  index, or the rollup table in plan.md). Decide from measurements on a restored copy.
+  Indexes. Measure build time, lock impact and both queries on a restored copy
   of production; record the plans and timings; choose the build method.
 - [ ] A4: Test that `permissions.sql` is unchanged and the runtime role needs no new
   grant.
