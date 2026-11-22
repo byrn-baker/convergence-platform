@@ -99,7 +99,7 @@ Each live step needs owner approval: show the change, then apply it.
   Password sign-in: `REVIEWER_PASSWORD_SIGN_IN=0` removes it on both tiers; when on beside
   an identity provider it needs `REVIEWER_PASSWORD_SIGN_IN_ADDRESSES`, and each attempt
   writes an audit line. The "Review this case" reference survives the round trip.
-- [ ] C4: Tests against a disposable Keycloak:
+- [x] C4: Tests against a disposable Keycloak:
   - tampered state, nonce or PKCE;
   - replayed code;
   - wrong issuer or audience;
@@ -125,8 +125,30 @@ Each live step needs owner approval: show the change, then apply it.
     (`test-security-history.cjs`) fails only on the local fixture, which lacks the
     `POSTGRES_USER` variable that CI sets.
 
-  Independent review: not done. Grok Build timed out on four attempts (the whole diff,
-  the same with a no-tools instruction, and each half), so nothing is claimed from it.
+  Independent review, 2026-11-22: Grok Build timed out on four attempts, so nothing is
+  claimed from it. A separate Claude reviewer (owner approved) read the whole change:
+  no critical defects, two important and six minor. All were fixed on the branch:
+  - the service now refuses to start on a schema without the two new tables, and only
+    the OIDC path touches them, so an image rolled out before the migration leaves the
+    previous replica serving instead of breaking password sign-in;
+  - `unlink` locks the account before removing the link and its grants, and the grant
+    exchange re-reads the link under its own account lock, so neither can pass the
+    other (tested in both orders);
+  - a callback with the wrong state no longer spends the attempt or counts against the
+    sign-in limit, so another site cannot cancel a sign-in or use up the limit;
+  - sign-in attempts are capped per address, and none is held while the provider is
+    unreachable;
+  - the attempt remembers the session that started it, so a repeat sign-in ends the old
+    session even when the provider is cross-site;
+  - the spent-token record is kept past the last moment the token could be accepted;
+  - discovery is re-read with each key refresh;
+  - a password attempt refused by address is audited.
+
+  After the fixes: API 125 pass, HUD 93 pass, Keycloak qualification 10 of 10, Helm 96.
+  Left as documented limits: the break-glass address list needs the HUD to see real
+  client addresses (true for the production LoadBalancer with
+  `externalTrafficPolicy: Local`); the real-Keycloak suite cannot produce a token with
+  a foreign issuer under the same key, so that comparison is covered with forged tokens.
 - [ ] C5: Release; live cutover with the `byrn` link; one attributed disposition on the
   synthetic case; password sign-in off.
 

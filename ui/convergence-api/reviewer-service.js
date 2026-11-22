@@ -47,7 +47,11 @@ async function main() {
   const input = key => fs.readFileSync(process.env[key]);
   const tls = {ca: input('REVIEWER_CLIENT_CA'), key: input('REVIEWER_TLS_KEY'), cert: input('REVIEWER_TLS_CERT')};
   const enrollments = JSON.parse(input('REVIEWER_INSTALLATIONS_FILE'));
+  // Refuse to start on a schema from before this release, so a rollout keeps the
+  // previous replica serving until the migration has run.
   await pool.query('SELECT 1 FROM reviewer_grants LIMIT 0');
+  await pool.query('SELECT 1 FROM reviewer_identity_links LIMIT 0');
+  await pool.query('SELECT 1 FROM reviewer_oidc_exchanges LIMIT 0');
   // Both settings are required together. Without them only password sign-in exists.
   const {REVIEWER_OIDC_ISSUER: issuer, REVIEWER_OIDC_CLIENT_ID: audience} = process.env;
   if (Boolean(issuer) !== Boolean(audience)) throw new Error('Incomplete identity provider settings');

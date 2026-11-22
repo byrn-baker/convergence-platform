@@ -54,7 +54,6 @@ function createIdTokenVerifier({issuer, audience, requiredGroup = '', skewSecond
   const origin = checkIssuer(issuer, allowInsecureLoopback).origin;
   if (typeof audience !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(audience) ||
       typeof requiredGroup !== 'string' || requiredGroup.length > 128) throw new Error('Invalid identity provider client');
-  let jwksUri;
   let keys = new Map();
   let loadedAt = -Infinity;
   let attemptedAt = -Infinity;
@@ -63,13 +62,11 @@ function createIdTokenVerifier({issuer, audience, requiredGroup = '', skewSecond
   async function load() {
     attemptedAt = clock();
     try {
-      if (!jwksUri) {
-        const document = await request(issuer + '/.well-known/openid-configuration');
-        if (document?.issuer !== issuer || typeof document.jwks_uri !== 'string' ||
-            new URL(document.jwks_uri).origin !== origin) throw unavailable();
-        jwksUri = document.jwks_uri;
-      }
-      const set = await request(jwksUri);
+      // Read with every key refresh, so a moved key set needs no restart.
+      const document = await request(issuer + '/.well-known/openid-configuration');
+      if (document?.issuer !== issuer || typeof document.jwks_uri !== 'string' ||
+          new URL(document.jwks_uri).origin !== origin) throw unavailable();
+      const set = await request(document.jwks_uri);
       if (!Array.isArray(set?.keys) || set.keys.length > 32) throw unavailable();
       const next = new Map();
       for (const jwk of set.keys) {
@@ -121,8 +118,10 @@ function createIdTokenVerifier({issuer, audience, requiredGroup = '', skewSecond
         !timingSafeEqual(Buffer.from(claims.nonce), Buffer.from(nonce)) ||
         typeof claims.sub !== 'string' || !claims.sub || claims.sub.length > 255 || claims.sub.includes('\0') ||
         (requiredGroup && !(Array.isArray(claims.groups) && claims.groups.includes(requiredGroup)))) throw rejected();
+    // The spent-token record is removed by the database clock. Keep it past the
+    // last moment this process could still accept the token.
     return {issuer, subject: claims.sub, digest: createHash('sha256').update(idToken).digest(),
-      expiresAt: new Date((claims.exp + skewSeconds) * 1000)};
+      expiresAt: new Date((claims.exp + 2 * skewSeconds + 60) * 1000)};
   }
 
   return {verify};

@@ -152,6 +152,7 @@ export function createReviewerServer({tls, origin, client, assets, oidc,
   const signInMethods = req => ({oidc: Boolean(oidc), password: passwordAllowed(req)});
   const bootstrap = new Admission({total:240, perAddress:30});
   const login = new Admission({total:120, perAddress:20});
+  const callbacks = new Admission({total:240, perAddress:30});
   let activeLogins = 0;
   let closing = false;
 
@@ -187,7 +188,10 @@ export function createReviewerServer({tls, origin, client, assets, oidc,
 
   async function signIn(req, res, entry) {
     if (!passwordSignIn.enabled) throw failure(404);
-    if (!passwordAllowed(req)) throw failure(403);
+    if (!passwordAllowed(req)) {
+      audit({event: 'reviewer-password-sign-in', address: address(req), outcome: 'refused-address', at: new Date().toISOString()});
+      throw failure(403);
+    }
     sessions.checkCsrf(entry, req.headers['x-review-csrf']);
     if (entry.grant || entry.pending) throw failure(409);
     login.take(req.socket.remoteAddress);
@@ -214,22 +218,31 @@ export function createReviewerServer({tls, origin, client, assets, oidc,
     }
   }
 
-  async function startOidc(req, res) {
+  async function startOidc(req, res, entry) {
     bootstrap.take(req.socket.remoteAddress);
-    const attempt = attempts.begin();
-    const location = await oidc.authorizationUrl(attempt);
+    // No attempt is held while the provider cannot be reached.
+    await oidc.ready();
+    const attempt = attempts.begin(address(req));
+    // The Strict session cookie may not return with the provider's redirect.
+    attempt.previous = entry;
+    let location;
+    try { location = await oidc.authorizationUrl(attempt); }
+    catch (error) { attempts.discard(attempt); throw error; }
     cookie(res, attempt.id, transactionLifetimeMs / 1000, attemptCookie, 'Lax');
     redirect(res, location);
   }
 
-  async function finishOidc(req, res, entry) {
-    login.take(req.socket.remoteAddress);
+  async function finishOidc(req, res, current) {
+    callbacks.take(req.socket.remoteAddress);
     const handle = readCookie(req, attemptCookie);
-    cookie(res, '', 0, attemptCookie, 'Lax');
     const parameters = callbackParameters(req.url);
     // Spend the attempt before anything else, so a replayed or forged callback
-    // cannot reach the provider or the reviewer service.
+    // cannot reach the provider or the reviewer service. Only a genuine callback
+    // counts against the sign-in limit that password sign-in shares.
     const attempt = attempts.take(handle, parameters.state);
+    cookie(res, '', 0, attemptCookie, 'Lax');
+    login.take(req.socket.remoteAddress);
+    const entry = current || attempt.previous;
     if (parameters.iss !== undefined && parameters.iss !== oidc.issuer) throw failure(400);
     if (parameters.error !== undefined || !parameters.code) throw failure(401);
     if (activeLogins >= 8) throw failure(429);
@@ -239,7 +252,7 @@ export function createReviewerServer({tls, origin, client, assets, oidc,
       const idToken = await oidc.redeem(parameters.code, attempt.verifier);
       grant = await client.issueOidc({idToken, nonce: attempt.nonce});
       // A second sign-in in the same browser replaces the first session.
-      if (entry) {
+      if (entry && sessions.get(entry.id) === entry) {
         sessions.remove(entry);
         if (entry.grant) await client.revoke(entry.grant).catch(() => {});
       }
@@ -275,7 +288,7 @@ export function createReviewerServer({tls, origin, client, assets, oidc,
       let entry = sessions.get(id);
       if (oidc && method === 'GET' && (target === '/oidc/login' || target.startsWith('/oidc/callback?'))) {
         try {
-          return await (target === '/oidc/login' ? startOidc(req,res) : finishOidc(req,res,entry));
+          return await (target === '/oidc/login' ? startOidc(req,res,entry) : finishOidc(req,res,entry));
         } catch (error) {
           return signInFailed(res,error?.status);
         }

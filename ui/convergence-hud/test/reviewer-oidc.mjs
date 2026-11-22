@@ -186,16 +186,19 @@ test('reviewer HUD signs in through an identity provider', async t => {
     const attempt = await begin();
     const callback = idp.authenticate(attempt.location, 'subject-alice');
     const tampered = callback.replace(/state=[^&]+/, 'state=' + random());
-    assert.equal((await request(tampered, {cookies: attempt.cookies, headers: navigation})).status, 401);
-    // The failed callback spent the attempt, so the genuine one no longer works.
-    assert.equal((await request(callback, {cookies: attempt.cookies, headers: navigation})).status, 401);
+    const refused = await request(tampered, {cookies: attempt.cookies, headers: navigation});
+    assert.equal(refused.status, 401);
+    assert.equal(refused.set[attemptCookie], undefined);
+    assert.equal(idp.tokenRequests, before);
+    // A forged callback, which any site can send, does not cancel the real sign-in.
+    assert.equal((await request(callback, {cookies: attempt.cookies, headers: navigation})).status, 303);
 
     const second = await begin();
     const genuine = idp.authenticate(second.location, 'subject-alice');
     assert.equal((await request(genuine, {headers: navigation})).status, 401, 'no attempt cookie');
     assert.equal((await request(genuine, {cookies: {[attemptCookie]: random()}, headers: navigation})).status, 401, 'another browser');
     assert.equal((await request(genuine.replace(/state=[^&]+&/, ''), {cookies: second.cookies, headers: navigation})).status, 401);
-    assert.equal(idp.tokenRequests, before, 'no rejected callback reached the provider');
+    assert.equal(idp.tokenRequests, before + 1, 'no rejected callback reached the provider');
 
     const third = await begin();
     const once = idp.authenticate(third.location, 'subject-alice');
@@ -203,7 +206,7 @@ test('reviewer HUD signs in through an identity provider', async t => {
     const replay = await request(once, {cookies: third.cookies, headers: navigation});
     assert.equal(replay.status, 401);
     assert.equal(replay.set[sessionCookie], undefined);
-    assert.equal(idp.tokenRequests, before + 1);
+    assert.equal(idp.tokenRequests, before + 2);
   });
 
   await t.test('a code from another attempt fails PKCE, and a swapped token fails the nonce', async () => {
@@ -287,6 +290,15 @@ test('reviewer HUD signs in through an identity provider', async t => {
     assert.equal(calls.filter(call => call === 'revoke').length, revoked + 1);
     assert.equal((await session(first.cookies)).body.user, null);
     assert.equal((await session({[sessionCookie]: done.set[sessionCookie].value})).body.user.id, 'bob');
+
+    // A cross-site provider's redirect does not carry the Strict session cookie,
+    // so the attempt remembers which session started it.
+    const started = await request('/oidc/login', {cookies: {[sessionCookie]: done.set[sessionCookie].value}});
+    const again = await request(idp.authenticate(started.headers.location, 'subject-alice'),
+      {cookies: {[attemptCookie]: started.set[attemptCookie].value}, headers: navigation});
+    assert.equal(again.status, 303);
+    assert.equal(calls.filter(call => call === 'revoke').length, revoked + 2);
+    assert.equal((await session({[sessionCookie]: done.set[sessionCookie].value})).body.user, null);
   });
 
   await t.test('only the callback navigation is accepted across sites', async () => {
@@ -373,6 +385,8 @@ test('reviewer HUD signs in through an identity provider', async t => {
       csrf: other.body.csrf, data: {username: 'alice', password: 'fixture'}});
     assert.equal(blocked.status, 403);
     assert.equal(calls.filter(call => call === 'issue').length, issued);
+    assert.deepEqual({...audits.at(-1), at: undefined},
+      {event: 'reviewer-password-sign-in', address: '127.0.0.1', outcome: 'refused-address', at: undefined});
   });
 
   await t.test('settings', () => {
@@ -393,8 +407,14 @@ test('reviewer HUD signs in through an identity provider', async t => {
     const first = attempts.begin();
     now = 600_000;
     assert.throws(() => attempts.take(first.id, first.state), error => error.status === 400);
-    for (let index = 0; index < 512; index += 1) attempts.begin();
-    assert.throws(() => attempts.begin(), error => error.status === 429);
+    const wrong = attempts.begin();
+    assert.throws(() => attempts.take(wrong.id, first.state), error => error.status === 400);
+    assert.equal(attempts.take(wrong.id, wrong.state), wrong, 'a wrong state leaves the attempt');
+    assert.throws(() => attempts.take(wrong.id, wrong.state), error => error.status === 400);
+    for (let index = 0; index < 16; index += 1) attempts.begin('192.0.2.1');
+    assert.throws(() => attempts.begin('192.0.2.1'), error => error.status === 429, 'per address');
+    for (let index = 0; index < 496; index += 1) attempts.begin('192.0.2.' + (2 + index % 100) + ':' + index);
+    assert.throws(() => attempts.begin('192.0.2.200'), error => error.status === 429);
     now = 1_200_000;
     assert.ok(attempts.begin());
   });

@@ -34,23 +34,33 @@ export class OidcTransactions {
     this.entries = new Map();
   }
 
-  begin() {
+  // One address cannot hold more than a small share of the open attempts.
+  begin(address = '') {
     const now = this.clock();
-    for (const [id, entry] of this.entries) if (now >= entry.expires) this.entries.delete(id);
-    if (this.entries.size >= 512) throw failure(429);
-    const entry = {id: random(), state: random(), nonce: random(), verifier: random(),
+    let sameAddress = 0;
+    for (const [id, entry] of this.entries) {
+      if (now >= entry.expires) this.entries.delete(id);
+      else if (entry.address === address) sameAddress += 1;
+    }
+    if (this.entries.size >= 512 || sameAddress >= 16) throw failure(429);
+    const entry = {id: random(), state: random(), nonce: random(), verifier: random(), address,
       expires: now + transactionLifetimeMs};
     this.entries.set(entry.id, entry);
     return entry;
   }
 
-  // A handle is spent on first use, whether or not the callback then succeeds.
+  discard(entry) {
+    this.entries.delete(entry.id);
+  }
+
+  // A callback with the right state spends the attempt, whether or not sign-in
+  // then succeeds. One with the wrong state leaves it, so a page on another
+  // site cannot cancel a sign-in in progress; the state is 256 random bits.
   take(id, state) {
     const entry = this.entries.get(id);
-    if (!entry) throw failure(400);
-    this.entries.delete(id);
-    if (this.clock() >= entry.expires || typeof state !== 'string' || !tokenPattern.test(state) ||
+    if (!entry || this.clock() >= entry.expires || typeof state !== 'string' || !tokenPattern.test(state) ||
         !timingSafeEqual(Buffer.from(entry.state), Buffer.from(state))) throw failure(400);
+    this.entries.delete(id);
     return entry;
   }
 }
@@ -98,6 +108,7 @@ export function createOidcClient({issuer, clientId, clientSecret, origin, clock 
 
   return {
     issuer,
+    ready: discover,
     async authorizationUrl(transaction) {
       const url = new URL((await discover()).authorization);
       url.search = new URLSearchParams({response_type: 'code', client_id: clientId, redirect_uri: redirectUri,

@@ -57,7 +57,7 @@ test('the reviewer service checks each ID token itself', async t => {
     const identity = await verifier.verify(token, nonce);
     assert.deepEqual({issuer: identity.issuer, subject: identity.subject}, {issuer, subject: 'subject-alice'});
     assert.equal(identity.digest.length, 32);
-    assert.equal(+identity.expiresAt, idp.now + 360_000);
+    assert.equal(+identity.expiresAt, idp.now + 480_000, 'kept past the last moment it could be accepted');
   });
 
   await t.test('wrong issuer, audience, authorized party, nonce, subject or group', async () => {
@@ -117,16 +117,17 @@ test('the reviewer service checks each ID token itself', async t => {
   });
 
   await t.test('key rotation: a new key is fetched once, and a retired key stops working', async () => {
-    const before = idp.fetches.length;
+    const keyFetches = () => idp.fetches.filter(url => url === idp.discovery.jwks_uri).length;
+    const before = keyFetches();
     idp.addKey('k2');
     // An unknown key identifier is refetched, but not more often than the interval.
     await assert.rejects(verifier.verify(idp.token(nonce, {}, {kid: 'k2'}), nonce), status(401));
-    assert.equal(idp.fetches.length, before, 'no refetch inside the interval');
+    assert.equal(keyFetches(), before, 'no refetch inside the interval');
     idp.now += 31_000;
     assert.ok(await verifier.verify(idp.token(nonce, {}, {kid: 'k2'}), nonce));
-    assert.equal(idp.fetches.length, before + 1);
+    assert.equal(keyFetches(), before + 1);
     await assert.rejects(verifier.verify(idp.token(nonce, {}, {kid: 'never', key: idp.keys.get('k2').privateKey}), nonce), status(401));
-    assert.equal(idp.fetches.length, before + 1, 'unknown identifiers cannot force a fetch per request');
+    assert.equal(keyFetches(), before + 1, 'unknown identifiers cannot force a fetch per request');
     const retired = idp.keys.get('k1');
     idp.keys.delete('k1');
     assert.ok(await verifier.verify(idp.token(nonce, {}, {key: retired.privateKey}), nonce), 'cached until the set expires');
@@ -259,6 +260,33 @@ test('identity links and the OIDC grant exchange', {skip: !url && 'Set REVIEWER_
     await assert.rejects(authority.withGrant('one', mine.token, read, principal), status(401));
     assert.equal((await authority.withGrant('one', theirs.token, read, principal)).name, 'bob');
     await assert.rejects(authority.issueOidc('one', exchange('subject-alice')), status(403));
+  });
+
+  await t.test('unlinking and a sign-in in progress cannot pass each other', async () => {
+    await provision(pool, ['link', 'alice', issuer, 'subject-alice']);
+    // A sign-in that holds the account, as issueOidc does while it inserts the grant.
+    const signingIn = await pool.connect();
+    await signingIn.query('BEGIN');
+    await signingIn.query("SELECT id FROM reviewer_accounts WHERE username = 'alice' FOR SHARE");
+    let unlinked = false;
+    const unlinking = provision(pool, ['unlink', 'alice', issuer, 'subject-alice']).then(() => { unlinked = true; });
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.equal(unlinked, false, 'unlink waits for the sign-in');
+    await signingIn.query('COMMIT');
+    signingIn.release();
+    await unlinking;
+    // And the other order: the sign-in waits, then finds the link gone.
+    await provision(pool, ['link', 'alice', issuer, 'subject-alice']);
+    const removing = await pool.connect();
+    await removing.query('BEGIN');
+    await removing.query("SELECT id FROM reviewer_accounts WHERE username = 'alice' FOR UPDATE");
+    await removing.query('DELETE FROM reviewer_identity_links WHERE subject = $1', ['subject-alice']);
+    const late = authority.issueOidc('one', exchange('subject-alice'));
+    await new Promise(resolve => setTimeout(resolve, 300));
+    await removing.query('COMMIT');
+    removing.release();
+    await assert.rejects(late, status(403));
+    assert.equal((await pool.query("SELECT 1 FROM reviewer_grants g JOIN reviewer_accounts a ON a.id = g.account_id WHERE a.username = 'alice'")).rowCount, 0);
   });
 
   await t.test('deleting an account removes its links', async () => {

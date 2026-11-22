@@ -56,13 +56,22 @@ async function provision(database, args, input) {
         ON CONFLICT (issuer, subject) DO NOTHING RETURNING account_id AS id`, [username, issuer, subject]);
       if (!result.rowCount) throw new Error('Unknown reviewer, or the identity is already linked');
     } else {
-      // Sessions that began through the link end with it.
-      result = await database.query(`WITH gone AS (
-          DELETE FROM reviewer_identity_links l USING reviewer_accounts a
-           WHERE a.username = $1 AND l.account_id = a.id AND l.issuer = $2 AND l.subject = $3
-           RETURNING l.account_id AS id),
-        ended AS (DELETE FROM reviewer_grants WHERE account_id IN (SELECT id FROM gone))
-        SELECT id FROM gone`, [username, issuer, subject]);
+      // Sessions that began through the link end with it. The account lock makes
+      // a sign-in in progress either finish first, and lose its grant here, or
+      // wait and find the link gone.
+      const client = await database.connect();
+      try {
+        await client.query('BEGIN');
+        const account = await client.query('SELECT id FROM reviewer_accounts WHERE username = $1 FOR UPDATE', [username]);
+        result = await client.query(`DELETE FROM reviewer_identity_links
+          WHERE account_id = $1 AND issuer = $2 AND subject = $3 RETURNING account_id AS id`,
+        [account.rows[0]?.id ?? null, issuer, subject]);
+        if (result.rowCount) await client.query('DELETE FROM reviewer_grants WHERE account_id = $1', [account.rows[0].id]);
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      } finally { client.release(); }
       if (!result.rowCount) throw new Error('Unknown reviewer or identity link');
     }
   } else {

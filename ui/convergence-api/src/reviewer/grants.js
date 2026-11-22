@@ -93,9 +93,6 @@ async function admitLogin(pool, installation, username) {
     await client.query(`DELETE FROM reviewer_grants WHERE token_digest IN (
       SELECT token_digest FROM reviewer_grants WHERE LEAST(expires_at, idle_expires_at) <= statement_timestamp()
       ORDER BY LEAST(expires_at, idle_expires_at) LIMIT 16 FOR UPDATE SKIP LOCKED)`);
-    await client.query(`DELETE FROM reviewer_oidc_exchanges WHERE token_digest IN (
-      SELECT token_digest FROM reviewer_oidc_exchanges WHERE expires_at <= statement_timestamp()
-      ORDER BY expires_at LIMIT 16 FOR UPDATE SKIP LOCKED)`);
     return true;
   });
   if (!admitted) throw denied(429, 'Too many sign-in attempts');
@@ -171,12 +168,19 @@ function createGrantAuthority(pool, {oidc, passwordSignIn = true} = {}) {
         `INSERT INTO reviewer_oidc_exchanges (token_digest, expires_at) VALUES ($1, $2)
          ON CONFLICT (token_digest) DO NOTHING`, [identity.digest, identity.expiresAt]);
       if (!spent.rowCount) throw unauthenticated();
+      await client.query(`DELETE FROM reviewer_oidc_exchanges WHERE token_digest IN (
+        SELECT token_digest FROM reviewer_oidc_exchanges WHERE expires_at <= statement_timestamp()
+        ORDER BY expires_at LIMIT 16 FOR UPDATE SKIP LOCKED)`);
+      const link = 'SELECT account_id FROM reviewer_identity_links WHERE issuer = $1 AND subject = $2';
       const {rows: [account]} = await client.query(
-        `SELECT ${accountColumns} FROM reviewer_accounts WHERE enabled AND id = (
-           SELECT account_id FROM reviewer_identity_links WHERE issuer = $1 AND subject = $2) FOR SHARE`,
+        `SELECT ${accountColumns} FROM reviewer_accounts WHERE enabled AND id = (${link}) FOR SHARE`,
         [identity.issuer, identity.subject]);
+      // Unlinking locks the account first. Reading the link again under this
+      // lock means a concurrent unlink either sees this grant or prevents it.
+      const linked = account && await client.query(link + ' AND account_id = $3',
+        [identity.issuer, identity.subject, account.id]);
       // The person proved who they are, but has no Convergence account.
-      if (!account) throw denied(403, 'Identity is not linked to an enabled account');
+      if (!linked?.rowCount) throw denied(403, 'Identity is not linked to an enabled account');
       return insertGrant(client, installation, account);
     });
   }

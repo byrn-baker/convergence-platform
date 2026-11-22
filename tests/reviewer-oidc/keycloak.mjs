@@ -252,6 +252,7 @@ test('Cases sign-in through a real Keycloak', {skip, timeout: 240_000}, async t 
     const cookies = {[attemptCookie]: started.set[attemptCookie]};
     const forged = callback.replace(/state=[^&]+/, 'state=' + 'A'.repeat(43));
     assert.equal((await request(forged, {cookies, headers: navigation})).status, 401);
+    assert.equal((await request(callback, {cookies, headers: navigation})).status, 303, 'a forged callback cannot cancel the sign-in');
     assert.equal((await request(callback, {cookies, headers: navigation})).status, 401, 'the attempt is spent');
 
     const good = await signIn('alice');
@@ -284,7 +285,9 @@ test('Cases sign-in through a real Keycloak', {skip, timeout: 240_000}, async t 
     // Same realm, same person, same keys: only the audience differs.
     const other = await idToken('alice', 'netclaw-hud', 'https://hud.test');
     await assert.rejects(client.issueOidc({idToken: await other.token(), nonce: other.attempt.nonce}), status(401));
-    // Another realm on the same server is another issuer.
+    // A service configured for another realm refuses it. Keycloak gives each realm its own
+    // keys, so this fails on the key; the issuer comparison itself is covered with forged
+    // tokens in test-reviewer-oidc.cjs.
     const elsewhere = createGrantAuthority(pool, {oidc: createIdTokenVerifier({issuer: keycloak + '/realms/master',
       audience: 'convergence-cases', allowInsecureLoopback: true})});
     const third = await idToken('alice');

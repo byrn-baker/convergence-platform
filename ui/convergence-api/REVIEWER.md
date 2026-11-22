@@ -95,5 +95,6 @@ is picked up. Each ID token buys one grant: its digest is stored until it expire
 pod needs HTTPS egress to the issuer. If the keys cannot be fetched, exchanges fail with
 503 and existing grants are unaffected.
 
-Apply this release's `permissions.sql` again after migrating: it grants the runtime role
+Run `node reviewer-service.js migrate` before rolling out this release: the service does
+not start on a schema without the link and exchange tables. Apply this release's `permissions.sql` again after migrating: it grants the runtime role
 read access to links and the provisioning role the right to manage them.
