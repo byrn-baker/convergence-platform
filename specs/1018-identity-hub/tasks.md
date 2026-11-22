@@ -43,19 +43,63 @@ Each live step needs owner approval: show the change, then apply it.
   For K2: enable brute-force detection on `master` too, consider returning 404 for
   `/realms/master` at the ingress, and test admin login through the port-forward before
   removing the bootstrap admin.
-- [ ] K2: Realm `home` as reviewed configuration: groups, required MFA, the two OIDC
+- [x] K2: Realm `home` as reviewed configuration: groups, required MFA, the two OIDC
   clients with exact redirect URIs. Owner enrols their own passkey or TOTP.
+  Done 2026-11-21 (owner approved), ops 6005727; configuration as code in
+  `gitops/home/identity/realm` (`configure.py` is idempotent):
+  - realm `home` with brute-force protection, `sslRequired` all and a 14-character
+    password policy;
+  - flow `browser-mfa`: OTP or WebAuthn as the second factor, with OTP enrolment as a
+    default required action;
+  - groups `netclaw-owners` and `convergence-users`;
+  - confidential PKCE clients `netclaw-hud` and `convergence-cases`, each with a `groups`
+    claim in the ID token; the secrets exist in Keycloak only;
+  - users `byrn` (both groups) and `byrn-admin` (master admin), both enrolled by the owner
+    with a changed password and OTP;
+  - client `ops-automation`, limited to managing realm `home`;
+  - public `/realms/master` redirects to the `home` account page.
+
+  A probe user was sent to OTP setup after the password, then deleted. Attempts 3/10: a
+  mandatory second-factor subflow fails in Keycloak 26.8 for a user with no factor, so
+  the stock conditional subflow plus the default required action is used. Residual risk:
+  a user who deletes every factor signs in with a password until re-enrolled.
+
+  Console fix (ops 08472fd): the public master redirect also blocked the admin console's
+  own sign-in, so master's frontend URL is pinned to `http://localhost:8080`. Admin
+  access is `kubectl -n identity port-forward svc/keycloak 8080:8080` on the HUD host
+  plus an SSH tunnel. The bootstrap admin and its Secret are removed (ops f273c51,
+  1590631); Keycloak restarted cleanly without them, and the one-time password files are
+  shredded.
 - [ ] K3: Restore drill: rebuild the realm from the Git export and database backup on a
   disposable instance.
 
 ## 2. Cases sign-in through the IdP (platform)
 
-- [ ] C1: Account identity links `(issuer, subject)` with an additive migration;
+- [x] C1: Account identity links `(issuer, subject)` with an additive migration;
   admin-only linking.
-- [ ] C2: API OIDC grant exchange over mTLS with independent token checks.
-- [ ] C3: Reviewer HUD relying party: login, callback, logout, server-side state, nonce
+  Table `reviewer_identity_links` in `grants.sql` (repeatable `CREATE TABLE IF NOT
+  EXISTS`). `reviewer-accounts.js link|unlink USERNAME ISSUER SUBJECT` under the
+  provisioning role; the runtime role can only read links. One identity links to one
+  account, sign-in never creates a link, and unlinking ends that account's sessions.
+- [x] C2: API OIDC grant exchange over mTLS with independent token checks.
+  `POST /v1/grants/oidc` takes the ID token and the HUD's nonce. `src/reviewer/oidc.js`
+  checks the RS256 signature against the issuer's JWKS (ten-minute cache, one refetch per
+  30 seconds for an unknown key), the issuer, audience and authorized party, expiry and
+  issue time with 60 seconds of skew, the nonce and the required group. Each token buys
+  one grant (`reviewer_oidc_exchanges` keeps its digest until expiry). 401 for a bad or
+  spent token, 403 for an identity with no enabled linked account, 503 when the keys
+  cannot be fetched.
+- [x] C3: Reviewer HUD relying party: login, callback, logout, server-side state, nonce
   and PKCE; password sign-in behind a break-glass setting.
-- [ ] C4: Tests against a disposable Keycloak:
+  `/oidc/login` and `/oidc/callback` in the closed route table. State, nonce and verifier
+  live in the HUD's memory for ten minutes. They are held in a dedicated sign-in attempt
+  record with its own `SameSite=Lax` cookie instead of the pre-login session, so the
+  session cookie stays `Strict`; the provider's redirect cannot carry a `Strict` cookie
+  unless the provider is same-site. Sign-out returns the provider's end-session address.
+  Password sign-in: `REVIEWER_PASSWORD_SIGN_IN=0` removes it on both tiers; when on beside
+  an identity provider it needs `REVIEWER_PASSWORD_SIGN_IN_ADDRESSES`, and each attempt
+  writes an audit line. The "Review this case" reference survives the round trip.
+- [x] C4: Tests against a disposable Keycloak:
   - tampered state, nonce or PKCE;
   - replayed code;
   - wrong issuer or audience;
@@ -67,6 +111,44 @@ Each live step needs owner approval: show the change, then apply it.
   - two users in independent sessions.
 
   Then an independent review.
+
+  Tests done 2026-11-21 on `feat/cases-oidc-signin` (42aefa5):
+  - `tests/reviewer-oidc/run.sh`: real HUD, real service over mTLS, PostgreSQL 16 and
+    Keycloak 26.8.1 at the production digest. 10 of 10 pass, covering every case above
+    with tokens that Keycloak issued. The expired-token and rotation cases move the
+    service's clock instead of waiting; the outage case pauses the container.
+  - `ui/convergence-api/test-reviewer-oidc.cjs` (19 pass) and
+    `ui/convergence-hud/test/reviewer-oidc.mjs` plus `reviewer-sso-page.mjs` (19 pass)
+    cover forged tokens, algorithm confusion, skew boundaries and callback tampering.
+  - Regression: reviewer API suites 123 pass (the permissions test now covers both roles
+    on the new tables), HUD 93 pass, Helm 96 pass. One unrelated API test
+    (`test-security-history.cjs`) fails only on the local fixture, which lacks the
+    `POSTGRES_USER` variable that CI sets.
+
+  Independent review, 2026-11-22: Grok Build timed out on four attempts, so nothing is
+  claimed from it. A separate Claude reviewer (owner approved) read the whole change:
+  no critical defects, two important and six minor. All were fixed on the branch:
+  - the service now refuses to start on a schema without the two new tables, and only
+    the OIDC path touches them, so an image rolled out before the migration leaves the
+    previous replica serving instead of breaking password sign-in;
+  - `unlink` locks the account before removing the link and its grants, and the grant
+    exchange re-reads the link under its own account lock, so neither can pass the
+    other (tested in both orders);
+  - a callback with the wrong state no longer spends the attempt or counts against the
+    sign-in limit, so another site cannot cancel a sign-in or use up the limit;
+  - sign-in attempts are capped per address, and none is held while the provider is
+    unreachable;
+  - the attempt remembers the session that started it, so a repeat sign-in ends the old
+    session even when the provider is cross-site;
+  - the spent-token record is kept past the last moment the token could be accepted;
+  - discovery is re-read with each key refresh;
+  - a password attempt refused by address is audited.
+
+  After the fixes: API 125 pass, HUD 93 pass, Keycloak qualification 10 of 10, Helm 96.
+  Left as documented limits: the break-glass address list needs the HUD to see real
+  client addresses (true for the production LoadBalancer with
+  `externalTrafficPolicy: Local`); the real-Keycloak suite cannot produce a token with
+  a foreign issuer under the same key, so that comparison is covered with forged tokens.
 - [ ] C5: Release; live cutover with the `byrn` link; one attributed disposition on the
   synthetic case; password sign-in off.
 

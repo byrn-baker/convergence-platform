@@ -17,6 +17,22 @@
 {{- range $image := list $r.apiImage $r.hudImage }}
 {{- if hasSuffix ":latest" $image }}{{ fail "Set reviewer images to version-specific tags or digests" }}{{ end }}
 {{- end }}
+{{- $oidc := $r.oidc | default dict }}
+{{- $sso := not (empty $oidc.issuer) }}
+{{- if and (or $oidc.issuer $oidc.clientId $oidc.clientSecret) (not (and $oidc.issuer $oidc.clientId $oidc.clientSecret)) }}
+{{- fail "reviewer.oidc needs issuer, clientId and clientSecret together" }}
+{{- end }}
+{{- $password := $r.passwordSignIn | default dict }}
+{{- $passwordOn := ne (toString $password.enabled) "false" }}
+{{- if and (not $sso) (not $passwordOn) }}
+{{- fail "reviewer needs oidc or passwordSignIn.enabled" }}
+{{- end }}
+{{- if and $sso $passwordOn (empty $password.addresses) }}
+{{- fail "reviewer.passwordSignIn beside oidc is break-glass and needs passwordSignIn.addresses" }}
+{{- end }}
+{{- if and $sso (has $oidc.clientSecret (append $secrets .Values.existingSecret)) }}
+{{- fail "reviewer.oidc.clientSecret must be its own Secret" }}
+{{- end }}
 {{- $api := printf "%s-review-api" .Release.Name }}
 {{- range $name := list "review-api" "review-hud" }}
 {{- $backend := eq $name "review-api" }}
@@ -103,6 +119,12 @@ spec:
             - {name: REVIEWER_TLS_CERT, value: /run/reviewer/service/tls.crt}
             - {name: REVIEWER_TLS_KEY, value: /run/reviewer/service/tls.key}
             - {name: REVIEWER_INSTALLATIONS_FILE, value: /run/reviewer/service/enrolled.json}
+            - {name: REVIEWER_PASSWORD_SIGN_IN, value: {{ ternary "1" "0" $passwordOn | quote }}}
+            {{- if $sso }}
+            - {name: REVIEWER_OIDC_ISSUER, value: {{ $oidc.issuer | quote }}}
+            - {name: REVIEWER_OIDC_CLIENT_ID, value: {{ $oidc.clientId | quote }}}
+            - {name: REVIEWER_OIDC_REQUIRED_GROUP, value: {{ $oidc.requiredGroup | default "" | quote }}}
+            {{- end }}
             {{- else }}
             - {name: REVIEWER_HUD_HOST, value: "0.0.0.0"}
             - {name: REVIEWER_HUD_PORT, value: "3444"}
@@ -113,6 +135,13 @@ spec:
             - {name: REVIEWER_INSTALLATION_KEY, value: /run/reviewer/installation/tls.key}
             - {name: REVIEWER_HUD_CERT, value: /run/reviewer/browser/tls.crt}
             - {name: REVIEWER_HUD_KEY, value: /run/reviewer/browser/tls.key}
+            - {name: REVIEWER_PASSWORD_SIGN_IN, value: {{ ternary "1" "0" $passwordOn | quote }}}
+            - {name: REVIEWER_PASSWORD_SIGN_IN_ADDRESSES, value: {{ join "," ($password.addresses | default list) | quote }}}
+            {{- if $sso }}
+            - {name: REVIEWER_OIDC_ISSUER, value: {{ $oidc.issuer | quote }}}
+            - {name: REVIEWER_OIDC_CLIENT_ID, value: {{ $oidc.clientId | quote }}}
+            - {name: REVIEWER_OIDC_CLIENT_SECRET_FILE, value: /run/reviewer/oidc/client-secret}
+            {{- end }}
             {{- end }}
           volumeMounts:
             {{- if $backend }}
@@ -123,6 +152,9 @@ spec:
             {{- else }}
             - {name: installation-tls, mountPath: /run/reviewer/installation, readOnly: true}
             - {name: browser-tls, mountPath: /run/reviewer/browser, readOnly: true}
+            {{- if $sso }}
+            - {name: oidc-client, mountPath: /run/reviewer/oidc, readOnly: true}
+            {{- end }}
             {{- end }}
           readinessProbe:
             {{- if $backend }}
@@ -187,6 +219,14 @@ spec:
             items:
               - {key: tls.crt, path: tls.crt}
               - {key: tls.key, path: tls.key}
+        {{- if $sso }}
+        - name: oidc-client
+          secret:
+            secretName: {{ $oidc.clientSecret | quote }}
+            defaultMode: 0440
+            items:
+              - {key: client-secret, path: client-secret}
+        {{- end }}
         {{- end }}
 {{- end }}
 ---

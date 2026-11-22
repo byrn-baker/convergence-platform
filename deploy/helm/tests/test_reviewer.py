@@ -184,3 +184,67 @@ def test_relay_and_acceptance_require_reviewer_component(tmp_path):
 def test_acceptance_can_be_enabled_without_starting_delivery(tmp_path):
     docs = render(tmp_path, {**REVIEW,'investigationEnabled':True})
     assert not any(d['metadata']['name'].endswith('-review-relay') for d in docs)
+
+
+SSO = {'issuer': 'https://sso.example.test/realms/home', 'clientId': 'convergence-cases',
+       'clientSecret': 'review-oidc', 'requiredGroup': 'convergence-users'}
+
+
+def workloads(docs):
+    found = {}
+    for doc in docs:
+        if doc['kind'] == 'Deployment' and '-review-' in doc['metadata']['name']:
+            pod = doc['spec']['template']['spec']
+            env = {item['name']: item.get('value') for item in pod['containers'][0]['env']}
+            found[doc['metadata']['name'].rsplit('-', 1)[1]] = (env, pod)
+    return found
+
+
+def test_password_sign_in_is_the_default_without_an_identity_provider(tmp_path):
+    for env, pod in workloads(render(tmp_path, REVIEW)).values():
+        assert env['REVIEWER_PASSWORD_SIGN_IN'] == '1'
+        assert not any(name.startswith('REVIEWER_OIDC_') for name in env)
+        assert all(volume['name'] != 'oidc-client' for volume in pod['volumes'])
+
+
+def test_identity_provider_sign_in_gives_the_client_secret_to_the_hud_only(tmp_path):
+    found = workloads(render(tmp_path, {**REVIEW, 'oidc': SSO, 'passwordSignIn': {'enabled': False}}))
+    api, pod = found['api']
+    assert api['REVIEWER_OIDC_ISSUER'] == SSO['issuer']
+    assert api['REVIEWER_OIDC_CLIENT_ID'] == 'convergence-cases'
+    assert api['REVIEWER_OIDC_REQUIRED_GROUP'] == 'convergence-users'
+    assert api['REVIEWER_PASSWORD_SIGN_IN'] == '0'
+    assert 'REVIEWER_OIDC_CLIENT_SECRET_FILE' not in api
+    assert all(volume['secret']['secretName'] != 'review-oidc' for volume in pod['volumes'])
+    hud, pod = found['hud']
+    assert hud['REVIEWER_OIDC_ISSUER'] == SSO['issuer']
+    assert hud['REVIEWER_OIDC_CLIENT_SECRET_FILE'] == '/run/reviewer/oidc/client-secret'
+    assert hud['REVIEWER_PASSWORD_SIGN_IN'] == '0'
+    assert 'REVIEWER_OIDC_REQUIRED_GROUP' not in hud
+    volume = next(volume for volume in pod['volumes'] if volume['name'] == 'oidc-client')
+    assert volume['secret'] == {'secretName': 'review-oidc', 'defaultMode': 0o440,
+                                'items': [{'key': 'client-secret', 'path': 'client-secret'}]}
+    mount = next(m for m in pod['containers'][0]['volumeMounts'] if m['name'] == 'oidc-client')
+    assert mount == {'name': 'oidc-client', 'mountPath': '/run/reviewer/oidc', 'readOnly': True}
+
+
+def test_break_glass_password_sign_in_names_its_addresses(tmp_path):
+    values = {**REVIEW, 'oidc': SSO, 'passwordSignIn': {'enabled': True, 'addresses': ['192.0.2.10', '192.0.2.11']}}
+    found = workloads(render(tmp_path, values))
+    assert found['hud'][0]['REVIEWER_PASSWORD_SIGN_IN_ADDRESSES'] == '192.0.2.10,192.0.2.11'
+    assert found['hud'][0]['REVIEWER_PASSWORD_SIGN_IN'] == found['api'][0]['REVIEWER_PASSWORD_SIGN_IN'] == '1'
+
+
+@pytest.mark.parametrize('invalid', [
+    {'oidc': {**SSO, 'clientSecret': ''}},
+    {'oidc': {**SSO, 'issuer': ''}},
+    {'oidc': {**SSO, 'issuer': 'http://sso.example.test/realms/home'}},
+    {'oidc': {**SSO, 'issuer': SSO['issuer'] + '/'}},
+    {'oidc': {**SSO, 'clientSecret': 'review-browser'}},
+    {'oidc': SSO},
+    {'oidc': SSO, 'passwordSignIn': {'enabled': True, 'addresses': []}},
+    {'oidc': SSO, 'passwordSignIn': {'enabled': True, 'addresses': ['workstation']}},
+    {'passwordSignIn': {'enabled': False}},
+])
+def test_sign_in_settings_are_rejected_when_incomplete_or_unsafe(tmp_path, invalid):
+    assert render(tmp_path, {**REVIEW, **invalid}, check=False).returncode != 0

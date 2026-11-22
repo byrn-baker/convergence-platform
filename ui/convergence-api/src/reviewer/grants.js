@@ -65,8 +65,8 @@ async function admitLogin(pool, installation, username) {
   const buckets = [
     ['global', '', 120],
     ['installation', installation, 60],
-    ['username', digest(username).toString('hex'), 10],
   ];
+  if (username !== undefined) buckets.push(['username', digest(username).toString('hex'), 10]);
   const admitted = await transaction(pool, async client => {
     // All replicas acquire these in the same order. Commit earlier increments
     // even if a narrower bucket is full, before doing any expensive bcrypt work.
@@ -109,9 +109,29 @@ function bearerDigest(token) {
   return digest(token);
 }
 
-function createGrantAuthority(pool) {
+const accountColumns = `id, username, name, role, sites, revision, credential_revision AS "credentialRevision"`;
+
+// Password grants stay available as break-glass. A deployment that signs in
+// through an identity provider turns them off; neither path can then fall back
+// to the other.
+function createGrantAuthority(pool, {oidc, passwordSignIn = true} = {}) {
+  // The caller holds the account row FOR SHARE at the revision it authenticated.
+  async function insertGrant(client, installation, account) {
+    const token = randomBytes(32).toString('base64url');
+    const {rows: [row]} = await client.query(
+      `INSERT INTO reviewer_grants (token_digest, account_id, installation, issued_role, issued_sites,
+        issued_revision, credential_revision, expires_at, idle_expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, statement_timestamp() + $8::interval,
+          statement_timestamp() + $9::interval) RETURNING expires_at, idle_expires_at`,
+      [digest(token), account.id, installation, account.role, account.sites,
+        account.revision, account.credentialRevision, absoluteInterval, idleInterval]);
+    return {token, expiresAt: row.expires_at, idleExpiresAt: row.idle_expires_at, id: account.id,
+      name: account.name, role: account.role, sites: account.sites};
+  }
+
   async function issue(installation, credentials) {
     checkInstallation(installation);
+    if (!passwordSignIn) throw denied(404, 'Password sign-in is disabled');
     const {username, password} = credentials || {};
     if (typeof username !== 'string' || !username || username.length > 128 || username.includes('\0') ||
         typeof password !== 'string' || !password || Buffer.byteLength(password) > 4096) {
@@ -123,22 +143,46 @@ function createGrantAuthority(pool) {
     const account = await transaction(pool, client => findReviewerAccount(client, username));
     const verify = createPasswordVerifier(() => account);
     if (!await verify(username, password)) throw unauthenticated();
-    const token = randomBytes(32).toString('base64url');
-    const row = await transaction(pool, async client => {
+    return transaction(pool, async client => {
       const current = await client.query(
         'SELECT id FROM reviewer_accounts WHERE id = $1 AND revision = $2 AND enabled FOR SHARE',
         [account.id, account.revision]);
       if (!current.rowCount) throw unauthenticated();
-      const {rows} = await client.query(
-        `INSERT INTO reviewer_grants (token_digest, account_id, installation, issued_role, issued_sites,
-          issued_revision, credential_revision, expires_at, idle_expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, statement_timestamp() + $8::interval,
-            statement_timestamp() + $9::interval) RETURNING expires_at, idle_expires_at`,
-        [digest(token), account.id, installation, account.role, account.sites,
-          account.revision, account.credentialRevision, absoluteInterval, idleInterval]);
-      return rows[0];
+      return insertGrant(client, installation, account);
     });
-    return {token, expiresAt: row.expires_at, idleExpiresAt: row.idle_expires_at, id: account.id, name: account.name, role: account.role, sites: account.sites};
+  }
+
+  async function issueOidc(installation, input) {
+    checkInstallation(installation);
+    if (!oidc) throw denied(404, 'Identity provider sign-in is not configured');
+    const {idToken, nonce} = input || {};
+    if (typeof idToken !== 'string' || !idToken || idToken.length > 16384 ||
+        typeof nonce !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(nonce)) throw denied(400, 'Invalid token format');
+    await admitLogin(pool, installation);
+    // Signature and claim checks, and any key fetch, happen outside the pool.
+    const identity = await oidc.verify(idToken, nonce);
+    return transaction(pool, async client => {
+      // A token that reached a linked, enabled account is spent. A rejected
+      // exchange rolls back, so the same token can be retried after linking.
+      const spent = await client.query(
+        `INSERT INTO reviewer_oidc_exchanges (token_digest, expires_at) VALUES ($1, $2)
+         ON CONFLICT (token_digest) DO NOTHING`, [identity.digest, identity.expiresAt]);
+      if (!spent.rowCount) throw unauthenticated();
+      await client.query(`DELETE FROM reviewer_oidc_exchanges WHERE token_digest IN (
+        SELECT token_digest FROM reviewer_oidc_exchanges WHERE expires_at <= statement_timestamp()
+        ORDER BY expires_at LIMIT 16 FOR UPDATE SKIP LOCKED)`);
+      const link = 'SELECT account_id FROM reviewer_identity_links WHERE issuer = $1 AND subject = $2';
+      const {rows: [account]} = await client.query(
+        `SELECT ${accountColumns} FROM reviewer_accounts WHERE enabled AND id = (${link}) FOR SHARE`,
+        [identity.issuer, identity.subject]);
+      // Unlinking locks the account first. Reading the link again under this
+      // lock means a concurrent unlink either sees this grant or prevents it.
+      const linked = account && await client.query(link + ' AND account_id = $3',
+        [identity.issuer, identity.subject, account.id]);
+      // The person proved who they are, but has no Convergence account.
+      if (!linked?.rowCount) throw denied(403, 'Identity is not linked to an enabled account');
+      return insertGrant(client, installation, account);
+    });
   }
 
   async function revoke(installation, token) {
@@ -193,7 +237,7 @@ function createGrantAuthority(pool) {
     });
   }
 
-  return {issue, revoke, withGrant};
+  return {issue, issueOidc, revoke, withGrant};
 }
 
 module.exports = {createGrantAuthority, findReviewerAccount};

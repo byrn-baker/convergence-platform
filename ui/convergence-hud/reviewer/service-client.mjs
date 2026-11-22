@@ -61,6 +61,7 @@ export function createReviewerClient({origin, tls, deadlineMs = 10000}) {
   }
   return {
     issue: credentials => call('POST', '/v1/grants', null, credentials),
+    issueOidc: exchange => call('POST', '/v1/grants/oidc', null, exchange),
     current: token => call('GET', '/v1/grants/current', token),
     revoke: token => call('DELETE', '/v1/grants/current', token),
     readTelemetry(token, site, resource, query) {

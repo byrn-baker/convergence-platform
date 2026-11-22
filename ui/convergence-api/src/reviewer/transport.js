@@ -90,6 +90,11 @@ function createReviewerService({tls, enrollments, authority, investigationEnable
         const grant = await authority.issue(installation, credentials);
         return reply(res, 201, grant);
       }
+      if (req.method === 'POST' && req.url === '/v1/grants/oidc') {
+        if (req.headers.authorization !== undefined) reject(400);
+        const exchange = await readJSON(req, ['idToken', 'nonce']);
+        return reply(res, 201, await authority.issueOidc(installation, exchange));
+      }
       if (req.url.startsWith('/v1/sites/') && req.url.includes('/telemetry/')) {
         if (req.method !== 'GET' || typeof telemetry !== 'function') reject(404);
         if (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) !== 0) reject(400);
