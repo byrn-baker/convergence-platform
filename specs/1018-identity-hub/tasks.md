@@ -149,8 +149,26 @@ Each live step needs owner approval: show the change, then apply it.
   client addresses (true for the production LoadBalancer with
   `externalTrafficPolicy: Local`); the real-Keycloak suite cannot produce a token with
   a foreign issuer under the same key, so that comparison is covered with forged tokens.
-- [ ] C5: Release; live cutover with the `byrn` link; one attributed disposition on the
+- [x] C5: Release; live cutover with the `byrn` link; one attributed disposition on the
   synthetic case; password sign-in off.
+  Done 2026-11-22 04:37–04:53 UTC, owner approved. Release v0.1.16 (6c21b18, run
+  44985276815); images `convergence-api@sha256:13c4d6f8…3f7e36` and
+  `convergence-reviewer-hud@sha256:85fa50dc…3ff81f`.
+  - Database: dump taken first; `reviewer-service.js migrate` from the release image
+    exited 0; `permissions.sql` (sha256 478449d3…) applied in one transaction, 15 grants.
+  - `byrn` linked to issuer `https://sso.internal.byrnbaker.me/realms/home` by subject,
+    through the restricted provisioning role.
+  - Ops 2fe6522: chart pinned to 6c21b18, OIDC values on, password sign-in limited to
+    the owner workstation. Argo CD Synced/Healthy; `/oidc/login` returned 303 to the
+    home realm with PKCE.
+  - The owner signed in through Keycloak and recorded disposition operation
+    800790f3-faf8-4698-895d-f0a33773b3fd on synthetic case
+    89edb5f0-cdfa-4b32-b699-dec36242f095 at 04:46:50 UTC, attributed to account `byrn`.
+  - Ops 704242c: password sign-in off. `POST /review/sign-in` with the site's Origin
+    returns 404, and `/review/session` reports `signIn: {oidc: true, password: false}`.
+  - Not exercised: a successful break-glass password sign-in from the allowed address.
+    One attempt from it was rejected for its credentials at 04:42:06 UTC, during the
+    rollout.
 
 ## 3. HUD front door
 
