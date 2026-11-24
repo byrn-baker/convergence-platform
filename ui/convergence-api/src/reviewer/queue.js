@@ -185,9 +185,10 @@ async function backfillQueue(pool, log = () => {}) {
     if (!range.first) continue;
     for (let day = range.first; day <= range.last; day = new Date(day.getTime() + 86400000)) {
       const result = await pool.query(`
-        INSERT INTO reviewer_case_queue (case_id, site_id, occurred_at, signature_id, severity, needs_review, outcome)
+        INSERT INTO reviewer_case_queue (case_id, site_id, occurred_at, signature_id, severity, needs_review, outcome, source_ip)
         SELECT id, site_id, timestamp, coalesce(left(source_evidence #>> '{labels,signature_id}', 64), ''),
-               severity, reviewer_case_needs_review(security_disposition), reviewer_case_outcome(security_disposition)
+               severity, reviewer_case_needs_review(security_disposition), reviewer_case_outcome(security_disposition),
+               reviewer_case_source(source_evidence)
           FROM events
          WHERE site_id = $1 AND timestamp >= $2 AND timestamp < $2::timestamptz + interval '1 day'
            AND alert_name = 'SuricataIntrusion'
@@ -199,4 +200,4 @@ async function backfillQueue(pool, log = () => {}) {
   return copied;
 }
 
-module.exports = {backfillQueue, listCases, listSignatures, parseCaseQuery, parseSignatureQuery};
+module.exports = {OUTCOMES, WINDOWS, backfillQueue, listCases, listSignatures, parseCaseQuery, parseSignatureQuery};

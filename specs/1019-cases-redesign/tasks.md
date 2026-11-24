@@ -53,11 +53,16 @@ Each live step needs owner approval: show the change, then apply it.
   a decision; update, delete and truncate refused for it and for the schema owner; the
   provisioner refused; ten invalid rows refused; and an operation ID refused across
   the single and bulk commands. Full API suite 137 pass, 0 fail, 1 skipped.
-  For B2: the queue table has no source address, so the "one source host" scope and
-  its per-host counts need one added before release.
-- [ ] B2: Preview and write routes: one transaction, idempotent operation ID, confirmed
+- [x] B2: Preview and write routes: one transaction, idempotent operation ID, confirmed
   count check, ceiling, operator or admin only. Tests for a replay, a concurrent single
   disposition, a viewer and a reviewer without the site.
+  2026-11-24: `GET …/signatures/:id/dispositions/preview` and
+  `POST …/signatures/:id/dispositions` (`src/reviewer/bulk.js`; rules in plan.md).
+  `test-reviewer-bulk.cjs` covers a replay, a replay with changed inputs, two
+  submissions at once, a single disposition holding a case while the bulk write
+  waits, a late case, cases reviewed meanwhile, the ceiling at 5,000 and 5,001, a
+  viewer, another site and forged input. Full API suite 148 pass, 0 fail, 1 skipped.
+  Not measured: a bulk write on a copy of production or under ingestion load.
 - [ ] B3: A case covered by a bulk decision shows it in its history; a later single
   disposition still works.
 

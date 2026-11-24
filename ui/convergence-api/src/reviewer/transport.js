@@ -6,8 +6,10 @@ const {requestInvestigation, readInvestigationReceipt} = require('./investigatio
 const {requestJevReview,readJevReceipt}=require('./jev');
 const {parseTelemetryTarget} = require('./telemetry-contract');
 const {listCases, listSignatures, parseCaseQuery, parseSignatureQuery} = require('./queue');
+const {parsePreviewQuery, previewBulk, recordBulk} = require('./bulk');
 
 const queuePath = /^\/v1\/sites\/([a-zA-Z0-9_.-]{1,128})\/(signatures|cases)(?:\?(.*))?$/;
+const bulkPath = /^\/v1\/sites\/([a-zA-Z0-9_.-]{1,128})\/signatures\/([A-Za-z0-9_.:-]{1,64})\/dispositions(?:(\/preview)(?:\?(.*))?)?$/;
 const casePath = /^\/v1\/sites\/([a-zA-Z0-9_.-]{1,128})\/cases\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/(disposition|investigation|jev-review)(?:\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}))?)?$/i;
 const messages = {
   400: 'Invalid request', 401: 'Invalid credentials or grant', 403: 'Access denied',
@@ -135,6 +137,21 @@ function createReviewerService({tls, enrollments, authority, investigationEnable
         const query = cases ? parseCaseQuery(queue[3]) : parseSignatureQuery(queue[3]);
         return reply(res, 200, await authority.withGrant(installation, bearer(req), {site: queue[1], write: false},
           (client, actor) => (cases ? listCases : listSignatures)(client, actor, queue[1], query)));
+      }
+      const bulk = bulkPath.exec(req.url);
+      if (bulk) {
+        const [, site, signature, preview, search] = bulk;
+        if (preview ? req.method !== 'GET' : req.method !== 'POST') reject(404);
+        if (preview) {
+          if (req.headers['transfer-encoding'] || Number(req.headers['content-length'] || 0) !== 0) reject(400);
+          const query = parsePreviewQuery(search);
+          return reply(res, 200, await authority.withGrant(installation, bearer(req), {site, write: false},
+            (client, actor) => previewBulk(client, actor, site, signature, query)));
+        }
+        const token = bearer(req);
+        const input = await readJSON(req, ['operationId', 'kind', 'reason', 'windowStart', 'windowEnd', 'source', 'confirmedCount']);
+        return reply(res, 200, await authority.withGrant(installation, token, {site, write: true},
+          (client, actor) => recordBulk(client, actor, site, signature, input)));
       }
       const match = casePath.exec(req.url);
       const status = req.method === 'GET' && req.url === '/v1/grants/current';

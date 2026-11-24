@@ -121,6 +121,30 @@ operation ID is registered in `reviewer_operation_keys` as `bulk_disposition`, s
 used for a single disposition cannot become a bulk decision or the reverse.
 `permissions.sql` gains one grant, `SELECT, INSERT` for the runtime role.
 
+As built in B2 (`src/reviewer/bulk.js`):
+
+- The preview returns the count, the window as two fixed instants, the ten busiest
+  source hosts with their counts, and the ceiling. The write sends those instants back.
+  A case that arrives after the preview with a later time is therefore outside the
+  decision.
+- Count rule. The write locks the matching cases and reads their state again under the
+  lock. Fewer cases than the reviewer confirmed is accepted, because others reviewed
+  some meanwhile; those are left alone and the receipt carries the real count. More
+  than confirmed, none at all, or more than the ceiling is a conflict and nothing is
+  written; the reviewer previews again.
+- Ceiling: 5,000 cases per decision. In a local container a decision of 5,000 cases of
+  production size took 1.2 s, 2,000 took 0.5 s and 500 took 0.2 s
+  (`b2-size.txt`). The write has a 15-second statement timeout.
+- The operation ID is claimed in `reviewer_operation_keys` first, so two submissions
+  of one operation give one decision and one receipt. A replay with different inputs
+  is a conflict. The confirmed count is not part of the operation's identity.
+- Each covered case's `security_disposition` is an ordinary version 1 disposition with
+  one more field, `bulk_operation_id`. No row is added to `reviewer_case_dispositions`.
+- The queue table gained `source_ip`, read from the sensor record by
+  `reviewer_case_source`, which returns NULL rather than fail on evidence it cannot
+  read. A case without a signature ID cannot be bulk reviewed.
+- Both routes need the operator or admin role, the preview included.
+
 Scopes: every case of the signature in the window, or only those from one source host.
 The mock-up's third scope, "also future matches for 7 days", is not built (owner
 decision 2026-11-24); it would be a standing rule, which the spec keeps out of scope.
