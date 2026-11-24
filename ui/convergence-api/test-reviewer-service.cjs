@@ -158,6 +158,16 @@ test('two mTLS reviewer services authorize and audit one durable case dispositio
   assert.equal((await request(portB, '/v1/sites/red/signatures?site=blue', {token})).status, 400);
   assert.equal((await request(portB, '/v1/sites/red/signatures', {token, method: 'POST', body: {}})).status, 404);
   assert.equal((await request(portB, '/v1/sites/red/signatures')).status, 401);
+  // The case list is scoped the same way; its cursor and limit are validated before the database is read.
+  const list = await request(portB, '/v1/sites/red/cases?window=7d&state=all&limit=1', {token});
+  assert.equal(list.status, 200);
+  assert.ok(Array.isArray(list.body.cases) && list.body.cases.length <= 1);
+  assert.equal((await request(portB, '/v1/sites/red/cases', {token: bob.body.token})).status, 403);
+  assert.equal((await request(portB, '/v1/sites/red/cases?limit=101', {token})).status, 400);
+  assert.equal((await request(portB, '/v1/sites/red/cases?before=forged', {token})).status, 400);
+  assert.equal((await request(portB, '/v1/sites/red/cases?site=blue', {token})).status, 400);
+  assert.equal((await request(portB, '/v1/sites/red/cases', {token, method: 'POST', body: {}})).status, 404);
+  assert.equal((await request(portB, '/v1/sites/red/cases')).status, 401);
   assert.equal((await request(portB, url, {token})).body.id, event.id);
   const write = {operationId: randomUUID(), kind: 'needs_review', reason: 'Synthetic observed traffic requires investigation'};
   const post = body => request(portB, url + '/disposition', {method: 'POST', token, body});
@@ -191,6 +201,7 @@ test('two mTLS reviewer services authorize and audit one durable case dispositio
   assert.equal((await request(portA, '/v1/grants/current', {token, method: 'DELETE'})).status, 204);
   assert.equal((await request(portB, url, {token})).status, 401);
   assert.equal((await request(portB, '/v1/sites/red/signatures', {token})).status, 401);
+  assert.equal((await request(portB, '/v1/sites/red/cases', {token})).status, 401);
   assert.equal((await request(portB, '/v1/grants/current', {token: bob.body.token})).status, 200);
   await provision(second, ['password', 'bob'], Readable.from([Buffer.from('fixture-rotated')]));
   assert.equal((await request(portB, '/v1/grants/current', {token: bob.body.token})).status, 401);

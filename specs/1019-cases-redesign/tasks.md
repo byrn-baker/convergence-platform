@@ -21,8 +21,18 @@ Each live step needs owner approval: show the change, then apply it.
   2026-11-22: `GET /v1/sites/:site/signatures` (`src/reviewer/queue.js`), 6 new tests
   pass; full API suite 111 pass, 0 fail, 4 skipped for missing fixtures. Reading
   `events` directly was too slow in production; A3 moved it to the queue table.
-- [ ] A2: Case list route with keyset pagination, cursor validation and tests for page
+- [x] A2: Case list route with keyset pagination, cursor validation and tests for page
   boundaries and equal timestamps.
+  2026-11-24: `GET /v1/sites/:site/cases` (`listCases` in `src/reviewer/queue.js`). The
+  cursor carries microseconds, because a millisecond cursor would skip or repeat cases
+  that share a millisecond. Tests page at five sizes over three cases in one
+  microsecond with neighbours one microsecond either side, and cover an exact-fit last
+  page, every filter, another site's cursor and forged cursors. The queue table gained
+  an `outcome` column so the spec's filter by outcome works on both routes; the table
+  is not in production yet, so the release steps are unchanged. Full API suite 137
+  pass, 0 fail, 1 skipped. On 700,000 synthetic cases in a local container a page took
+  3–27 ms, and 99 ms for the first page of reviewed `alert` cases over 30 days. Not
+  measured: the same on a copy of production.
 - [x] A3: Measure on a restored copy of production and choose how the queue is made
   fast enough.
   2026-11-22: chose a narrow `reviewer_case_queue` table kept by triggers on `events`

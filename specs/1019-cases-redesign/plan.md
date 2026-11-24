@@ -17,7 +17,16 @@ Two read-only routes beside the existing case routes, both behind the same grant
   count, highest severity, first and last seen. At most 500 rows.
 - `GET /v1/sites/:site/cases?window=…&signature=…&state=…&severity=…&before=<cursor>&limit=…`
   returns case summaries, newest first, by keyset on `(timestamp, id)`. `limit` is at
-  most 100. The cursor is opaque to the browser and validated on the service.
+  most 100 and defaults to 50. The cursor is opaque to the browser and validated on the
+  service: it is the last row's time in microseconds and its case ID, and only the exact
+  text the service issued is accepted. It is a position, not a grant, so the site and
+  every filter are applied again on each page. The response's `next` is the cursor for
+  the following page, or null on the last one. An empty `signature=` selects cases
+  without a signature ID. A row has the case ID, time, signature ID and name, severity,
+  state, and the source and destination address, port and protocol; no evidence text.
+
+`state` is `needs_review`, `reviewed`, `all` or one outcome (`expected_activity`,
+`false_positive`, `confirmed_threat`) on both routes.
 
 Both select fixed columns with the same length caps as `readCase`, validate every
 parameter against a closed set or a strict pattern, and run under a short statement
@@ -32,8 +41,9 @@ trigger for every row (about 700,000 copies into `event_history`) and rewrite a 
 table that ingestion writes to.
 
 Instead `queue.sql` adds `reviewer_case_queue`, one narrow row per intrusion case: case
-ID (foreign key to `events`, deleted with it), site, time, signature ID, severity and
-whether it needs review. Two triggers on `events` keep it exact: after insert, and after
+ID (foreign key to `events`, deleted with it), site, time, signature ID, severity,
+whether it needs review and, once reviewed, the outcome (added in A2 so that filtering
+by outcome never reads `events`). Two triggers on `events` keep it exact: after insert, and after
 an update of the columns it copies. The trigger function runs as the schema owner, so
 ingestion and the reviewer runtime need no write privilege on the queue. The runtime
 role gets `SELECT` on it and nothing else; `permissions.sql` changes by that one grant.

@@ -13,10 +13,11 @@ CREATE TABLE IF NOT EXISTS reviewer_case_queue (
   occurred_at timestamptz NOT NULL,
   signature_id text NOT NULL,
   severity text NOT NULL,
-  needs_review boolean NOT NULL
+  needs_review boolean NOT NULL,
+  outcome text
 );
 CREATE INDEX IF NOT EXISTS reviewer_case_queue_window ON reviewer_case_queue (site_id, occurred_at DESC)
-  INCLUDE (signature_id, severity, needs_review);
+  INCLUDE (signature_id, severity, needs_review, outcome);
 CREATE INDEX IF NOT EXISTS reviewer_case_queue_signature ON reviewer_case_queue (site_id, signature_id, occurred_at DESC, case_id DESC);
 
 -- A case needs review until it carries a disposition other than "needs_review".
@@ -24,6 +25,12 @@ CREATE OR REPLACE FUNCTION reviewer_case_needs_review(disposition jsonb) RETURNS
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   SELECT disposition IS NULL OR jsonb_typeof(disposition) <> 'object'
       OR disposition->>'kind' IS NULL OR disposition->>'kind' = 'needs_review'
+$$;
+
+-- The outcome a reviewer recorded, or NULL while the case needs review.
+CREATE OR REPLACE FUNCTION reviewer_case_outcome(disposition jsonb) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT CASE WHEN NOT reviewer_case_needs_review(disposition) THEN left(disposition->>'kind', 64) END
 $$;
 
 -- Runs as the schema owner, so writers of `events` need no privilege on the queue.
@@ -34,12 +41,14 @@ BEGIN
     IF TG_OP = 'UPDATE' THEN DELETE FROM reviewer_case_queue WHERE case_id = NEW.id; END IF;
     RETURN NULL;
   END IF;
-  INSERT INTO reviewer_case_queue (case_id, site_id, occurred_at, signature_id, severity, needs_review)
+  INSERT INTO reviewer_case_queue (case_id, site_id, occurred_at, signature_id, severity, needs_review, outcome)
   VALUES (NEW.id, NEW.site_id, NEW.timestamp,
           coalesce(left(NEW.source_evidence #>> '{labels,signature_id}', 64), ''),
-          NEW.severity, reviewer_case_needs_review(NEW.security_disposition))
+          NEW.severity, reviewer_case_needs_review(NEW.security_disposition),
+          reviewer_case_outcome(NEW.security_disposition))
   ON CONFLICT (case_id) DO UPDATE SET site_id = EXCLUDED.site_id, occurred_at = EXCLUDED.occurred_at,
-    signature_id = EXCLUDED.signature_id, severity = EXCLUDED.severity, needs_review = EXCLUDED.needs_review;
+    signature_id = EXCLUDED.signature_id, severity = EXCLUDED.severity, needs_review = EXCLUDED.needs_review,
+    outcome = EXCLUDED.outcome;
   RETURN NULL;
 END $$;
 
