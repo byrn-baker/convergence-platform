@@ -83,6 +83,15 @@ time under production's ingestion load. R2 measures those when it runs.
 The HUD server proxies the two routes as `/review/sites/:site/signatures` and
 `/review/sites/:site/cases` under the existing origin gate, session and CSRF rules.
 
+As built in H1 it also proxies bulk review:
+`GET /review/sites/:site/signatures/:id/dispositions/preview` and
+`POST /review/sites/:site/signatures/:id/dispositions`. The write needs the session's
+CSRF value; both bulk routes refuse a viewer. A query string is forwarded only if it
+is plain `name=value` text (letters, digits and `_ = & . : -`), so nothing encoded
+reaches the service, which still validates every name and value. As for a case read,
+the session is checked again after the service answers, and a response for another
+site, signature, operation or reviewer is withheld.
+
 The front end stays plain HTML, CSS and ES modules with no build step. The content
 security policy does not change: no inline script, no remote fonts or images. Type is
 the system monospace stack, or a font file served from the site itself if the mock-up

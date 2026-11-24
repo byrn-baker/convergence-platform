@@ -74,7 +74,13 @@ Each live step needs owner approval: show the change, then apply it.
 
 ## 3. Site
 
-- [ ] H1: HUD proxy routes under the existing origin, session and CSRF rules, with tests.
+- [x] H1: HUD proxy routes under the existing origin, session and CSRF rules, with tests.
+  2026-11-24: `reviewer/server.mjs` proxies the signature queue, the case list, the
+  bulk preview and the bulk write; `reviewer/service-client.mjs` builds the service
+  paths from validated parts. Tests in `test/reviewer-server.mjs` and
+  `test/reviewer-queue-targets.mjs`: no session, another site, a viewer, a wrong or
+  missing CSRF value, a foreign origin, encoded or oversized queries, malformed
+  bodies, mismatched responses, and a site removed mid-read.
 - [ ] H2: Queue and signature views with filters, fragment routing and keyboard keys.
 - [ ] H3: Case page reordered for the decision; next-case flow after a disposition;
   existing draft, receipt and retry behavior unchanged.
