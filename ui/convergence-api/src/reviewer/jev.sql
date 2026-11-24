@@ -1,12 +1,12 @@
 -- A user operation cannot silently change command across API replicas or versions.
 CREATE TABLE IF NOT EXISTS reviewer_operation_keys (
     installation_id TEXT NOT NULL, actor_id TEXT NOT NULL, operation_id UUID NOT NULL,
-    command TEXT NOT NULL CHECK (command IN ('disposition','reinvestigate','jev_review')),
+    command TEXT NOT NULL CHECK (command IN ('disposition','reinvestigate','jev_review','bulk_disposition')),
     PRIMARY KEY (installation_id,actor_id,operation_id)
 );
 ALTER TABLE reviewer_operation_keys DROP CONSTRAINT IF EXISTS reviewer_operation_keys_command_check;
 ALTER TABLE reviewer_operation_keys ADD CONSTRAINT reviewer_operation_keys_command_check
-    CHECK(command IN ('disposition','reinvestigate','jev_review'));
+    CHECK(command IN ('disposition','reinvestigate','jev_review','bulk_disposition'));
 -- An older deployment could have reused a UUID across the formerly independent
 -- disposition/investigation interfaces. Refuse to invent a winning command.
 DO $$ BEGIN

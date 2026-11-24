@@ -83,6 +83,47 @@ test('the deployed runtime and provisioning grants allow a complete review and s
   }
   await assert.rejects(directory.query('SELECT 1 FROM reviewer_case_queue'), {code: '42501'});
 
+  // Bulk decisions: the runtime writes one and reads it back, and can do nothing else to
+  // the table. Not even the schema owner can change or remove a recorded decision.
+  const bulk = (values = {}) => {
+    const row = {installation_id: 'installation', actor_id: receipt.reviewed_by, operation_id: randomUUID(), actor_name: 'alice',
+      site_id: 'home', signature_id: '2900417', window_start: '2026-11-23T00:00:00Z', window_end: '2026-11-24T00:00:00Z',
+      source_host: null, kind: 'false_positive', reason: 'Synthetic duplicate capture', case_count: 418, ...values};
+    const columns = Object.keys(row);
+    return {row, text: `INSERT INTO reviewer_bulk_dispositions (${columns}) VALUES (${columns.map((_, i) => '$' + (i + 1))})`,
+      values: Object.values(row)};
+  };
+  const decision = bulk({source_host: '10.20.4.17'});
+  await service.query(decision.text, decision.values);
+  const {rows: [stored]} = await service.query(
+    'SELECT kind, case_count, host(source_host) AS source_host, reviewed_at FROM reviewer_bulk_dispositions WHERE site_id=$1 AND operation_id=$2',
+    ['home', decision.row.operation_id]);
+  assert.deepEqual([stored.kind, stored.case_count, stored.source_host], ['false_positive', 418, '10.20.4.17']);
+  assert.ok(stored.reviewed_at instanceof Date);
+  await assert.rejects(service.query(decision.text, decision.values), {code: '23505'});
+  // An operation ID belongs to one command: a single disposition's ID cannot be reused, nor the reverse.
+  await assert.rejects(service.query(bulk({operation_id: command.operationId}).text, bulk({operation_id: command.operationId}).values),
+    {code: '23505', constraint: 'reviewer_command_identity'});
+  await assert.rejects(authority.withGrant('installation', grant.token, {site: 'home', write: true},
+    (db, actor) => recordDisposition(db, actor, 'home', item.id,
+      {operationId: decision.row.operation_id, kind: 'false_positive', reason: 'Synthetic reuse of a bulk operation'})), {status: 409});
+  for (const invalid of [{kind: 'needs_review'}, {kind: 'ignored'}, {case_count: 0}, {reason: ''}, {reason: 'x'.repeat(4001)},
+    {actor_name: ''}, {signature_id: '1'.repeat(65)}, {source_host: '10.20.4.0/24'}, {source_host: '2001:db8::/64'},
+    {window_start: '2026-11-24T00:00:00Z'}]) {
+    const attempt = bulk(invalid);
+    await assert.rejects(service.query(attempt.text, attempt.values), {code: '23514'}, JSON.stringify(invalid));
+  }
+  for (const statement of ["UPDATE reviewer_bulk_dispositions SET reason = 'changed'", 'DELETE FROM reviewer_bulk_dispositions',
+    'TRUNCATE reviewer_bulk_dispositions']) {
+    await assert.rejects(service.query(statement), {code: '42501'});
+    await assert.rejects(owner.query(statement), {code: '55000'});
+  }
+  await assert.rejects(directory.query('SELECT 1 FROM reviewer_bulk_dispositions'), {code: '42501'});
+  assert.equal((await owner.query('SELECT count(*)::int AS n FROM reviewer_bulk_dispositions')).rows[0].n, 1);
+  // Migrating again keeps the recorded decision and its operation key.
+  await migrate(owner);
+  assert.equal((await owner.query("SELECT count(*)::int AS n FROM reviewer_operation_keys WHERE command = 'bulk_disposition'")).rows[0].n, 1);
+
   for (const column of ['name', 'role', 'sites', 'id', 'password_hash', 'enabled', 'credential_revision']) {
     await assert.rejects(service.query('UPDATE reviewer_accounts SET ' + column + ' = ' + column), {code: '42501'});
   }

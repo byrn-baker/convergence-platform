@@ -46,8 +46,15 @@ Each live step needs owner approval: show the change, then apply it.
   `test-reviewer-permissions.cjs` shows the runtime reading the queue, a runtime
   disposition updating it through the trigger, and the runtime's insert, update, delete
   and truncate refused; the provisioning role cannot read it.
-- [ ] B1: Bulk decision table, grants (insert-only for the runtime role) and the
+- [x] B1: Bulk decision table, grants (insert-only for the runtime role) and the
   permissions test.
+  2026-11-24: `reviewer_bulk_dispositions` in `src/reviewer/bulk.sql`, added to
+  `migrate`. `test-reviewer-permissions.cjs` shows the runtime role writing and reading
+  a decision; update, delete and truncate refused for it and for the schema owner; the
+  provisioner refused; ten invalid rows refused; and an operation ID refused across
+  the single and bulk commands. Full API suite 137 pass, 0 fail, 1 skipped.
+  For B2: the queue table has no source address, so the "one source host" scope and
+  its per-host counts need one added before release.
 - [ ] B2: Preview and write routes: one transaction, idempotent operation ID, confirmed
   count check, ceiling, operator or admin only. Tests for a replay, a concurrent single
   disposition, a viewer and a reviewer without the site.

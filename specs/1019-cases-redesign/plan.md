@@ -114,6 +114,17 @@ disposition), installation, actor ID and name, site, signature ID, window bounds
 optional source host, outcome, reason, reviewed-at time and the number of cases covered.
 It is insert-only for the runtime role, like `reviewer_case_dispositions`.
 
+As built in B1 (`src/reviewer/bulk.sql`): the outcome is one of the three review
+outcomes, never "needs review"; the source host is a single address; the count is at
+least one; and no role, including the schema owner, can update or delete a row. The
+operation ID is registered in `reviewer_operation_keys` as `bulk_disposition`, so an ID
+used for a single disposition cannot become a bulk decision or the reverse.
+`permissions.sql` gains one grant, `SELECT, INSERT` for the runtime role.
+
+Scopes: every case of the signature in the window, or only those from one source host.
+The mock-up's third scope, "also future matches for 7 days", is not built (owner
+decision 2026-11-24); it would be a standing rule, which the spec keeps out of scope.
+
 `POST /v1/sites/:site/signatures/:id/dispositions` takes the scope, outcome, reason,
 operation ID and the count the reviewer confirmed. In one transaction the service locks
 and updates the matching cases that still have no disposition, writes each one's
@@ -137,9 +148,9 @@ Decided by the owner on 2026-11-22: bulk review is in scope; the default queue i
 that need review from the last 24 hours, highest severity first; the D1 mock-up is
 approved (https://claude.ai/artifact/V1wiNe6rfniysZuAJDjcrr, private to the owner).
 
-Open: the mock-up shows a third bulk scope, "also future matches for 7 days". That is a
-standing rule that decides cases nobody has seen, so it is not built until the owner
-asks for it explicitly.
+Closed 2026-11-24: the mock-up shows a third bulk scope, "also future matches for 7
+days". That is a standing rule that decides cases nobody has seen. The owner decided to
+skip it; the page offers the other two scopes only.
 
 ## Failure and rollback
 

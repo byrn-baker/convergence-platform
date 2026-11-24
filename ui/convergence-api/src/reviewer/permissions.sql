@@ -13,6 +13,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON reviewer_grants, reviewer_login_buckets 
 GRANT SELECT ON reviewer_identity_links TO :"reviewer_runtime";
 GRANT SELECT, INSERT, UPDATE, DELETE ON reviewer_oidc_exchanges TO :"reviewer_runtime";
 GRANT SELECT, INSERT ON reviewer_case_dispositions TO :"reviewer_runtime";
+-- A bulk decision is written once and never changed, like a single disposition.
+GRANT SELECT, INSERT ON reviewer_bulk_dispositions TO :"reviewer_runtime";
 GRANT SELECT, INSERT ON reviewer_operation_keys TO :"reviewer_runtime";
 GRANT SELECT, UPDATE (security_disposition) ON events TO :"reviewer_runtime";
 -- The case queue is maintained by triggers that run as the schema owner; the runtime only reads it.

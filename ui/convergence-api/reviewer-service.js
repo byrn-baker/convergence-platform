@@ -19,7 +19,7 @@ async function migrate(pool) {
     // Serialize installations across replicas without taking a lock during normal startup.
     await client.query("SELECT pg_advisory_xact_lock(hashtext('convergence reviewer schema v1'))");
     await client.query('SELECT security_disposition FROM events LIMIT 0');
-    for (const file of ['grants.sql', 'cases.sql', 'investigations.sql', 'jev.sql', 'queue.sql']) {
+    for (const file of ['grants.sql', 'cases.sql', 'investigations.sql', 'jev.sql', 'queue.sql', 'bulk.sql']) {
       await client.query(fs.readFileSync(path.join(__dirname, 'src/reviewer', file), 'utf8'));
     }
     await client.query('COMMIT');
