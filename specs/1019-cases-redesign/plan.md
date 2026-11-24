@@ -145,6 +145,14 @@ As built in B2 (`src/reviewer/bulk.js`):
   read. A case without a signature ID cannot be bulk reviewed.
 - Both routes need the operator or admin role, the preview included.
 
+As built in B3: each decision lists the cases it covered in
+`reviewer_bulk_disposition_cases`, written in the same transaction and append-only like
+the decision. A case read returns the decision in `review_history` beside the single
+dispositions, with `bulk_case_count` set (NULL for a single disposition), and keeps
+`bulk_operation_id` in the current disposition while the bulk decision is the latest
+review. A case the decision left alone has no entry. The runtime role gets
+`SELECT, INSERT` on the list as well.
+
 Scopes: every case of the signature in the window, or only those from one source host.
 The mock-up's third scope, "also future matches for 7 days", is not built (owner
 decision 2026-11-24); it would be a standing rule, which the spec keeps out of scope.

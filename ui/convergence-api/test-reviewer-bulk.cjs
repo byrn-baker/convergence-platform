@@ -8,7 +8,7 @@ const path = require('node:path');
 const {setTimeout: delay} = require('node:timers/promises');
 const {Pool} = require('pg');
 const {migrate} = require('./reviewer-service');
-const {recordDisposition} = require('./src/reviewer/cases');
+const {readCase, recordDisposition} = require('./src/reviewer/cases');
 const {BULK_CEILING, parsePreviewQuery, previewBulk, recordBulk} = require('./src/reviewer/bulk');
 
 test('the bulk preview query accepts only its closed set of parameters', () => {
@@ -249,6 +249,44 @@ test('a bulk decision covers exactly the previewed cases, once, under one name',
       assert.equal(receipt.case_count, BULK_CEILING);
       assert.equal(await count('event_history') - history, BULK_CEILING);
       assert.equal((await pool.query("SELECT count(*)::int AS n FROM reviewer_case_queue WHERE signature_id = '900' AND needs_review")).rows[0].n, 0);
+    });
+
+    await t.test('a covered case shows the decision in its history, and stays reviewable on its own', async () => {
+      const read = (actor, id) => run(db => readCase(db, actor, 'red', id));
+      // Covered by the first decision and not touched since.
+      const covered = await read(viewer, fromA[1]);
+      assert.deepEqual([covered.security_disposition.kind, covered.security_disposition.bulk_operation_id,
+        covered.security_disposition.reviewed_by_name], ['expected_activity', first.operationId, 'Red operator']);
+      assert.equal(covered.review_history.length, 1);
+      const [entry] = covered.review_history;
+      assert.deepEqual([entry.operation_id, entry.kind, entry.bulk_case_count, entry.reviewed_by, entry.reviewed_by_name,
+        entry.reason_preview, entry.reason_truncated],
+      [first.operationId, 'expected_activity', 5, operator.id, 'Red operator', first.reason, false]);
+      assert.equal(entry.reviewed_at.toISOString(), covered.security_disposition.reviewed_at);
+      // Covered, then reviewed on its own: the single review is current and the decision stays in the history.
+      const later = await read(viewer, fromA[0]);
+      assert.deepEqual([later.security_disposition.kind, later.security_disposition.bulk_operation_id], ['false_positive', undefined]);
+      assert.deepEqual(later.review_history.map(row => [row.kind, row.bulk_case_count]), [['false_positive', null], ['expected_activity', 5]]);
+      // Reviewed by a colleague before the second decision, which left it alone: no bulk entry.
+      const skipped = await read(viewer, fromB[0]);
+      assert.deepEqual(skipped.review_history.map(row => [row.kind, row.reviewed_by_name, row.bulk_case_count]),
+        [['confirmed_threat', 'Second operator', null]]);
+      assert.equal(skipped.security_disposition.bulk_operation_id, undefined);
+      assert.deepEqual((await read(viewer, fromB[1])).review_history.map(row => [row.kind, row.bulk_case_count]), [['expected_activity', 2]]);
+      assert.deepEqual((await read(viewer, other)).review_history, []);
+      // Each decision lists exactly the cases it covered, and the list cannot be changed.
+      const listed = await pool.query(`SELECT b.case_count, count(c.case_id)::int AS listed FROM reviewer_bulk_dispositions b
+        LEFT JOIN reviewer_bulk_disposition_cases c USING (installation_id, actor_id, operation_id) GROUP BY b.operation_id, b.case_count`);
+      assert.ok(listed.rowCount >= 4 && listed.rows.every(row => row.case_count === row.listed));
+      const mine = await pool.query('SELECT case_id FROM reviewer_bulk_disposition_cases WHERE operation_id = $1 ORDER BY 1', [first.operationId]);
+      assert.deepEqual(mine.rows.map(row => row.case_id), [...fromA].sort());
+      for (const statement of ['DELETE FROM reviewer_bulk_disposition_cases', "UPDATE reviewer_bulk_disposition_cases SET site_id = 'blue'",
+        'TRUNCATE reviewer_bulk_disposition_cases']) {
+        await assert.rejects(pool.query(statement), {code: '55000'});
+      }
+      // A disposition whose bulk reference is not a UUID is shown without it.
+      await pool.query(`UPDATE events SET security_disposition = security_disposition || '{"bulk_operation_id":"<script>"}' WHERE id = $1`, [fromA[2]]);
+      assert.equal((await read(viewer, fromA[2])).security_disposition.bulk_operation_id, undefined);
     });
 
     await t.test('the source address is read from the sensor record and never stops a case being stored', async () => {

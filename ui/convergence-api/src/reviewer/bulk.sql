@@ -34,3 +34,22 @@ CREATE OR REPLACE TRIGGER reviewer_immutable_bulk_dispositions
 CREATE OR REPLACE TRIGGER reviewer_register_bulk_disposition
     BEFORE INSERT ON reviewer_bulk_dispositions
     FOR EACH ROW EXECUTE FUNCTION reviewer_register_operation('bulk_disposition');
+
+-- What a decision covered: one row per case, written with the decision. A case that was
+-- reviewed by someone else first is not listed. The list outlives later reviews of the
+-- case, so a case page can always show the decision in its history.
+CREATE TABLE IF NOT EXISTS reviewer_bulk_disposition_cases (
+    installation_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    operation_id UUID NOT NULL,
+    site_id TEXT NOT NULL,
+    case_id UUID NOT NULL,
+    PRIMARY KEY (installation_id, actor_id, operation_id, case_id),
+    FOREIGN KEY (installation_id, actor_id, operation_id)
+        REFERENCES reviewer_bulk_dispositions (installation_id, actor_id, operation_id)
+);
+CREATE INDEX IF NOT EXISTS reviewer_bulk_disposition_cases_by_case
+    ON reviewer_bulk_disposition_cases (site_id, case_id);
+CREATE OR REPLACE TRIGGER reviewer_immutable_bulk_disposition_cases
+    BEFORE UPDATE OR DELETE OR TRUNCATE ON reviewer_bulk_disposition_cases
+    FOR EACH STATEMENT EXECUTE FUNCTION reviewer_deny_audit_change();

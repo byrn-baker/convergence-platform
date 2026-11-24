@@ -20,7 +20,9 @@ test('reviewer dispositions are site-scoped, atomic, attributable, append-only a
       finally { await admin.end(); }
     });
     await admin.query('CREATE SCHEMA ' + schema);
-    for (const file of ['src/db/schema.sql', 'src/reviewer/grants.sql', 'src/reviewer/cases.sql']) {
+    // The whole reviewer schema, in the order `migrate` applies it: a case read joins the bulk decision tables.
+    for (const file of ['src/db/schema.sql', 'src/reviewer/grants.sql', 'src/reviewer/cases.sql', 'src/reviewer/investigations.sql',
+      'src/reviewer/jev.sql', 'src/reviewer/queue.sql', 'src/reviewer/bulk.sql']) {
       await pool.query(readFileSync(path.join(__dirname, file), 'utf8'));
     }
 

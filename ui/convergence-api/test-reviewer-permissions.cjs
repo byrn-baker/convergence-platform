@@ -113,12 +113,29 @@ test('the deployed runtime and provisioning grants allow a complete review and s
     const attempt = bulk(invalid);
     await assert.rejects(service.query(attempt.text, attempt.values), {code: '23514'}, JSON.stringify(invalid));
   }
-  for (const statement of ["UPDATE reviewer_bulk_dispositions SET reason = 'changed'", 'DELETE FROM reviewer_bulk_dispositions',
-    'TRUNCATE reviewer_bulk_dispositions']) {
+  for (const statement of ["UPDATE reviewer_bulk_dispositions SET reason = 'changed'", 'DELETE FROM reviewer_bulk_dispositions']) {
     await assert.rejects(service.query(statement), {code: '42501'});
     await assert.rejects(owner.query(statement), {code: '55000'});
   }
+  await assert.rejects(service.query('TRUNCATE reviewer_bulk_dispositions'), {code: '42501'});
+  // The list of covered cases references the decision, which already rules out truncating it.
+  await assert.rejects(owner.query('TRUNCATE reviewer_bulk_dispositions'), {code: '0A000'});
+  await assert.rejects(owner.query('TRUNCATE reviewer_bulk_dispositions CASCADE'), {code: '55000'});
   await assert.rejects(directory.query('SELECT 1 FROM reviewer_bulk_dispositions'), {code: '42501'});
+  // The list of covered cases follows the same rules as the decision it belongs to.
+  await service.query(`INSERT INTO reviewer_bulk_disposition_cases (installation_id, actor_id, operation_id, site_id, case_id)
+    VALUES ('installation', $1, $2, 'home', $3)`, [receipt.reviewed_by, decision.row.operation_id, item.id]);
+  await assert.rejects(service.query(`INSERT INTO reviewer_bulk_disposition_cases (installation_id, actor_id, operation_id, site_id, case_id)
+    VALUES ('installation', $1, $2, 'home', $3)`, [receipt.reviewed_by, randomUUID(), item.id]), {code: '23503'});
+  for (const statement of ['DELETE FROM reviewer_bulk_disposition_cases', "UPDATE reviewer_bulk_disposition_cases SET site_id = 'x'",
+    'TRUNCATE reviewer_bulk_disposition_cases']) {
+    await assert.rejects(service.query(statement), {code: '42501'});
+    await assert.rejects(owner.query(statement), {code: '55000'});
+  }
+  await assert.rejects(directory.query('SELECT 1 FROM reviewer_bulk_disposition_cases'), {code: '42501'});
+  const withBulk = await authority.withGrant('installation', grant.token, {site: 'home', write: false},
+    (db, actor) => readCase(db, actor, 'home', item.id));
+  assert.deepEqual(withBulk.review_history.map(row => row.bulk_case_count).sort(), [418, null, null]);
   assert.equal((await owner.query('SELECT count(*)::int AS n FROM reviewer_bulk_dispositions')).rows[0].n, 1);
   // Migrating again keeps the recorded decision and its operation key.
   await migrate(owner);

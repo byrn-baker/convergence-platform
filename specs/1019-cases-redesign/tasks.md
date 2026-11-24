@@ -63,8 +63,14 @@ Each live step needs owner approval: show the change, then apply it.
   waits, a late case, cases reviewed meanwhile, the ceiling at 5,000 and 5,001, a
   viewer, another site and forged input. Full API suite 148 pass, 0 fail, 1 skipped.
   Not measured: a bulk write on a copy of production or under ingestion load.
-- [ ] B3: A case covered by a bulk decision shows it in its history; a later single
+- [x] B3: A case covered by a bulk decision shows it in its history; a later single
   disposition still works.
+  2026-11-24: new table `reviewer_bulk_disposition_cases` lists what each decision
+  covered; `readCase` adds those decisions to `review_history`. Tests: a covered case,
+  a covered case reviewed on its own afterwards (both entries, single one current), a
+  case the decision left alone (no bulk entry), the list matching each decision's
+  count, and the list refusing changes. Full API suite 149 pass, 0 fail, 1 skipped.
+  The case page's wording for a bulk entry is H3's.
 
 ## 3. Site
 

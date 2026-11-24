@@ -160,6 +160,9 @@ async function recordBulk(client, actor, site, signature, input) {
   const updated = await client.query('UPDATE events SET security_disposition = $1 WHERE id = ANY($2::uuid[]) AND site_id = $3',
     [disposition, locked.rows.map(row => row.id), site]);
   if (updated.rowCount !== count) throw new Error('Bulk disposition covered an unexpected number of cases');
+  // The decision's own list of what it covered, for each case's history.
+  await client.query(`INSERT INTO reviewer_bulk_disposition_cases (installation_id, actor_id, operation_id, site_id, case_id)
+    SELECT $1, $2, $3, $4, unnest($5::uuid[])`, [...identity, site, locked.rows.map(row => row.id)]);
   return receipt;
 }
 
