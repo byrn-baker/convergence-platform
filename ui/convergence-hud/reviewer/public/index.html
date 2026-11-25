@@ -35,9 +35,57 @@
     <section id="workspace" aria-label="Reviewer workspace" hidden>
       <form id="lookup">
         <label>Site<select name="site" required></select></label>
-        <label>Case ID<input name="caseId" required maxlength="36" autocomplete="off" spellcheck="false"></label>
+        <label>Open case by ID<input name="caseId" required maxlength="36" autocomplete="off" spellcheck="false"></label>
         <button type="submit">Open case</button>
       </form>
+      <section id="list-view" aria-labelledby="list-title" hidden>
+        <nav id="crumbs" aria-label="Breadcrumb"><a id="crumb-queue" href="#queue">Queue</a><span id="crumb-signature" hidden></span></nav>
+        <h2 id="list-title"></h2>
+        <p id="list-summary"></p>
+        <div id="filters" role="group" aria-label="Filters">
+          <span id="filter-window" role="group" aria-label="Time window">
+            <button type="button" data-window="24h" aria-pressed="true">24h</button>
+            <button type="button" data-window="7d" aria-pressed="false">7d</button>
+            <button type="button" data-window="30d" aria-pressed="false">30d</button>
+          </span>
+          <label>State<select id="filter-state">
+            <option value="needs_review">Needs review</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="all">All</option>
+            <option value="expected_activity">Expected activity</option>
+            <option value="false_positive">False positive</option>
+            <option value="confirmed_threat">Confirmed threat</option>
+          </select></label>
+          <label>Severity<select id="filter-severity">
+            <option value="">Any</option>
+            <option value="alert">Alert</option>
+            <option value="watch">Watch</option>
+            <option value="info">Info</option>
+            <option value="ok">OK</option>
+          </select></label>
+          <label id="filter-text-label">Filter signatures<input id="filter-text" type="search" maxlength="64" autocomplete="off" spellcheck="false"></label>
+          <button type="button" id="list-refresh">Refresh</button>
+        </div>
+        <p id="list-status" role="status" aria-live="polite"></p>
+        <div class="table-wrap"><table>
+          <thead><tr id="list-head"></tr></thead>
+          <tbody id="list-rows"></tbody>
+        </table></div>
+        <button type="button" id="list-more" hidden>Load more cases</button>
+      </section>
+      <p id="key-hint">Press <kbd>?</kbd> for keyboard keys.</p>
+      <section id="keys" aria-labelledby="keys-title" hidden>
+        <h2 id="keys-title">Keyboard keys</h2>
+        <dl>
+          <dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Move down or up the list</dd>
+          <dt><kbd>Enter</kbd></dt><dd>Open the selected signature or case</dd>
+          <dt><kbd>u</kbd></dt><dd>Go up: from a case to its list, from a signature to the queue</dd>
+          <dt><kbd>/</kbd></dt><dd>Go to the filters</dd>
+          <dt><kbd>?</kbd></dt><dd>Show or hide this list</dd>
+          <dt><kbd>Esc</kbd></dt><dd>Close this list</dd>
+        </dl>
+        <button type="button" id="keys-close">Close</button>
+      </section>
       <article id="detail" hidden>
         <div class="case-heading"><h2 id="case-title"></h2><span id="case-status"></span></div>
         <dl id="facts"></dl>

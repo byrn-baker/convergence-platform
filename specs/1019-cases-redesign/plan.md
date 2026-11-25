@@ -110,6 +110,31 @@ from. Draft recovery, receipts and retry of the same operation keep their presen
 behavior; the existing modules (`pending-operations.js`, `jev.js`, `investigation.js`,
 `telemetry.js`) are reused, not rewritten.
 
+As built in H2 (`reviewer/public/queue.js`, wired in `reviewer.js`):
+
+- The fragment also carries the filters and the site, and leaves out defaults:
+  `#queue&window=7d&state=all&severity=watch&site=blue`. A missing site means the
+  account's first site. An unknown value takes its default; a site the account lacks
+  opens the default queue with a notice. `#signature=` (empty) lists cases that carry
+  no signature ID.
+- A `#case=` link present when the page loads is handled as before: removed from the
+  address, held through sign-in, and placed in the "Open case by ID" form. Inside a
+  session, opening a case writes `#case=<id>&site=<site>` so the back button works; the
+  reference is removed from the address when the session ends. A signature link does
+  not survive a single sign-on redirect; the reviewer lands on the queue.
+- Lists are private data. They are cleared when the tab is hidden or the session
+  changes and reloaded once the session is confirmed. An answer for another site or
+  signature, or one that arrives after the view changed, is not shown.
+- The signature text filter narrows the loaded queue in the page; window, state and
+  severity are service filters. A signature's cases load 50 at a time with "Load more".
+- Keys: `j`/`k`, `Enter`, `u`, `/`, `?`, and `Esc` to close the key list. They are
+  ignored while typing in a field and with Ctrl, Alt or Meta held.
+- Not built as planned: the "site telemetry as a compact strip". The queue shows a
+  one-line summary from its own answer (cases needing review, signature count, filters)
+  and the existing Site overview tab is unchanged. The mock-up's tiles "reviewed today"
+  and "confirmed threats 7d" need counts the service does not return.
+- Styling is plain; the theme and phone layout are H4.
+
 Theme: CSS custom properties for a near-black ground, phosphor green text, cyan and
 magenta accents, and one warning colour reserved for confirmed threats. Grid and
 wireframe motifs are drawn in CSS. Effects are decoration only and are removed under

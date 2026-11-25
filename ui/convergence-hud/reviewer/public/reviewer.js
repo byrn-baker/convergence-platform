@@ -2,6 +2,7 @@ import {telemetryWorkspace} from './telemetry.js';
 import {tokenDigest, receiptPointers} from './pending-operations.js';
 import {investigationPanel} from './investigation.js';
 import {jevPanel} from './jev.js';
+import {queuePanel, parseRoute, routeFragment} from './queue.js';
 
 const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
@@ -27,7 +28,7 @@ export function startReviewer(document, browser = document.defaultView) {
   // Consume the case reference once. This only fills in the lookup after sign-in.
   const reference = new URLSearchParams(browser.location.hash.slice(1));
   let linkedCase = null;
-  if (reference.has('case') || reference.has('site')) {
+  if (reference.has('case')) {
     browser.history.replaceState(null, '', browser.location.pathname + browser.location.search);
     if (reference.size === 2 && UUID.test(reference.get('case')) && reference.get('site')) {
       linkedCase = {id: reference.get('case').toLowerCase(), site: reference.get('site')};
@@ -48,8 +49,8 @@ export function startReviewer(document, browser = document.defaultView) {
   const telemetry = telemetryWorkspace({document, browser, session:() => session, scopeLost, updateExpiry:setExpiry,
     openCase(selectedSite, id) {
       if (!session?.user?.sites.includes(selectedSite) || !UUID.test(id)) return;
-      showWorkspace('cases'); purgeCase(); site.value = selectedSite; caseId.value = id;
-      loadCase(id, generation);
+      showWorkspace('cases'); site.value = selectedSite;
+      openCase(id.toLowerCase());
     }});
   function showWorkspace(mode) {
     if (mode === 'site' && session?.capabilities?.telemetry !== true) mode = 'cases';
@@ -58,12 +59,59 @@ export function startReviewer(document, browser = document.defaultView) {
     byId('site-tab')?.setAttribute('aria-pressed', String(mode === 'site'));
     byId('cases-tab')?.setAttribute('aria-pressed', String(mode === 'cases'));
     if (mode === 'site' && session?.user) telemetry.show(); else telemetry.hide();
+    if (mode === 'cases' && view !== 'case' && !queue.active()) route(true);
   }
   byId('site-tab')?.addEventListener('click', () => showWorkspace('site'));
   byId('cases-tab')?.addEventListener('click', () => showWorkspace('cases'));
   const pointers = receiptPointers(browser);
   const investigations = investigationPanel({document, browser, request, scopeLost});
   const jev = jevPanel({document, browser, request, scopeLost});
+  // Three views share the workspace: the queue, one signature's cases, and a case.
+  // `applied` is the fragment already shown, so one navigation is routed once.
+  let view = 'queue', applied = null, listRoute = null;
+  const fragment = route => routeFragment(route, session?.user?.sites[0]);
+  const queue = queuePanel({document, request, scopeLost, navigate, fragment});
+
+  function navigate(target) {
+    if (browser.location.hash.slice(1) !== target) browser.history.pushState(null, '', '#' + target);
+    route();
+  }
+
+  function openCase(id) {
+    const target = routeFragment({view: 'case', id, site: site.value});
+    if (browser.location.hash.slice(1) !== target) browser.history.pushState(null, '', '#' + target);
+    applied = browser.location.hash;
+    view = 'case';
+    queue.clear();
+    purgeCase();
+    caseId.value = id;
+    text('status', 'Loading case…');
+    loadCase(id, generation);
+  }
+
+  function route(force = false) {
+    if (!session?.user?.sites.length || workspaceMode !== 'cases') return;
+    if (!force && applied === browser.location.hash) return;
+    applied = browser.location.hash;
+    let next = parseRoute(applied);
+    const denied = next.site !== null && !session.user.sites.includes(next.site);
+    if (denied) next = parseRoute('');
+    if (next.view === 'case') { site.value = next.site; return openCase(next.id); }
+    purgeCase();
+    caseId.value = '';
+    site.value = next.site || session.user.sites[0];
+    view = next.view;
+    listRoute = {...next, site: site.value};
+    queue.show(listRoute);
+    if (denied) text('status', 'Your account does not have access to the linked site.');
+  }
+
+  function up() {
+    if (view === 'queue') return;
+    const base = listRoute || {...parseRoute(''), site: site.value};
+    navigate(fragment(view === 'case' ? base : {...base, view: 'queue', signature: null}));
+  }
+
   const changes = typeof browser.BroadcastChannel === 'function' ? new browser.BroadcastChannel('review-session') : null;
   if (changes) changes.onmessage = () => { if (!logoutNonce) { ++sessionRequest; purgeSession(); refreshSession(); } };
 
@@ -82,6 +130,13 @@ export function startReviewer(document, browser = document.defaultView) {
 
   function purgeSession() {
     telemetry.hide();
+    queue.clear();
+    visible('keys', false);
+    // A case reference does not outlive the session that opened it.
+    if (parseRoute(browser.location.hash).view === 'case') {
+      browser.history.replaceState(null, '', browser.location.pathname + browser.location.search);
+    }
+    view = 'queue'; applied = listRoute = null;
     visible('workspace-nav', false);
     purgeCase();
     browser.clearTimeout(expiryTimer);
@@ -155,6 +210,7 @@ export function startReviewer(document, browser = document.defaultView) {
           site.value = linkedCase.site;
           caseId.value = linkedCase.id;
           text('status', 'Open the selected case to review it.');
+          view = 'case';
         } else {
           text('status', 'Your account does not have access to the linked site.');
         }
@@ -165,7 +221,13 @@ export function startReviewer(document, browser = document.defaultView) {
     if (user && workspaceMode === 'site' && !document.hidden) telemetry.show();
     if (resume && user) {
       suspendedDraft = null;
-      reloadDraft(resume);
+      if (resume.id) return reloadDraft(resume);
+    }
+    // Lists are private too: they are reloaded when the session is confirmed.
+    if (user && !document.hidden && view !== 'case' && !queue.active()) {
+      const notice = changed ? byId('status').textContent : '';
+      route(true);
+      if (notice) text('status', notice);
     }
   }
 
@@ -413,16 +475,35 @@ export function startReviewer(document, browser = document.defaultView) {
     finally { authBusy = false; }
     if (!logoutNonce) refreshSession();
   });
-  site.addEventListener('change', () => { purgeCase(); caseId.value = ''; });
+  site.addEventListener('change', () => {
+    purgeCase(); caseId.value = '';
+    if (session?.user) navigate(fragment({...(listRoute || parseRoute('')), view: 'queue', signature: null, site: site.value}));
+  });
   caseId.addEventListener('input', () => { if (current || operation) purgeCase(); else generation++; });
   lookup.addEventListener('submit', event => {
     event.preventDefault();
     if (!session?.user || !site.value) return;
     const id = caseId.value.trim().toLowerCase();
-    purgeCase();
-    if (!UUID.test(id)) return text('status', 'Enter a case ID in UUID format.');
-    text('status', 'Loading case…');
-    loadCase(id, generation);
+    if (!UUID.test(id)) { purgeCase(); return text('status', 'Enter a case ID in UUID format.'); }
+    openCase(id);
+  });
+  browser.addEventListener('hashchange', () => route());
+  browser.addEventListener('popstate', () => route());
+  byId('keys-close').addEventListener('click', () => visible('keys', false));
+  document.addEventListener('keydown', event => {
+    if (!session?.user || workspaceMode !== 'cases' || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === 'Escape' && !byId('keys').hidden) return visible('keys', false);
+    const target = event.target, tag = target?.tagName;
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || target?.isContentEditable) return;
+    const act = action => { event.preventDefault(); action(); };
+    if (event.key === '?') return act(() => visible('keys', byId('keys').hidden));
+    if (event.key === 'u') return act(up);
+    if (view === 'case' || !queue.active()) return;
+    if (event.key === 'j') act(() => queue.move(1));
+    else if (event.key === 'k') act(() => queue.move(-1));
+    else if (event.key === '/') act(() => queue.focusFilter());
+    // A focused link or button keeps its own Enter.
+    else if (event.key === 'Enter' && !['A', 'BUTTON'].includes(tag)) act(() => queue.open());
   });
   form.addEventListener('submit', async event => {
     event.preventDefault();
@@ -458,6 +539,7 @@ export function startReviewer(document, browser = document.defaultView) {
     }
     if (session?.user) {
       telemetry.hide();
+      queue.clear();
       purgeCase();
       text('identity', '');
       visible('account', false);

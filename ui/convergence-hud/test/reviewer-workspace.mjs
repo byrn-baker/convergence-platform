@@ -23,8 +23,15 @@ function endpoint(t, onCall, configure = () => {}) {
   const {window} = dom;
   Object.defineProperty(window, 'crypto', {value: webcrypto, configurable: true});
   configure(window);
-  const calls = [];
+  const calls = [], lists = [];
   window.fetch = async (path, options) => {
+    // The queue loads by itself after sign-in. Tests of the case page leave it empty.
+    const list = /^\/review\/sites\/([a-z]+)\/(signatures|cases)\?(.*)$/.exec(path);
+    if (list) {
+      lists.push(path);
+      return response(200, list[2] === 'signatures' ? {site: list[1], signatures: [], truncated: false}
+        : {site: list[1], signature: new URLSearchParams(list[3]).get('signature'), cases: [], next: null});
+    }
     calls.push({path, options});
     return onCall(path, options);
   };
@@ -34,7 +41,7 @@ function endpoint(t, onCall, configure = () => {}) {
   const emit = (element, event) => element.dispatchEvent(new window.Event(event, {bubbles: true, cancelable: true}));
   const submit = form => emit(byId(form), 'submit');
   const open = (value = id) => { byId('lookup').elements.caseId.value = value; submit('lookup'); };
-  return {window, byId, emit, submit, open, calls};
+  return {window, byId, emit, submit, open, calls, lists};
 }
 
 test('sign-in, two-site lookup, escaped case text, viewer role and removal on entitlement changes', async t => {

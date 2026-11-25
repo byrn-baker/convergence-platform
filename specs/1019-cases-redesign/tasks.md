@@ -81,7 +81,10 @@ Each live step needs owner approval: show the change, then apply it.
   `test/reviewer-queue-targets.mjs`: no session, another site, a viewer, a wrong or
   missing CSRF value, a foreign origin, encoded or oversized queries, malformed
   bodies, mismatched responses, and a site removed mid-read.
-- [ ] H2: Queue and signature views with filters, fragment routing and keyboard keys.
+- [x] H2: Queue and signature views with filters, fragment routing and keyboard keys.
+  Done 2026-11-25 (`reviewer/public/queue.js`; plan.md "As built in H2"). HUD suite
+  102 pass, 0 fail (`~/.local/state/convergence-spec1019/h2-hud-full.log`). Checked in
+  jsdom only; a real browser run is H5.
 - [ ] H3: Case page reordered for the decision; next-case flow after a disposition;
   existing draft, receipt and retry behavior unchanged.
 - [ ] H6: Bulk review panel on the signature view: scope, outcome, reason, preview
