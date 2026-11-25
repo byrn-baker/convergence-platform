@@ -1,6 +1,7 @@
 'use strict';
 
 const {securityAssessment, securityDisposition, validDisposition} = require('../lib/securityAssessment');
+const {trafficContext} = require('../lib/trafficContext');
 
 const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const HISTORY_LIMIT = 20;
@@ -73,7 +74,8 @@ async function readCase(client, actor, site, caseId) {
   record.security_disposition = savedDisposition(disposition);
   const assessment = securityAssessment({...record, source_evidence: {annotations: {description}}});
   if (assessment?.signature) assessment.signature = assessment.signature.slice(0, 512);
-  return {...record, security_assessment: assessment, review_history: history.rows.slice(0, HISTORY_LIMIT),
+  // Hosts, ports and protocol from the sensor's event; null when it cannot be parsed.
+  return {...record, security_assessment: assessment, traffic_context: trafficContext({annotations: {description}}), review_history: history.rows.slice(0, HISTORY_LIMIT),
     review_history_truncated: history.rowCount > HISTORY_LIMIT};
 }
 

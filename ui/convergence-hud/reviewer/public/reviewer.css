@@ -113,3 +113,13 @@ main { width: min(90rem, 100%); }
 #list-more { margin-top:1rem; }
 #keys { margin-top:1.25rem; padding:1rem 1.25rem; border:1px solid var(--accent); border-radius:.65rem; background:var(--panel); }
 kbd { font-family:ui-monospace, monospace; padding:.05rem .4rem; border:1px solid var(--line); border-radius:.25rem; }
+
+/* Case page: what fired comes first. */
+#trail { display:flex; flex-wrap:wrap; align-items:center; gap:.65rem; color:var(--muted); }
+#trail-position { margin-right:auto; }
+#flow { display:flex; flex-wrap:wrap; align-items:center; gap:.75rem; margin:.75rem 0; }
+#flow > div { flex:1 1 14rem; min-width:0; padding:.75rem .9rem; border:1px solid var(--line); border-radius:.4rem; }
+#flow > #flow-protocol { flex:0 1 auto; border:0; padding:0; color:var(--accent); font-weight:600; }
+#flow small, #flow strong { display:block; }
+#flow strong { font-size:1.15rem; overflow-wrap:anywhere; }
+#fired-signature a { color:var(--accent); }

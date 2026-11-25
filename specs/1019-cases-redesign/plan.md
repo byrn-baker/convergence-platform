@@ -135,6 +135,27 @@ As built in H2 (`reviewer/public/queue.js`, wired in `reviewer.js`):
   and "confirmed threats 7d" need counts the service does not return.
 - Styling is plain; the theme and phone layout are H4.
 
+As built in H3:
+
+- The case read returns `traffic_context` (addresses, ports, protocol, signature ID
+  and sensor action parsed from the sensor event; null when it cannot be parsed), the
+  same bounded fields the case list uses. No payload or other evidence text is added.
+- Page order: what fired (signature as the title, time, severity, source and
+  destination with protocol, a link to the signature's cases), evidence and context,
+  rule guidance, current disposition, review history, the disposition form and its
+  receipt, then the JEV and investigation requests. Each address is labelled internal
+  or external by its range only. The mock-up's reputation, network owner and host
+  history tiles are not built: the service has no such data.
+- Next case: a case opened from a signature's list remembers that list's order. The
+  page shows "Case 2 of 50+ in this list" with Previous and Next, `j`/`k` do the
+  same, and "Save and open next case" moves on only after the receipt is confirmed.
+  An unknown outcome stays on the case with the usual Check receipt and Retry
+  controls. At the end of the loaded list the next page is read. A case opened by ID
+  or link has no list and no Next.
+- A bulk decision in the history reads "<Outcome> · bulk decision covering N cases";
+  a current disposition written by one adds "recorded by a bulk decision".
+- Draft recovery, receipt pointers and retry with the same operation ID are unchanged.
+
 Theme: CSS custom properties for a near-black ground, phosphor green text, cyan and
 magenta accents, and one warning colour reserved for confirmed threats. Grid and
 wireframe motifs are drawn in CSS. Effects are decoration only and are removed under

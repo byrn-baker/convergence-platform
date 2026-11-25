@@ -50,10 +50,21 @@ export function ago(value, now = Date.now()) {
   return `${Math.floor(seconds / 86400)} d ago`;
 }
 
-function endpoint(address, port) {
+export function endpoint(address, port) {
   if (!address) return '';
   if (port === null || port === undefined) return address;
   return (address.includes(':') ? `[${address}]` : address) + ':' + port;
+}
+
+// Whether an address is on a private or local network. This is the address's own
+// range, not a statement about the host behind it.
+export function addressKind(address) {
+  if (typeof address !== 'string' || !address) return '';
+  const value = address.toLowerCase();
+  if (value.includes(':')) return /^(f[cd]|fe[89ab])/.test(value) || value === '::1' ? 'internal' : 'external';
+  const [a, b] = value.split('.').map(Number);
+  return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+    (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127) ? 'internal' : 'external';
 }
 
 export function queuePanel({document, request, scopeLost, navigate, fragment}) {
@@ -172,12 +183,23 @@ export function queuePanel({document, request, scopeLost, navigate, fragment}) {
     byId('list-status').textContent = 'The list could not be loaded. Use Refresh to try again.';
   }
 
+  // One page of a signature's cases, checked against what was asked for.
+  async function page(from, before) {
+    const value = await request('/review/sites/' + encodeURIComponent(from.site) + `/cases?window=${from.window}&state=${from.state}` +
+      (from.severity ? '&severity=' + from.severity : '') + '&signature=' + from.signature + (before ? '&before=' + before : ''));
+    if (!value || value.site !== from.site || value.signature !== from.signature || !Array.isArray(value.cases) ||
+        value.cases.some(row => !row || !UUID.test(row.id)) || (value.next !== null && (typeof value.next !== 'string' || !CURSOR.test(value.next)))) {
+      throw Error('Invalid case list response');
+    }
+    return value;
+  }
+
   async function load(more = false) {
-    if (!route || (more && (busy || !data?.next || !CURSOR.test(data.next)))) return;
+    if (!route || (more && (busy || !data?.next))) return;
     const seq = more ? epoch : ++epoch;
     busy = true;
     const base = '/review/sites/' + encodeURIComponent(route.site);
-    let query = `?window=${route.window}&state=${route.state}` + (route.severity ? '&severity=' + route.severity : '');
+    const query = `?window=${route.window}&state=${route.state}` + (route.severity ? '&severity=' + route.severity : '');
     if (!more) {
       data = null; selected = 0;
       body.replaceChildren();
@@ -193,13 +215,8 @@ export function queuePanel({document, request, scopeLost, navigate, fragment}) {
         data = value;
         renderQueue();
       } else {
-        query += '&signature=' + route.signature + (more ? '&before=' + data.next : '');
-        const value = await request(base + '/cases' + query);
+        const value = await page(route, more ? data.next : null);
         if (seq !== epoch) return;
-        if (!value || value.site !== route.site || value.signature !== route.signature || !Array.isArray(value.cases) ||
-            value.cases.some(row => !row || !UUID.test(row.id)) || (value.next !== null && typeof value.next !== 'string')) {
-          throw Error('Invalid case list response');
-        }
         data = more ? {...value, cases: [...data.cases, ...value.cases]} : value;
         renderCases(more ? value.cases : null);
       }
@@ -252,6 +269,10 @@ export function queuePanel({document, request, scopeLost, navigate, fragment}) {
       root.hidden = true;
     },
     active: () => route !== null,
+    page,
+    // The order of the listed cases, for moving to the next one from a case page.
+    snapshot: () => route?.view === 'signature' && data?.cases
+      ? {route: {...route}, ids: data.cases.map(row => row.id), next: data.next} : null,
     route: () => route,
     move(delta) { select(selected + delta, true); },
     open() { const link = links()[selected]; if (link) navigate(link.getAttribute('href').slice(1)); },

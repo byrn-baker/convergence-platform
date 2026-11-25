@@ -23,17 +23,19 @@ const caseRow = (id, minute) => ({id, occurred_at: `2026-11-24T05:${minute}:00.0
   destination_ip: '2001:db8::44', destination_port: 443, protocol: 'TCP'});
 const caseData = id => ({id, site_id: 'red', status: 'investigating', alert_name: 'SuricataIntrusion',
   timestamp: '2026-11-24T05:29:00Z', message: 'Observed', severity: 'watch', review_history: [],
-  security_assessment: {label: 'Review', reason: 'Reason', next_check: 'Next'}});
+  security_assessment: {label: 'Review', reason: 'Reason', next_check: 'Next', signature: '<i>ET MALWARE</i> beacon'},
+  traffic_context: {source_ip: '10.20.4.17', source_port: 49822, destination_ip: '203.0.113.44', destination_port: 443,
+    protocol: 'TCP', signature_id: 2900417, signature: 'ET MALWARE beacon', action: 'allowed'}});
 const response = (status, value) => ({ok: status >= 200 && status < 300, status, json: async () => value});
 const wait = (ms = 15) => new Promise(resolve => setTimeout(resolve, ms));
 
-function page(t, {hash = '', onList, user = identity} = {}) {
+function page(t, {hash = '', onList, onCase, user = identity} = {}) {
   const dom = new JSDOM(html, {url: 'https://review.test/' + hash, pretendToBeVisual: true});
   const {window} = dom;
   Object.defineProperty(window, 'crypto', {value: webcrypto, configurable: true});
   const calls = [];
-  const state = {session: {csrf: 's', user}};
-  window.fetch = async path => {
+  const state = {session: {csrf: 's', user}, posts: [], failWrite: false};
+  window.fetch = async (path, options) => {
     calls.push(path);
     if (path === '/review/session') return response(200, state.session);
     const list = /^\/review\/sites\/([a-z]+)\/(signatures|cases)\?(.*)$/.exec(path);
@@ -48,7 +50,15 @@ function page(t, {hash = '', onList, user = identity} = {}) {
         next: more ? null : 'bmV4dA'});
     }
     const single = /^\/review\/sites\/red\/cases\/([0-9a-f-]{36})$/.exec(path);
-    if (single) return response(200, caseData(single[1]));
+    if (single) return response(200, onCase?.(single[1]) || caseData(single[1]));
+    const write = /^\/review\/sites\/red\/cases\/([0-9a-f-]{36})\/disposition$/.exec(path);
+    if (write) {
+      const body = JSON.parse(options.body);
+      state.posts.push({id: write[1], ...body});
+      if (state.failWrite) throw Error('unknown outcome');
+      return response(200, {operation_id: body.operationId, case_id: write[1], site_id: 'red', reviewed_by: user.id,
+        reviewed_by_name: user.name, kind: body.kind, reason: body.reason, reviewed_at: '2026-11-24T06:00:00Z'});
+    }
     return response(404, {});
   };
   const close = startReviewer(window.document, window);
@@ -178,8 +188,7 @@ test('keys move through the queue, a signature and a case, and back up', async t
   assert.equal(byId('detail').hidden, false);
   assert.equal(byId('list-view').hidden, true);
   assert.equal(byId('lookup').elements.caseId.value, caseIds[1]);
-  key('j');
-  assert.equal(byId('detail').hidden, false);
+  assert.equal(byId('trail-position').textContent, 'Case 2 of 3 in this list');
 
   key('u'); await wait();
   assert.equal(window.location.hash, '#signature=2900417');
@@ -296,4 +305,117 @@ test('a viewer reads the queue; an account with no site asks for nothing', async
   await wait();
   assert.deepEqual(none.lists(), []);
   assert.match(none.byId('status').textContent, /no sites available/);
+});
+
+test('the case page leads with what fired and words a bulk decision as one shared entry', async t => {
+  const api = page(t, {hash: '#signature=2900417', onCase: id => ({...caseData(id),
+    security_disposition: {kind: 'expected_activity', reason: 'Backup agent check-in', reviewed_by: identity.id,
+      reviewed_by_name: identity.name, reviewed_at: '2026-11-24T06:00:00Z', bulk_operation_id: randomUUID()},
+    review_history: [
+      {operation_id: randomUUID(), kind: 'expected_activity', reason_preview: 'Backup agent check-in', reason_truncated: false,
+        reviewed_by: identity.id, reviewed_by_name: identity.name, reviewed_at: '2026-11-24T06:00:00Z', bulk_case_count: 418},
+      {operation_id: randomUUID(), kind: 'needs_review', reason_preview: 'Reopened for a check', reason_truncated: false,
+        reviewed_by: identity.id, reviewed_by_name: identity.name, reviewed_at: '2026-11-23T06:00:00Z', bulk_case_count: null},
+    ]})});
+  const {byId, rows, window} = api;
+  await wait();
+  rows()[0].querySelector('a').click(); await wait(30);
+  assert.equal(byId('detail').hidden, false);
+  assert.equal(byId('case-title').textContent, '<i>ET MALWARE</i> beacon');
+  assert.equal(byId('detail').querySelector('i'), null);
+  assert.equal(byId('flow').hidden, false);
+  assert.equal(byId('flow-source').textContent, '10.20.4.17:49822');
+  assert.equal(byId('flow-source-kind').textContent, 'internal address');
+  assert.equal(byId('flow-protocol').textContent, 'TCP');
+  assert.equal(byId('flow-destination').textContent, '203.0.113.44:443');
+  assert.equal(byId('flow-destination-kind').textContent, 'external address');
+  assert.match(byId('case-when').textContent, /watch severity/);
+  assert.equal(byId('fired-signature').querySelector('a').getAttribute('href'), '#signature=2900417');
+  assert.match(byId('fired-signature').textContent, /sensor action: allowed/);
+  // Order: what fired, evidence, current disposition, history, then the form.
+  const order = ['fired', 'facts', 'current', 'history', 'disposition', 'jev-panel', 'investigation-panel'].map(id => byId(id));
+  for (let at = 1; at < order.length; at++) {
+    assert.ok(order[at - 1].compareDocumentPosition(order[at]) & window.Node.DOCUMENT_POSITION_FOLLOWING, order[at].id);
+  }
+  assert.match(byId('current').textContent, /recorded by a bulk decision/);
+  const entries = Array.from(byId('history').querySelectorAll('li strong')).map(item => item.textContent);
+  assert.deepEqual(entries, ['Expected activity · bulk decision covering 418 cases', 'Needs review']);
+});
+
+test('a case without parsed traffic shows no hosts, and an opened-by-ID case has no list to step through', async t => {
+  const api = page(t, {onCase: id => ({...caseData(id), traffic_context: null, security_assessment: null, alert_name: 'WanHardDown'})});
+  const {byId, key, window} = api;
+  await wait();
+  byId('lookup').elements.caseId.value = caseIds[0];
+  byId('lookup').dispatchEvent(new window.Event('submit', {bubbles: true, cancelable: true})); await wait();
+  assert.equal(byId('case-title').textContent, 'WanHardDown');
+  assert.equal(byId('flow').hidden, true);
+  assert.equal(byId('fired-signature').hidden, true);
+  assert.equal(byId('trail').hidden, true);
+  const before = api.calls.length;
+  key('j'); await wait();
+  assert.equal(api.calls.length, before);
+  assert.equal(byId('detail').hidden, false);
+});
+
+test('saving can open the next case; an unconfirmed save stays; the list is read on when it runs out', async t => {
+  const api = page(t, {hash: '#signature=2900417'});
+  const {byId, rows, key, window, state, calls, lists} = api;
+  await wait();
+  rows()[0].querySelector('a').click(); await wait(30);
+  assert.equal(byId('trail-position').textContent, 'Case 1 of 2+ in this list');
+  assert.equal(byId('case-previous').disabled, true);
+  assert.equal(byId('save-next').hidden, false);
+  const reason = byId('disposition').elements.reason;
+
+  // An unknown outcome keeps the reviewer on the case with its receipt controls.
+  state.failWrite = true;
+  reason.value = 'Checked against the backup schedule';
+  byId('disposition').elements.kind.value = 'expected_activity';
+  byId('save-next').click(); await wait(40);
+  assert.equal(state.posts.length, 1);
+  assert.equal(window.location.hash, `#case=${caseIds[0]}&site=red`);
+  assert.equal(byId('check-receipt').hidden, false);
+  state.failWrite = false;
+  byId('check-receipt').click(); await wait(40);
+  assert.equal(byId('retry').hidden, false);
+  byId('retry').click(); await wait(40);
+  assert.equal(state.posts.length, 2);
+  assert.equal(state.posts[1].operationId, state.posts[0].operationId);
+  assert.match(byId('operation-note').textContent, /Expected activity recorded by Riley Reviewer/);
+  assert.equal(window.location.hash, `#case=${caseIds[0]}&site=red`);
+
+  // Too short a reason is not submitted and does not move on.
+  reason.value = 'short';
+  byId('save-next').click(); await wait();
+  assert.equal(state.posts.length, 2);
+
+  key('j'); await wait(30);
+  assert.equal(window.location.hash, `#case=${caseIds[1]}&site=red`);
+  assert.equal(byId('trail-position').textContent, 'Case 2 of 2+ in this list');
+  assert.equal(byId('operation').hidden, true);
+
+  // A confirmed save moves on, reading the list's next page first.
+  byId('disposition').elements.reason.value = 'Confirmed with the device owner';
+  byId('disposition').elements.kind.value = 'false_positive';
+  byId('save-next').click(); await wait(60);
+  assert.equal(state.posts.length, 3);
+  assert.equal(state.posts[2].id, caseIds[1]);
+  assert.equal(lists().at(-1), '/review/sites/red/cases?window=24h&state=needs_review&signature=2900417&before=bmV4dA');
+  assert.equal(window.location.hash, `#case=${caseIds[2]}&site=red`);
+  assert.equal(byId('trail-position').textContent, 'Case 3 of 3 in this list');
+  assert.equal(byId('case-next').disabled, true);
+  assert.equal(byId('save-next').hidden, true);
+  assert.equal(byId('disposition').elements.reason.value, '');
+
+  key('j'); await wait();
+  assert.match(byId('status').textContent, /last case in this list/);
+  assert.equal(window.location.hash, `#case=${caseIds[2]}&site=red`);
+  byId('case-previous').click(); await wait(30);
+  assert.equal(window.location.hash, `#case=${caseIds[1]}&site=red`);
+  key('k'); await wait(30);
+  assert.equal(window.location.hash, `#case=${caseIds[0]}&site=red`);
+  key('u'); await wait();
+  assert.equal(window.location.hash, '#signature=2900417');
+  assert.ok(calls.every(path => path.startsWith('/review/')));
 });

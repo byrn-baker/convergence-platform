@@ -36,7 +36,8 @@ test('reviewer dispositions are site-scoped, atomic, attributable, append-only a
       VALUES ($1,'red',repeat('r',5000),'SuricataIntrusion',$4,repeat('n',8000),$5),
              ($2,'blue','blue-only','SuricataIntrusion',NULL,NULL,NULL), ($3,'red','wan','WanHardDown',NULL,NULL,NULL)`,
     [red, blue, nonIDS, {annotations: {description: 'Passive IDS observation; not proof of compromise. ' +
-      JSON.stringify({alert: {signature: 'ET MALWARE signature'}})}, secret: 'private evidence'},
+      JSON.stringify({src_ip: '10.20.4.17', src_port: 49822, dest_ip: '203.0.113.44', dest_port: 443, proto: 'TCP',
+        payload: 'private payload', alert: {signature: 'ET MALWARE signature', signature_id: 2900417, action: 'allowed'}})}, secret: 'private evidence'},
     {hidden: 'private analysis'}]);
 
     async function tx(callback) {
@@ -60,6 +61,10 @@ test('reviewer dispositions are site-scoped, atomic, attributable, append-only a
     await t.test('restricts source projection and rejects forged commands, viewer writes and other sites', async () => {
       const data = await read(viewer, 'red', red);
       assert.equal(data.security_assessment.bucket, 'attention');
+      assert.deepEqual(data.traffic_context, {source_ip: '10.20.4.17', destination_ip: '203.0.113.44', source_port: 49822,
+        destination_port: 443, protocol: 'TCP', signature_id: 2900417, signature: 'ET MALWARE signature', action: 'allowed'});
+      assert.equal((await read(viewer, 'red', nonIDS)).traffic_context, null);
+      assert.doesNotMatch(JSON.stringify(data), /private payload/);
       assert.equal(data.message.length, 2048);
       assert.equal(data.investigation_notes.length, 4096);
       assert.deepEqual(data.review_history, []);

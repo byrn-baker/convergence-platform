@@ -77,7 +77,7 @@
       <section id="keys" aria-labelledby="keys-title" hidden>
         <h2 id="keys-title">Keyboard keys</h2>
         <dl>
-          <dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Move down or up the list</dd>
+          <dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Move down or up the list; on a case, open the next or previous case of that list</dd>
           <dt><kbd>Enter</kbd></dt><dd>Open the selected signature or case</dd>
           <dt><kbd>u</kbd></dt><dd>Go up: from a case to its list, from a signature to the queue</dd>
           <dt><kbd>/</kbd></dt><dd>Go to the filters</dd>
@@ -87,9 +87,24 @@
         <button type="button" id="keys-close">Close</button>
       </section>
       <article id="detail" hidden>
+        <p id="trail" hidden>
+          <span id="trail-position"></span>
+          <button type="button" id="case-previous">Previous case</button>
+          <button type="button" id="case-next">Next case</button>
+        </p>
         <div class="case-heading"><h2 id="case-title"></h2><span id="case-status"></span></div>
-        <dl id="facts"></dl>
-        <section id="assessment" hidden><h3>Assessment</h3><div></div></section>
+        <section id="fired" aria-labelledby="fired-title">
+          <h3 id="fired-title">What fired</h3>
+          <p id="case-when"></p>
+          <div id="flow" hidden>
+            <div><small>Source</small><strong id="flow-source"></strong><small id="flow-source-kind"></small></div>
+            <div id="flow-protocol"></div>
+            <div><small>Destination</small><strong id="flow-destination"></strong><small id="flow-destination-kind"></small></div>
+          </div>
+          <p id="fired-signature" hidden></p>
+        </section>
+        <section aria-labelledby="evidence-title"><h3 id="evidence-title">Evidence and context</h3><dl id="facts"></dl></section>
+        <section id="assessment" hidden><h3>Rule guidance</h3><div></div></section>
         <section id="current" hidden><h3>Current disposition</h3><div></div></section>
         <section><h3>Review history</h3><div id="history"></div></section>
         <form id="disposition" hidden>
@@ -101,7 +116,10 @@
             <option value="confirmed_threat">Confirmed threat</option>
           </select></label>
           <label>Evidence and reason<textarea name="reason" rows="3" required minlength="10" maxlength="4000"></textarea></label>
-          <button type="submit">Save disposition</button>
+          <div class="actions">
+            <button type="submit">Save disposition</button>
+            <button type="button" id="save-next" hidden>Save and open next case</button>
+          </div>
         </form>
         <section id="operation" hidden>
           <h3>Disposition receipt</h3><p id="operation-note"></p><code id="operation-id"></code>

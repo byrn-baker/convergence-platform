@@ -85,8 +85,11 @@ Each live step needs owner approval: show the change, then apply it.
   Done 2026-11-25 (`reviewer/public/queue.js`; plan.md "As built in H2"). HUD suite
   102 pass, 0 fail (`~/.local/state/convergence-spec1019/h2-hud-full.log`). Checked in
   jsdom only; a real browser run is H5.
-- [ ] H3: Case page reordered for the decision; next-case flow after a disposition;
+- [x] H3: Case page reordered for the decision; next-case flow after a disposition;
   existing draft, receipt and retry behavior unchanged.
+  Done 2026-11-25 (plan.md "As built in H3"). The case read gained `traffic_context`.
+  HUD suite 105 pass, 0 fail; API suite 149 pass, 0 fail, 1 skipped
+  (`~/.local/state/convergence-spec1019/h3-*.log`). Page behavior checked in jsdom.
 - [ ] H6: Bulk review panel on the signature view: scope, outcome, reason, preview
   count, confirmation step, receipt.
 - [ ] H4: Theme. Contrast check, reduced-motion check, phone layout.
