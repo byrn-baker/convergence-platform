@@ -90,8 +90,11 @@ Each live step needs owner approval: show the change, then apply it.
   Done 2026-11-25 (plan.md "As built in H3"). The case read gained `traffic_context`.
   HUD suite 105 pass, 0 fail; API suite 149 pass, 0 fail, 1 skipped
   (`~/.local/state/convergence-spec1019/h3-*.log`). Page behavior checked in jsdom.
-- [ ] H6: Bulk review panel on the signature view: scope, outcome, reason, preview
+- [x] H6: Bulk review panel on the signature view: scope, outcome, reason, preview
   count, confirmation step, receipt.
+  Done 2026-11-25 (`reviewer/public/bulk.js`; plan.md "As built in H6"). HUD suite
+  108 pass, 0 fail (`~/.local/state/convergence-spec1019/h6-hud-full.log`). Checked in
+  jsdom against a fake service; not yet run against the real service in a browser.
 - [ ] H4: Theme. Contrast check, reduced-motion check, phone layout.
 - [ ] H5: Browser tests: sign in, queue is populated, open a signature, open a case,
   record a disposition, go to the next case; the old `#case=` link still opens.

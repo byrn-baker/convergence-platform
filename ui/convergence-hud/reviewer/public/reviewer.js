@@ -2,6 +2,7 @@ import {telemetryWorkspace} from './telemetry.js';
 import {tokenDigest, receiptPointers} from './pending-operations.js';
 import {investigationPanel} from './investigation.js';
 import {jevPanel} from './jev.js';
+import {bulkPanel} from './bulk.js';
 import {queuePanel, parseRoute, routeFragment, endpoint, addressKind} from './queue.js';
 
 const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
@@ -73,6 +74,7 @@ export function startReviewer(document, browser = document.defaultView) {
   let trail = null;
   const fragment = route => routeFragment(route, session?.user?.sites[0]);
   const queue = queuePanel({document, request, scopeLost, navigate, fragment});
+  const bulk = bulkPanel({document, browser, request, scopeLost, session: () => session, recorded: () => queue.refresh()});
 
   function navigate(target) {
     if (browser.location.hash.slice(1) !== target) browser.history.pushState(null, '', '#' + target);
@@ -87,7 +89,7 @@ export function startReviewer(document, browser = document.defaultView) {
     if (listed?.ids.includes(id)) trail = listed;
     else if (!trail?.ids.includes(id) || trail.route.site !== site.value) trail = null;
     view = 'case';
-    queue.clear();
+    queue.clear(); bulk.suspend();
     purgeCase();
     caseId.value = id;
     text('status', 'Loading case…');
@@ -108,6 +110,7 @@ export function startReviewer(document, browser = document.defaultView) {
     view = next.view;
     listRoute = {...next, site: site.value};
     queue.show(listRoute);
+    bulk.show(listRoute);
     if (denied) text('status', 'Your account does not have access to the linked site.');
   }
 
@@ -162,7 +165,7 @@ export function startReviewer(document, browser = document.defaultView) {
 
   function purgeSession() {
     telemetry.hide();
-    queue.clear();
+    queue.clear(); bulk.clear();
     visible('keys', false);
     // A case reference does not outlive the session that opened it.
     if (parseRoute(browser.location.hash).view === 'case') {
@@ -573,6 +576,7 @@ export function startReviewer(document, browser = document.defaultView) {
     if (event.key === 'j') act(() => queue.move(1));
     else if (event.key === 'k') act(() => queue.move(-1));
     else if (event.key === '/') act(() => queue.focusFilter());
+    else if (event.key === 'b') act(() => bulk.start());
     // A focused link or button keeps its own Enter.
     else if (event.key === 'Enter' && !['A', 'BUTTON'].includes(tag)) act(() => queue.open());
   });
@@ -613,7 +617,7 @@ export function startReviewer(document, browser = document.defaultView) {
     }
     if (session?.user) {
       telemetry.hide();
-      queue.clear();
+      queue.clear(); bulk.suspend();
       purgeCase();
       text('identity', '');
       visible('account', false);

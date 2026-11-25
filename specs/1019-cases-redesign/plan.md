@@ -156,6 +156,28 @@ As built in H3:
   a current disposition written by one adds "recorded by a bulk decision".
 - Draft recovery, receipt pointers and retry with the same operation ID are unchanged.
 
+As built in H6 (`reviewer/public/bulk.js`):
+
+- The panel sits under a signature's case list for an operator or admin. It is not
+  shown to a viewer, on the queue, or for cases with no signature ID.
+- Nothing is counted until the reviewer asks (button or `b`). The scope is the view's
+  time window, for all sources or one of the ten busiest; choosing a source counts
+  again. The view's state and severity filters do not apply: a bulk decision always
+  covers every case of the signature in scope that still needs review.
+- "Review N cases as one decision" opens a confirmation that states the outcome, the
+  count, the source and the two instants of the window. Only "Confirm N cases" sends
+  the write, with the preview's instants and count.
+- Answers: a receipt shows the outcome, the recorded count (and says so when it is
+  lower than previewed), the reviewer, the time and the operation ID, and the case
+  list reloads. A 409 says nothing was recorded and counts again, keeping the outcome
+  and reason. Over the ceiling or at zero the button is disabled with the reason.
+- Unknown outcome: the panel keeps the decision and offers "Retry same decision",
+  which sends the identical body and operation ID; the service returns the original
+  receipt if it had landed. The decision is kept in the page's memory only, through a
+  hidden tab but not through a reload or sign-out. After a reload the reviewer counts
+  again: cases the lost write did cover no longer need review, so a second decision
+  cannot cover them twice. There is no receipt lookup route for a bulk decision.
+
 Theme: CSS custom properties for a near-black ground, phosphor green text, cyan and
 magenta accents, and one warning colour reserved for confirmed threats. Grid and
 wireframe motifs are drawn in CSS. Effects are decoration only and are removed under

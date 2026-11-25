@@ -269,6 +269,7 @@ export function queuePanel({document, request, scopeLost, navigate, fragment}) {
       root.hidden = true;
     },
     active: () => route !== null,
+    refresh: () => load(),
     page,
     // The order of the listed cases, for moving to the next one from a case page.
     snapshot: () => route?.view === 'signature' && data?.cases

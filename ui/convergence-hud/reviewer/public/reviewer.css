@@ -123,3 +123,10 @@ kbd { font-family:ui-monospace, monospace; padding:.05rem .4rem; border:1px soli
 #flow small, #flow strong { display:block; }
 #flow strong { font-size:1.15rem; overflow-wrap:anywhere; }
 #fired-signature a { color:var(--accent); }
+
+/* Bulk review on a signature. */
+#bulk { margin-top:1.25rem; padding:1rem 1.25rem; border:1px solid var(--accent); border-radius:.65rem; background:var(--panel); max-width:40rem; }
+#bulk-form label { margin-bottom:.9rem; }
+#bulk-status { color:var(--accent); min-height:1.55rem; }
+#bulk-confirm { padding:.85rem 1rem; border:1px solid #ffc861; border-radius:.4rem; }
+#bulk-operation { display:block; margin:.7rem 0; overflow-wrap:anywhere; }

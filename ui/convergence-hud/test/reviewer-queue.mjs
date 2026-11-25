@@ -29,15 +29,21 @@ const caseData = id => ({id, site_id: 'red', status: 'investigating', alert_name
 const response = (status, value) => ({ok: status >= 200 && status < 300, status, json: async () => value});
 const wait = (ms = 15) => new Promise(resolve => setTimeout(resolve, ms));
 
-function page(t, {hash = '', onList, onCase, user = identity} = {}) {
+function page(t, {hash = '', onList, onCase, onBulk, user = identity} = {}) {
   const dom = new JSDOM(html, {url: 'https://review.test/' + hash, pretendToBeVisual: true});
   const {window} = dom;
   Object.defineProperty(window, 'crypto', {value: webcrypto, configurable: true});
   const calls = [];
-  const state = {session: {csrf: 's', user}, posts: [], failWrite: false};
+  const state = {session: {csrf: 's', user}, posts: [], bulk: [], failWrite: false};
   window.fetch = async (path, options) => {
     calls.push(path);
     if (path === '/review/session') return response(200, state.session);
+    const bulk = /^\/review\/sites\/red\/signatures\/2900417\/dispositions(?:\/preview\?(.*))?$/.exec(path);
+    if (bulk) {
+      const body = options.body ? JSON.parse(options.body) : null;
+      state.bulk.push({path, body, csrf: options.headers['X-Review-CSRF']});
+      return onBulk(bulk[1] === undefined ? null : new URLSearchParams(bulk[1]), body);
+    }
     const list = /^\/review\/sites\/([a-z]+)\/(signatures|cases)\?(.*)$/.exec(path);
     if (list) {
       const query = new URLSearchParams(list[3]);
@@ -418,4 +424,159 @@ test('saving can open the next case; an unconfirmed save stays; the list is read
   key('u'); await wait();
   assert.equal(window.location.hash, '#signature=2900417');
   assert.ok(calls.every(path => path.startsWith('/review/')));
+});
+
+const previewOf = (query, count = 418) => ({site: 'red', signature_id: '2900417', window: query.get('window'),
+  window_start: '2026-11-23T05:30:00.123456Z', window_end: '2026-11-24T05:30:00.123456Z', source_host: query.get('source'),
+  cases: query.get('source') ? 391 : count, ceiling: 5000,
+  sources: [{source_host: '10.20.4.17', cases: 391}, {source_host: '10.20.4.52', cases: 27}], sources_truncated: false});
+const receiptOf = (body, count = body.confirmedCount) => ({operation_id: body.operationId, site_id: 'red', signature_id: '2900417',
+  window_start: body.windowStart, window_end: body.windowEnd, source_host: body.source, kind: body.kind, reason: body.reason,
+  reviewed_by: identity.id, reviewed_by_name: identity.name, reviewed_at: '2026-11-24T05:31:00Z', case_count: count});
+
+test('bulk review counts first, asks for confirmation and shows one receipt', async t => {
+  const api = page(t, {hash: '#signature=2900417', onBulk: (query, body) => response(200, query ? previewOf(query) : receiptOf(body, 389))});
+  const {byId, key, window, state, lists} = api;
+  const fire = (id, event) => byId(id).dispatchEvent(new window.Event(event, {bubbles: true, cancelable: true}));
+  await wait();
+  assert.equal(byId('bulk').hidden, false);
+  assert.equal(byId('bulk-form').hidden, true);
+  assert.equal(state.bulk.length, 0);
+  key('b'); await wait();
+  assert.equal(state.bulk[0].path, '/review/sites/red/signatures/2900417/dispositions/preview?window=24h');
+  const form = byId('bulk-form').elements;
+  assert.deepEqual(Array.from(form.scope.options, option => option.textContent), ['All that need review in the last 24 hours',
+    'Only source 10.20.4.17 (391)', 'Only source 10.20.4.52 (27)']);
+  assert.equal(byId('bulk-review').textContent, 'Review 418 cases as one decision');
+  assert.equal(Array.from(form.scope.options).some(option => /future|7 days/.test(option.textContent)), false);
+
+  form.kind.value = 'false_positive'; form.reason.value = 'short';
+  fire('bulk-form', 'submit');
+  assert.match(byId('bulk-status').textContent, /10 to 4000 characters/);
+  assert.equal(byId('bulk-confirm').hidden, true);
+
+  form.reason.value = '  Backup agent check-in, confirmed with the owner  ';
+  form.scope.value = '10.20.4.17'; fire('bulk-form', 'change'); form.scope.dispatchEvent(new window.Event('change', {bubbles: true})); await wait();
+  assert.equal(state.bulk.at(-1).path, '/review/sites/red/signatures/2900417/dispositions/preview?window=24h&source=10.20.4.17');
+  assert.equal(byId('bulk-review').textContent, 'Review 391 cases as one decision');
+  assert.equal(form.kind.value, 'false_positive');
+  assert.equal(form.scope.value, '10.20.4.17');
+
+  fire('bulk-form', 'submit');
+  assert.equal(byId('bulk-confirm').hidden, false);
+  assert.match(byId('bulk-confirm-text').textContent, /Record "False positive" for 391 cases of signature 2900417 from source 10\.20\.4\.17/);
+  assert.equal(byId('bulk-confirm-yes').textContent, 'Confirm 391 cases');
+  assert.equal(form.reason.disabled, true);
+  assert.equal(state.bulk.filter(call => call.body).length, 0);
+  byId('bulk-cancel').click();
+  assert.equal(byId('bulk-confirm').hidden, true);
+  assert.equal(form.reason.disabled, false);
+  byId('bulk-confirm-yes').click(); await wait();
+  assert.equal(state.bulk.filter(call => call.body).length, 0);
+
+  fire('bulk-form', 'submit');
+  const listsBefore = lists().length;
+  byId('bulk-confirm-yes').click(); await wait(30);
+  const write = state.bulk.at(-1);
+  assert.equal(write.path, '/review/sites/red/signatures/2900417/dispositions');
+  assert.equal(write.csrf, 's');
+  assert.deepEqual(Object.keys(write.body), ['operationId', 'kind', 'reason', 'windowStart', 'windowEnd', 'source', 'confirmedCount']);
+  assert.deepEqual({...write.body, operationId: null}, {operationId: null, kind: 'false_positive',
+    reason: 'Backup agent check-in, confirmed with the owner', windowStart: '2026-11-23T05:30:00.123456Z',
+    windowEnd: '2026-11-24T05:30:00.123456Z', source: '10.20.4.17', confirmedCount: 391});
+  assert.match(byId('bulk-receipt-note').textContent, /False positive recorded for 389 cases by Riley Reviewer.*Fewer than previewed/);
+  assert.equal(byId('bulk-operation').textContent, write.body.operationId);
+  assert.equal(byId('bulk-form').hidden, true);
+  assert.equal(byId('bulk-retry').hidden, true);
+  assert.equal(lists().length, listsBefore + 1);
+  byId('bulk-again').click(); await wait();
+  assert.equal(byId('bulk-form').hidden, false);
+  assert.equal(form.reason.value, '');
+});
+
+test('bulk review: changed cases record nothing, an unknown outcome retries the same decision', async t => {
+  let mode = 'conflict', total = 418;
+  const api = page(t, {hash: '#signature=2900417', onBulk: (query, body) => {
+    if (query) return response(200, previewOf(query, total));
+    if (mode === 'conflict') return response(409, {});
+    if (mode === 'lost') throw Error('connection lost');
+    return response(200, receiptOf(body));
+  }});
+  const {byId, window, state} = api;
+  const submit = () => byId('bulk-form').dispatchEvent(new window.Event('submit', {bubbles: true, cancelable: true}));
+  const writes = () => state.bulk.filter(call => call.body);
+  await wait();
+  byId('bulk-start').click(); await wait();
+  byId('bulk-form').elements.reason.value = 'Scheduled scanner, see change 1234';
+  submit(); total = 430;
+  byId('bulk-confirm-yes').click(); await wait(40);
+  assert.equal(writes().length, 1);
+  assert.match(byId('bulk-status').textContent, /changed since the preview\. Nothing was recorded/);
+  assert.equal(byId('bulk-review').textContent, 'Review 430 cases as one decision');
+  assert.equal(byId('bulk-form').elements.reason.value, 'Scheduled scanner, see change 1234');
+  assert.equal(byId('bulk-receipt').hidden, true);
+
+  mode = 'lost';
+  submit(); byId('bulk-confirm-yes').click(); await wait(40);
+  assert.equal(writes().length, 2);
+  assert.notEqual(writes()[1].body.operationId, writes()[0].body.operationId);
+  assert.equal(writes()[1].body.confirmedCount, 430);
+  assert.match(byId('bulk-receipt-note').textContent, /outcome of this decision .* is unknown/);
+  assert.equal(byId('bulk-retry').hidden, false);
+  assert.equal(byId('bulk-form').hidden, true);
+
+  // A hidden tab drops the panel but not the undecided operation.
+  let hidden = true;
+  Object.defineProperty(window.document, 'hidden', {get: () => hidden, configurable: true});
+  window.document.dispatchEvent(new window.Event('visibilitychange'));
+  assert.equal(byId('bulk').hidden, true);
+  assert.equal(byId('bulk-operation').textContent, '');
+  hidden = false;
+  window.document.dispatchEvent(new window.Event('visibilitychange')); await wait();
+  assert.equal(byId('bulk-retry').hidden, false);
+  assert.equal(byId('bulk-start').hidden, true);
+  assert.equal(byId('bulk-operation').textContent, writes()[1].body.operationId);
+
+  mode = 'ok';
+  byId('bulk-retry').click(); await wait(40);
+  assert.equal(writes().length, 3);
+  assert.deepEqual(writes()[2].body, writes()[1].body);
+  assert.match(byId('bulk-receipt-note').textContent, /Expected activity recorded for 430 cases by Riley Reviewer/);
+  assert.equal(byId('bulk-retry').hidden, true);
+});
+
+test('bulk review is not offered to a viewer, on the queue, or for cases with no signature; limits block the write', async t => {
+  const viewer = page(t, {hash: '#signature=2900417', user: {...identity, role: 'viewer'}, onBulk: () => response(403, {})});
+  await wait();
+  assert.equal(viewer.byId('bulk').hidden, true);
+  viewer.key('b'); await wait();
+  assert.equal(viewer.state.bulk.length, 0);
+
+  const unsigned = page(t, {hash: '#signature='});
+  await wait();
+  assert.equal(unsigned.byId('bulk').hidden, true);
+  const queue = page(t);
+  await wait();
+  assert.equal(queue.byId('bulk').hidden, true);
+
+  let count = 5001;
+  const big = page(t, {hash: '#signature=2900417', onBulk: query => response(200, previewOf(query, count))});
+  await wait();
+  big.byId('bulk-start').click(); await wait();
+  assert.equal(big.byId('bulk-review').disabled, true);
+  assert.match(big.byId('bulk-status').textContent, /More than 5,000 cases/);
+  count = 0;
+  big.byId('filter-window').querySelector('[data-window="7d"]').click(); await wait();
+  assert.equal(big.byId('bulk-form').hidden, true);
+  big.byId('bulk-start').click(); await wait();
+  assert.equal(big.state.bulk.at(-1).path, '/review/sites/red/signatures/2900417/dispositions/preview?window=7d');
+  assert.equal(big.byId('bulk-review').disabled, true);
+  assert.match(big.byId('bulk-status').textContent, /No case in this scope needs review/);
+
+  // An answer for another signature is not shown.
+  const wrong = page(t, {hash: '#signature=2900417', onBulk: query => response(200, {...previewOf(query), signature_id: '2900533'})});
+  await wait();
+  wrong.byId('bulk-start').click(); await wait();
+  assert.equal(wrong.byId('bulk-form').hidden, true);
+  assert.match(wrong.byId('bulk-status').textContent, /could not be loaded/);
 });
