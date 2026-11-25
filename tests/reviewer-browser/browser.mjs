@@ -175,10 +175,10 @@ test(
     const reader = await login('reader', true);
     const operator = await login('responder');
     assert.equal(await reader.page.getByRole('button', { name: 'Save disposition' }).isVisible(), false);
-    await operator.page
+    await operator.page.locator('#disposition')
       .getByLabel('Evidence and reason')
       .fill('Synthetic packet trace confirmed expected activity');
-    await operator.page.getByLabel('Outcome').selectOption('expected_activity');
+    await operator.page.locator('#disposition').getByLabel('Outcome').selectOption('expected_activity');
     // Commit through the real API, then discard only the browser's response.
     const wire = await operator.ctx.newCDPSession(operator.page);
     await wire.send('Fetch.enable', {
