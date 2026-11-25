@@ -351,7 +351,7 @@ export function startReviewer(document, browser = document.defaultView) {
     const disposition = entry.security_disposition;
     visible('current', Boolean(disposition));
     if (disposition) byId('current').querySelector('div').replaceChildren(
-      node('strong', outcomeLabel(disposition.kind)), node('p', disposition.reason),
+      outcomeNode(disposition.kind), node('p', disposition.reason),
       node('small', `${actorLabel(disposition)} · ${dateLabel(disposition.reviewed_at)}` +
         (disposition.bulk_operation_id ? ' · recorded by a bulk decision' : '')));
     const history = byId('history');
@@ -364,7 +364,7 @@ export function startReviewer(document, browser = document.defaultView) {
         // A bulk decision is one entry shared by every case it covered.
         const bulk = Number.isInteger(row.bulk_case_count)
           ? ` · bulk decision covering ${row.bulk_case_count.toLocaleString('en-US')} ${row.bulk_case_count === 1 ? 'case' : 'cases'}` : '';
-        item.append(node('strong', outcomeLabel(row.kind) + bulk),
+        item.append(outcomeNode(row.kind, bulk),
           node('p', row.reason_preview + (row.reason_truncated ? '…' : '')),
           node('small', `${actorLabel(row)} · ${dateLabel(row.reviewed_at)}`));
         list.append(item);
@@ -379,6 +379,12 @@ export function startReviewer(document, browser = document.defaultView) {
     jev.show(entry, session.user);
   }
 
+  // The warning colour marks a confirmed threat and nothing else.
+  function outcomeNode(kind, suffix = '') {
+    const element = node('strong', outcomeLabel(kind) + suffix);
+    if (kind === 'confirmed_threat') element.className = 'outcome-confirmed_threat';
+    return element;
+  }
   function outcomeLabel(kind) {
     return Array.from(form.elements.kind.options).find(option => option.value === kind)?.textContent || kind;
   }

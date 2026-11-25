@@ -118,6 +118,12 @@ test('the queue loads after sign-in, filters by fragment and never renders marku
   assert.equal(rows()[2].querySelector('a').getAttribute('href'), '#signature=');
   assert.match(byId('list-summary').textContent, /423 need review across 3 signatures/);
   assert.equal(rows()[0].classList.contains('selected'), true);
+  // The phone layout shows each cell's column name, and the roles keep it a table there.
+  assert.deepEqual(Array.from(rows()[0].cells, cell => cell.dataset.label),
+    Array.from(byId('list-head').cells, cell => cell.textContent));
+  assert.equal(rows()[0].getAttribute('role'), 'row');
+  assert.ok(Array.from(rows()[0].cells).every(cell => cell.getAttribute('role') === 'cell'));
+  assert.equal(rows()[0].querySelector('a').parentElement.className, 'primary');
 
   byId('filter-text').value = 'dns';
   byId('filter-text').dispatchEvent(new window.Event('input', {bubbles: true}));
@@ -322,6 +328,8 @@ test('the case page leads with what fired and words a bulk decision as one share
         reviewed_by: identity.id, reviewed_by_name: identity.name, reviewed_at: '2026-11-24T06:00:00Z', bulk_case_count: 418},
       {operation_id: randomUUID(), kind: 'needs_review', reason_preview: 'Reopened for a check', reason_truncated: false,
         reviewed_by: identity.id, reviewed_by_name: identity.name, reviewed_at: '2026-11-23T06:00:00Z', bulk_case_count: null},
+      {operation_id: randomUUID(), kind: 'confirmed_threat', reason_preview: 'Beacon to a known host', reason_truncated: false,
+        reviewed_by: identity.id, reviewed_by_name: identity.name, reviewed_at: '2026-11-22T06:00:00Z', bulk_case_count: null},
     ]})});
   const {byId, rows, window} = api;
   await wait();
@@ -345,7 +353,9 @@ test('the case page leads with what fired and words a bulk decision as one share
   }
   assert.match(byId('current').textContent, /recorded by a bulk decision/);
   const entries = Array.from(byId('history').querySelectorAll('li strong')).map(item => item.textContent);
-  assert.deepEqual(entries, ['Expected activity · bulk decision covering 418 cases', 'Needs review']);
+  assert.deepEqual(entries, ['Expected activity · bulk decision covering 418 cases', 'Needs review', 'Confirmed threat']);
+  // Only a confirmed threat takes the warning colour.
+  assert.deepEqual(Array.from(byId('detail').querySelectorAll('.outcome-confirmed_threat'), item => item.textContent), ['Confirmed threat']);
 });
 
 test('a case without parsed traffic shows no hosts, and an opened-by-ID case has no list to step through', async t => {

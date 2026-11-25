@@ -183,6 +183,40 @@ magenta accents, and one warning colour reserved for confirmed threats. Grid and
 wireframe motifs are drawn in CSS. Effects are decoration only and are removed under
 `prefers-reduced-motion`. All artwork is original.
 
+As built in H4 (`reviewer/public/reviewer.css`, `test/reviewer-theme.mjs`):
+
+- Eleven colours, all named in `:root`; the test fails if a colour appears anywhere
+  else. Ground `#05080a`, panel `#0a1418`, text `#c9f7d6`, muted `#7fb596`, cyan
+  `#45e3ff`, magenta `#ff5fdc`, warning `#ffb52e`, taken from the mock-up. Type is the
+  system monospace stack: the mock-up's two web fonts are remote, which the content
+  security policy forbids.
+- The warning colour marks a confirmed threat only: the state in a case list and the
+  outcome on a case page. The mock-up also used it for watch severity; here severity is
+  magenta for alert, cyan for watch and muted for the rest, always with its word.
+- Contrast: the test computes WCAG ratios from the sheet. Every text colour is at least
+  4.5:1 on the ground, a panel and a selected row (lowest: magenta on a selected row,
+  5.2:1). Field and button borders use a separate colour at 4.0:1 or more, above the
+  3:1 minimum for controls. Panel outlines (`--line`) are decoration and are below 3:1.
+- Motifs: a ruled grid on the ground and corner brackets on panels, both CSS gradients.
+- Effects: a glow on the title and brand, a border transition, and one faint line that
+  sweeps down the ground every 14 s behind the panels. All three sit in a
+  `prefers-reduced-motion: no-preference` block, so a reader who asks for reduced
+  motion gets none; the test fails if any of them appears outside it. Nothing blinks.
+- Phone (40rem and narrower): one column; each list row is a card with the column name
+  above each value (`data-label` set in `queue.js`); controls are full width and at
+  least 44 px tall. Rows carry explicit table roles, so the cards are still a table to
+  assistive technology. On wider screens a list link is 29 px tall.
+- Checked in headless Chromium against canned data, under the service's content
+  security policy, at 1280 and 390 px wide with both motion settings: no sideways
+  scroll, no console or policy errors, lowest rendered text contrast 5.2:1, effects
+  absent under reduced motion. Script, numbers and screenshots:
+  `~/.local/state/convergence-spec1019/h4-browser-look.*`, `h4-*.png`.
+- Not built from the mock-up: the stat tiles, the queue's review-progress bar, the phone
+  menu button and "filters · 2" drawer (the filters are shown in full instead), and
+  state filters as buttons. On a phone the lookup form sits above the queue.
+- Not checked: a real phone, a screen reader, or the site overview tab, which keeps
+  the shared HUD styles.
+
 ## Bulk review
 
 A bulk decision is its own record, not a loop over the single-case write. New table

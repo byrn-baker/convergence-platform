@@ -67,6 +67,11 @@ export function addressKind(address) {
     (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127) ? 'internal' : 'external';
 }
 
+const HEADS = {
+  queue: ['Severity', 'Signature', 'SID', 'Cases', 'Needs review', 'Last seen'],
+  signature: ['Time', 'Source', 'Destination', 'Protocol', 'State'],
+};
+
 export function queuePanel({document, request, scopeLost, navigate, fragment}) {
   const byId = id => document.getElementById(id);
   const root = byId('list-view'), body = byId('list-rows'), filter = byId('filter-text');
@@ -93,10 +98,20 @@ export function queuePanel({document, request, scopeLost, navigate, fragment}) {
     return cell;
   }
   function linkCell(label, target) {
-    const cell = node('td'), link = node('a', label);
+    const cell = node('td', undefined, 'primary'), link = node('a', label);
     link.href = '#' + target;
     cell.append(link);
     return cell;
+  }
+
+  // The phone layout turns each row into a card: a cell shows its column name, and
+  // the explicit roles keep the table readable to assistive technology there.
+  function tableRow(view, ...cells) {
+    const line = node('tr');
+    line.setAttribute('role', 'row');
+    cells.forEach((cell, at) => { cell.setAttribute('role', 'cell'); cell.dataset.label = HEADS[view][at]; });
+    line.append(...cells);
+    return line;
   }
 
   function links() { return Array.from(body.querySelectorAll('a')); }
@@ -123,23 +138,22 @@ export function queuePanel({document, request, scopeLost, navigate, fragment}) {
     byId('crumb-signature').hidden = !signature;
     byId('crumb-signature').textContent = signature ? (route.signature ? 'sid ' + route.signature : 'no signature') : '';
     byId('list-title').textContent = signature ? (route.signature ? 'Signature ' + route.signature : 'Cases with no signature') : 'Case queue';
-    const head = signature ? ['Time', 'Source', 'Destination', 'Protocol', 'State']
-      : ['Severity', 'Signature', 'SID', 'Cases', 'Needs review', 'Last seen'];
-    byId('list-head').replaceChildren(...head.map(label => { const cell = node('th', label); cell.scope = 'col'; return cell; }));
+    byId('list-head').replaceChildren(...HEADS[signature ? 'signature' : 'queue'].map(label => {
+      const cell = node('th', label);
+      cell.scope = 'col';
+      cell.setAttribute('role', 'columnheader');
+      return cell;
+    }));
   }
 
   function renderQueue() {
     const needle = filter.value.trim().toLowerCase();
     const rows = data.signatures.filter(row => !needle ||
       String(row.name || '').toLowerCase().includes(needle) || String(row.signature_id || '').toLowerCase().includes(needle));
-    body.replaceChildren(...rows.map(row => {
-      const line = node('tr');
-      line.append(severityCell(row.severity),
-        linkCell(row.name || 'Unnamed signature', fragment({...route, view: 'signature', signature: row.signature_id || ''})),
-        node('td', row.signature_id || 'none'), node('td', count(row.cases), 'number'),
-        node('td', count(row.needs_review), 'number'), timeCell(row.last_seen, ago(row.last_seen)));
-      return line;
-    }));
+    body.replaceChildren(...rows.map(entry => tableRow('queue', severityCell(entry.severity),
+      linkCell(entry.name || 'Unnamed signature', fragment({...route, view: 'signature', signature: entry.signature_id || ''})),
+      node('td', entry.signature_id || 'none'), node('td', count(entry.cases), 'number'),
+      node('td', count(entry.needs_review), 'number'), timeCell(entry.last_seen, ago(entry.last_seen)))));
     const needs = data.signatures.reduce((sum, row) => sum + (Number(row.needs_review) || 0), 0);
     byId('list-summary').textContent = `${count(needs)} need review across ${count(data.signatures.length)} ` +
       `${data.signatures.length === 1 ? 'signature' : 'signatures'} · ${STATE_LABELS[route.state].toLowerCase()} · ` +
@@ -150,14 +164,12 @@ export function queuePanel({document, request, scopeLost, navigate, fragment}) {
     select(selected);
   }
 
-  function caseRow(row) {
-    const line = node('tr');
-    const date = new Date(row.occurred_at);
-    line.append(linkCell(Number.isFinite(date.getTime()) ? date.toLocaleString() : row.id,
-      fragment({view: 'case', id: row.id, site: route.site})),
-      node('td', endpoint(row.source_ip, row.source_port)), node('td', endpoint(row.destination_ip, row.destination_port)),
-      node('td', row.protocol || ''), node('td', STATE_LABELS[row.state] || 'Reviewed', 'state state-' + (STATE_LABELS[row.state] ? row.state : 'reviewed')));
-    return line;
+  function caseRow(entry) {
+    const date = new Date(entry.occurred_at);
+    return tableRow('signature', linkCell(Number.isFinite(date.getTime()) ? date.toLocaleString() : entry.id,
+      fragment({view: 'case', id: entry.id, site: route.site})),
+      node('td', endpoint(entry.source_ip, entry.source_port)), node('td', endpoint(entry.destination_ip, entry.destination_port)),
+      node('td', entry.protocol || ''), node('td', STATE_LABELS[entry.state] || 'Reviewed', 'state state-' + (STATE_LABELS[entry.state] ? entry.state : 'reviewed')));
   }
 
   function renderCases(added) {

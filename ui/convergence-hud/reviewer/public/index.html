@@ -10,7 +10,7 @@
   <script type="module" src="/reviewer.js"></script>
 </head>
 <body>
-  <header><a class="brand" href="/" aria-label="Convergence case review">Convergence</a>
+  <header><a class="brand" href="/" aria-label="Convergence case review">Convergence<span class="brand-mark" aria-hidden="true"> // </span><span class="brand-area" aria-hidden="true">Cases</span></a>
     <div id="account" hidden><span id="identity"></span><button type="button" id="logout">Sign out</button></div>
   </header>
   <main>
@@ -67,9 +67,9 @@
           <button type="button" id="list-refresh">Refresh</button>
         </div>
         <p id="list-status" role="status" aria-live="polite"></p>
-        <div class="table-wrap"><table>
-          <thead><tr id="list-head"></tr></thead>
-          <tbody id="list-rows"></tbody>
+        <div class="table-wrap"><table role="table" aria-labelledby="list-title">
+          <thead role="rowgroup"><tr id="list-head" role="row"></tr></thead>
+          <tbody id="list-rows" role="rowgroup"></tbody>
         </table></div>
         <button type="button" id="list-more" hidden>Load more cases</button>
         <aside id="bulk" aria-labelledby="bulk-title" hidden>

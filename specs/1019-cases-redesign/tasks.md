@@ -95,7 +95,11 @@ Each live step needs owner approval: show the change, then apply it.
   Done 2026-11-25 (`reviewer/public/bulk.js`; plan.md "As built in H6"). HUD suite
   108 pass, 0 fail (`~/.local/state/convergence-spec1019/h6-hud-full.log`). Checked in
   jsdom against a fake service; not yet run against the real service in a browser.
-- [ ] H4: Theme. Contrast check, reduced-motion check, phone layout.
+- [x] H4: Theme. Contrast check, reduced-motion check, phone layout.
+  Done 2026-11-25 (plan.md "As built in H4"). HUD suite 114 pass, 0 fail
+  (`~/.local/state/convergence-spec1019/h4-hud-full.log`); contrast and reduced motion
+  are tested in `test/reviewer-theme.mjs`. Rendered in headless Chromium against canned
+  data at 1280 and 390 px; not checked on a real phone or with a screen reader.
 - [ ] H5: Browser tests: sign in, queue is populated, open a signature, open a case,
   record a disposition, go to the next case; the old `#case=` link still opens.
 
