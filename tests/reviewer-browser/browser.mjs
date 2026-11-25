@@ -147,7 +147,7 @@ test(
     });
     t.after(() => browser.close());
     async function openCase(page) {
-      await page.getByLabel('Case ID').fill(caseId);
+      await page.getByLabel('Open case by ID').fill(caseId);
       await page.getByRole('button', { name: 'Open case' }).click();
       await page.getByText('Synthetic review case', { exact: true }).first().waitFor();
     }
@@ -175,10 +175,10 @@ test(
     const reader = await login('reader', true);
     const operator = await login('responder');
     assert.equal(await reader.page.getByRole('button', { name: 'Save disposition' }).isVisible(), false);
-    await operator.page
+    await operator.page.locator('#disposition')
       .getByLabel('Evidence and reason')
       .fill('Synthetic packet trace confirmed expected activity');
-    await operator.page.getByLabel('Outcome').selectOption('expected_activity');
+    await operator.page.locator('#disposition').getByLabel('Outcome').selectOption('expected_activity');
     // Commit through the real API, then discard only the browser's response.
     const wire = await operator.ctx.newCDPSession(operator.page);
     await wire.send('Fetch.enable', {

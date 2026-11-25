@@ -10,6 +10,7 @@ const {createIdTokenVerifier} = require('./src/reviewer/oidc');
 const {identity, watchTls} = require('./src/reviewer/tls-reload');
 const {createReviewerService} = require('./src/reviewer/transport');
 const {createTelemetryReader} = require('./src/reviewer/telemetry');
+const {backfillQueue} = require('./src/reviewer/queue');
 
 async function migrate(pool) {
   const client = await pool.connect();
@@ -18,7 +19,7 @@ async function migrate(pool) {
     // Serialize installations across replicas without taking a lock during normal startup.
     await client.query("SELECT pg_advisory_xact_lock(hashtext('convergence reviewer schema v1'))");
     await client.query('SELECT security_disposition FROM events LIMIT 0');
-    for (const file of ['grants.sql', 'cases.sql', 'investigations.sql', 'jev.sql']) {
+    for (const file of ['grants.sql', 'cases.sql', 'investigations.sql', 'jev.sql', 'queue.sql', 'bulk.sql']) {
       await client.query(fs.readFileSync(path.join(__dirname, 'src/reviewer', file), 'utf8'));
     }
     await client.query('COMMIT');
@@ -40,7 +41,14 @@ async function main() {
     try { await migrate(pool); } finally { await pool.end(); }
     return;
   }
-  if (process.argv.length !== 2) throw new Error('Expected no arguments, or migrate');
+  if (process.argv[2] === 'backfill-queue' && process.argv.length === 3) {
+    try {
+      const copied = await backfillQueue(pool, step => console.log(JSON.stringify(step)));
+      console.log(JSON.stringify({copied}));
+    } finally { await pool.end(); }
+    return;
+  }
+  if (process.argv.length !== 2) throw new Error('Expected no arguments, migrate or backfill-queue');
   const host = process.env.REVIEWER_SERVICE_HOST || '127.0.0.1';
   const port = Number(process.env.REVIEWER_SERVICE_PORT || 3443);
   if (!net.isIP(host) || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid listener address');
@@ -52,6 +60,7 @@ async function main() {
   await pool.query('SELECT 1 FROM reviewer_grants LIMIT 0');
   await pool.query('SELECT 1 FROM reviewer_identity_links LIMIT 0');
   await pool.query('SELECT 1 FROM reviewer_oidc_exchanges LIMIT 0');
+  await pool.query('SELECT 1 FROM reviewer_case_queue LIMIT 0');
   // Both settings are required together. Without them only password sign-in exists.
   const {REVIEWER_OIDC_ISSUER: issuer, REVIEWER_OIDC_CLIENT_ID: audience} = process.env;
   if (Boolean(issuer) !== Boolean(audience)) throw new Error('Incomplete identity provider settings');

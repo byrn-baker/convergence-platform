@@ -10,7 +10,7 @@
   <script type="module" src="/reviewer.js"></script>
 </head>
 <body>
-  <header><a class="brand" href="/" aria-label="Convergence case review">Convergence</a>
+  <header><a class="brand" href="/" aria-label="Convergence case review">Convergence<span class="brand-mark" aria-hidden="true"> // </span><span class="brand-area" aria-hidden="true">Cases</span></a>
     <div id="account" hidden><span id="identity"></span><button type="button" id="logout">Sign out</button></div>
   </header>
   <main>
@@ -35,13 +35,107 @@
     <section id="workspace" aria-label="Reviewer workspace" hidden>
       <form id="lookup">
         <label>Site<select name="site" required></select></label>
-        <label>Case ID<input name="caseId" required maxlength="36" autocomplete="off" spellcheck="false"></label>
+        <label>Open case by ID<input name="caseId" required maxlength="36" autocomplete="off" spellcheck="false"></label>
         <button type="submit">Open case</button>
       </form>
+      <section id="list-view" aria-labelledby="list-title" hidden>
+        <nav id="crumbs" aria-label="Breadcrumb"><a id="crumb-queue" href="#queue">Queue</a><span id="crumb-signature" hidden></span></nav>
+        <h2 id="list-title"></h2>
+        <p id="list-summary"></p>
+        <div id="filters" role="group" aria-label="Filters">
+          <span id="filter-window" role="group" aria-label="Time window">
+            <button type="button" data-window="24h" aria-pressed="true">24h</button>
+            <button type="button" data-window="7d" aria-pressed="false">7d</button>
+            <button type="button" data-window="30d" aria-pressed="false">30d</button>
+          </span>
+          <label>State<select id="filter-state">
+            <option value="needs_review">Needs review</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="all">All</option>
+            <option value="expected_activity">Expected activity</option>
+            <option value="false_positive">False positive</option>
+            <option value="confirmed_threat">Confirmed threat</option>
+          </select></label>
+          <label>Severity<select id="filter-severity">
+            <option value="">Any</option>
+            <option value="alert">Alert</option>
+            <option value="watch">Watch</option>
+            <option value="info">Info</option>
+            <option value="ok">OK</option>
+          </select></label>
+          <label id="filter-text-label">Filter signatures<input id="filter-text" type="search" maxlength="64" autocomplete="off" spellcheck="false"></label>
+          <button type="button" id="list-refresh">Refresh</button>
+        </div>
+        <p id="list-status" role="status" aria-live="polite"></p>
+        <div class="table-wrap"><table role="table" aria-labelledby="list-title">
+          <thead role="rowgroup"><tr id="list-head" role="row"></tr></thead>
+          <tbody id="list-rows" role="rowgroup"></tbody>
+        </table></div>
+        <button type="button" id="list-more" hidden>Load more cases</button>
+        <aside id="bulk" aria-labelledby="bulk-title" hidden>
+          <h3 id="bulk-title">Bulk review</h3>
+          <p>Decide once for every case of this signature that still needs review. You see the count and confirm it before anything is saved. Each case shows the decision in its history and can still be reviewed on its own afterwards.</p>
+          <button type="button" id="bulk-start">Count cases for a bulk decision</button>
+          <form id="bulk-form" hidden>
+            <label>Scope<select name="scope"></select></label>
+            <label>Outcome<select name="kind">
+              <option value="expected_activity">Expected activity</option>
+              <option value="false_positive">False positive</option>
+              <option value="confirmed_threat">Confirmed threat</option>
+            </select></label>
+            <label>Evidence and reason<textarea name="reason" rows="4" required minlength="10" maxlength="4000"></textarea></label>
+            <button type="submit" id="bulk-review"></button>
+          </form>
+          <p id="bulk-status" role="status" aria-live="polite"></p>
+          <div id="bulk-confirm" hidden>
+            <p id="bulk-confirm-text"></p>
+            <div class="actions">
+              <button type="button" id="bulk-confirm-yes"></button>
+              <button type="button" id="bulk-cancel">Cancel</button>
+            </div>
+          </div>
+          <div id="bulk-receipt" hidden>
+            <h4>Bulk decision receipt</h4><p id="bulk-receipt-note"></p><code id="bulk-operation"></code>
+            <div class="actions">
+              <button type="button" id="bulk-retry" hidden>Retry same decision</button>
+              <button type="button" id="bulk-again" hidden>Review more cases</button>
+            </div>
+          </div>
+        </aside>
+      </section>
+      <p id="key-hint">Press <kbd>?</kbd> for keyboard keys.</p>
+      <section id="keys" aria-labelledby="keys-title" hidden>
+        <h2 id="keys-title">Keyboard keys</h2>
+        <dl>
+          <dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Move down or up the list; on a case, open the next or previous case of that list</dd>
+          <dt><kbd>Enter</kbd></dt><dd>Open the selected signature or case</dd>
+          <dt><kbd>u</kbd></dt><dd>Go up: from a case to its list, from a signature to the queue</dd>
+          <dt><kbd>/</kbd></dt><dd>Go to the filters</dd>
+          <dt><kbd>b</kbd></dt><dd>On a signature, count its cases for a bulk decision</dd>
+          <dt><kbd>?</kbd></dt><dd>Show or hide this list</dd>
+          <dt><kbd>Esc</kbd></dt><dd>Close this list</dd>
+        </dl>
+        <button type="button" id="keys-close">Close</button>
+      </section>
       <article id="detail" hidden>
+        <p id="trail" hidden>
+          <span id="trail-position"></span>
+          <button type="button" id="case-previous">Previous case</button>
+          <button type="button" id="case-next">Next case</button>
+        </p>
         <div class="case-heading"><h2 id="case-title"></h2><span id="case-status"></span></div>
-        <dl id="facts"></dl>
-        <section id="assessment" hidden><h3>Assessment</h3><div></div></section>
+        <section id="fired" aria-labelledby="fired-title">
+          <h3 id="fired-title">What fired</h3>
+          <p id="case-when"></p>
+          <div id="flow" hidden>
+            <div><small>Source</small><strong id="flow-source"></strong><small id="flow-source-kind"></small></div>
+            <div id="flow-protocol"></div>
+            <div><small>Destination</small><strong id="flow-destination"></strong><small id="flow-destination-kind"></small></div>
+          </div>
+          <p id="fired-signature" hidden></p>
+        </section>
+        <section aria-labelledby="evidence-title"><h3 id="evidence-title">Evidence and context</h3><dl id="facts"></dl></section>
+        <section id="assessment" hidden><h3>Rule guidance</h3><div></div></section>
         <section id="current" hidden><h3>Current disposition</h3><div></div></section>
         <section><h3>Review history</h3><div id="history"></div></section>
         <form id="disposition" hidden>
@@ -53,7 +147,10 @@
             <option value="confirmed_threat">Confirmed threat</option>
           </select></label>
           <label>Evidence and reason<textarea name="reason" rows="3" required minlength="10" maxlength="4000"></textarea></label>
-          <button type="submit">Save disposition</button>
+          <div class="actions">
+            <button type="submit">Save disposition</button>
+            <button type="button" id="save-next" hidden>Save and open next case</button>
+          </div>
         </form>
         <section id="operation" hidden>
           <h3>Disposition receipt</h3><p id="operation-note"></p><code id="operation-id"></code>

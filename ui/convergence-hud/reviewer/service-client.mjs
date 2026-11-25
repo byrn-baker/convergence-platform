@@ -10,6 +10,27 @@ function casePath(site, id) {
   return '/v1/sites/' + site + '/cases/' + id;
 }
 
+const fail = message => { throw Object.assign(new Error(message), {status: 400}); };
+function sitePath(site) {
+  if (typeof site !== 'string' || !/^[a-z\d_.-]{1,128}$/i.test(site) || site === '.' || site === '..') fail('Invalid site');
+  return '/v1/sites/' + site;
+}
+// A query is forwarded only as plain name=value pairs. The service checks each name and
+// value against its closed set; nothing encoded or structural passes through here.
+function search(query, limit) {
+  if (query === undefined || query === '') return '';
+  if (typeof query !== 'string' || query.length > limit || !/^[A-Za-z0-9_=&.:-]+$/.test(query)) fail('Invalid query');
+  return '?' + query;
+}
+export function queueTarget(site, list, query) {
+  if (list !== 'signatures' && list !== 'cases') fail('Invalid list');
+  return sitePath(site) + '/' + list + search(query, 512);
+}
+export function bulkTarget(site, signature, preview, query) {
+  if (typeof signature !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(signature)) fail('Invalid signature');
+  return sitePath(site) + '/signatures/' + signature + '/dispositions' + (preview ? '/preview' + search(query, 128) : '');
+}
+
 export function createReviewerClient({origin, tls, deadlineMs = 10000}) {
   const base = new URL(origin);
   if (base.protocol !== 'https:' || base.origin !== origin || !tls?.key || !tls.cert || !tls.ca) {
@@ -68,6 +89,11 @@ export function createReviewerClient({origin, tls, deadlineMs = 10000}) {
       const target = telemetryTarget(site, resource, query);
       return call('GET', '/v1/sites/' + target.site + '/telemetry/' + target.resource + (target.query ? '?' + target.query : ''), token, undefined, Math.max(deadlineMs,20000));
     },
+    listSignatures: (token, site, query) => call('GET', queueTarget(site, 'signatures', query), token),
+    listCases: (token, site, query) => call('GET', queueTarget(site, 'cases', query), token),
+    previewBulk: (token, site, signature, query) => call('GET', bulkTarget(site, signature, true, query), token),
+    // A decision of several thousand cases can take longer than a single-case write.
+    recordBulk: (token, site, signature, body) => call('POST', bulkTarget(site, signature, false), token, body, Math.max(deadlineMs, 20000)),
     readCase: (token, site, id) => call('GET', casePath(site, id), token),
     recordDisposition: (token, site, id, body) => call('POST', casePath(site, id) + '/disposition', token, body),
     readReceipt(token, site, id, operationId) {

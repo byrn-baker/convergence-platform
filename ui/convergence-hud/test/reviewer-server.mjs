@@ -84,6 +84,29 @@ test('HTTPS reviewer routes only release protected data to the current authorize
     async readJevReceipt(token,site,id,operationId) {
       return wrongResult || {case_id:id,site_id:site,operation_id:operationId.toLowerCase(),requested_by:grants.get(token).id};
     },
+    async listSignatures(token,site,query) {
+      calls.push('signatures:' + (query ?? ''));
+      if (!grants.get(token)?.sites.includes(site)) throw Object.assign(new Error('wrong site'),{status:403});
+      if (pauseRead) { pauseRead.started.resolve(); await pauseRead.resume.promise; }
+      return wrongResult || {site, signatures:[{signature_id:'2900417', cases:418}]};
+    },
+    async listCases(token,site,query) {
+      calls.push('cases:' + (query ?? ''));
+      if (!grants.get(token)?.sites.includes(site)) throw Object.assign(new Error('wrong site'),{status:403});
+      return wrongResult || {site, cases:[{id:caseId}], next:null};
+    },
+    async previewBulk(token,site,signature,query) {
+      calls.push('preview:' + signature + ':' + (query ?? ''));
+      if (grants.get(token)?.role === 'viewer') throw Object.assign(new Error('wrong role'),{status:403});
+      return wrongResult || {site, signature_id:signature, cases:418, window_start:'2026-11-23T00:00:00.000000Z', window_end:'2026-11-24T00:00:00.000000Z'};
+    },
+    async recordBulk(token,site,signature,data) {
+      calls.push('bulk');
+      if (grants.get(token)?.role === 'viewer') throw Object.assign(new Error('wrong role'),{status:403});
+      deadlines.get(token).idleExpiresAt = new Date(Date.now() + 540000).toISOString();
+      return wrongResult || {site_id:site, signature_id:signature, operation_id:data.operationId.toLowerCase(),
+        reviewed_by:grants.get(token).id, case_count:data.confirmedCount};
+    },
     async recordDisposition(token,_site,_id,data) {
       calls.push('write');
       if (grants.get(token)?.role === 'viewer') throw Object.assign(new Error('wrong role'),{status:403});
@@ -263,6 +286,97 @@ test('HTTPS reviewer routes only release protected data to the current authorize
       }
     } finally { wrongResult = null; }
     await signOut(alice);
+  });
+
+  await t.test('the case queue and bulk review keep the session, site, role, CSRF and response-scope rules', async () => {
+    const alice = await authenticated('alice');
+    const bob = await authenticated('bob');
+    const queueURL = '/review/sites/red/signatures', listURL = '/review/sites/red/cases';
+    const bulkURL = '/review/sites/red/signatures/2900417/dispositions';
+    const decision = {operationId:randomUUID().toUpperCase(), kind:'false_positive', reason:'Synthetic duplicate capture on the mirror port',
+      windowStart:'2026-11-23T00:00:00.000000Z', windowEnd:'2026-11-24T00:00:00.000000Z', source:null, confirmedCount:418};
+
+    // Reads: any reviewer of the site, with the query passed through as written.
+    const queue = await request(queueURL + '?window=7d&state=all',{state:bob});
+    assert.deepEqual([queue.status,queue.body.signatures[0].cases],[200,418]);
+    assert.equal(calls.at(-2),'signatures:window=7d&state=all');
+    assert.ok(queue.headers['x-review-expires-at']);
+    const list = await request(listURL + '?signature=2900417&limit=50&before=MTc5NS4w_-',{state:alice});
+    assert.deepEqual([list.status,list.body.cases.length],[200,1]);
+    assert.equal(calls.at(-2),'cases:signature=2900417&limit=50&before=MTc5NS4w_-');
+    assert.equal((await request(queueURL,{state:alice})).status,200);
+    assert.equal((await request(listURL + '?source=2001:db8::17',{state:alice})).status,200);
+    // No session, another site, and anything but plain name=value text never reach the service.
+    const before = calls.length;
+    assert.equal((await request(queueURL)).status,401);
+    assert.equal((await request(listURL,{state:await bootstrap()})).status,401);
+    for (const target of [queueURL + '?window=7d%26site=blue', queueURL + '?a=b#c', queueURL + '?x=' + 'a'.repeat(520), listURL + '?q=a+b',
+      listURL + "?q='", listURL + '?q=a/b', '/review/sites/red/signatures/', '/review/sites/red/queue', '/review/sites/../signatures',
+      bulkURL + '/preview?' + 'a'.repeat(130), '/review/sites/red/signatures/a%2Fb/dispositions/preview', bulkURL + '/preview/x']) {
+      assert.ok([400,404].includes((await request(target,{state:alice})).status),target);
+    }
+    assert.equal((await request(queueURL,{method:'POST',state:alice,data:{}})).status,404);
+    assert.equal((await request(listURL,{method:'DELETE',state:alice})).status,404);
+    assert.equal(calls.length,before);
+    assert.equal((await request('/review/sites/blue/signatures',{state:alice})).status,403);
+    assert.equal((await request('/review/sites/blue/cases',{state:alice})).status,403);
+
+    // Bulk review: operators only, and the write needs this session's CSRF value.
+    const preview = await request(bulkURL + '/preview?window=24h&source=10.20.4.17',{state:alice});
+    assert.deepEqual([preview.status,preview.body.cases,preview.body.signature_id],[200,418,'2900417']);
+    assert.equal(calls.at(-2),'preview:2900417:window=24h&source=10.20.4.17');
+    assert.equal((await request(bulkURL + '/preview',{state:bob})).status,403);
+    assert.equal((await request(bulkURL,{method:'POST',state:bob,data:decision})).status,403);
+    const quiet = calls.length;
+    assert.equal((await request(bulkURL,{method:'POST',state:{...alice,csrf:bob.csrf},data:decision})).status,403);
+    assert.equal((await request(bulkURL,{method:'POST',state:{cookie:alice.cookie},data:decision})).status,403);
+    assert.equal((await request(bulkURL,{method:'POST',state:alice,data:decision,headers:{origin:'https://evil.test'}})).status,403);
+    assert.equal((await request(bulkURL,{method:'POST',state:alice,data:{...decision,actor:'bob'}})).status,400);
+    assert.equal((await request(bulkURL,{method:'POST',state:alice,data:{...decision,operationId:17}})).status,400);
+    assert.equal((await request(bulkURL,{method:'POST',state:alice,data:{...decision,confirmedCount:'418'}})).status,400);
+    assert.equal((await request(bulkURL,{method:'POST',state:alice,data:{...decision,confirmedCount:1.5}})).status,400);
+    assert.equal((await request(bulkURL,{method:'POST',state:alice,data:{...decision,source:17}})).status,400);
+    assert.equal((await request(bulkURL,{method:'POST',state:alice,data:{...decision,reason:null}})).status,400);
+    assert.equal((await request(bulkURL,{method:'POST',state:alice,raw:'{',headers:{'content-type':'application/json'}})).status,400);
+    assert.equal((await request(bulkURL,{method:'POST',state:alice,data:decision,headers:{'content-type':'text/plain'}})).status,415);
+    assert.equal((await request(bulkURL,{state:alice})).status,404);
+    assert.equal((await request(bulkURL + '/preview',{method:'POST',state:alice,data:decision})).status,404);
+    assert.equal(calls.length,quiet);
+    const aliceToken = [...grants.keys()].find(token => grants.get(token).id === 'alice');
+    const written = await request(bulkURL,{method:'POST',state:alice,data:decision});
+    assert.deepEqual([written.status,written.body.reviewed_by,written.body.case_count,written.body.operation_id],
+      [200,'alice',418,decision.operationId.toLowerCase()]);
+    assert.equal(written.headers['x-review-expires-at'],deadlines.get(aliceToken).idleExpiresAt);
+
+    // A response for another site, signature, operation or reviewer is withheld.
+    try {
+      for (const [target,wrong] of [[queueURL,{site:'blue',signatures:[]}], [queueURL,{site:'red'}], [listURL,{site:'blue',cases:[]}],
+        [listURL,{site:'red',cases:'private'}], [bulkURL + '/preview',{site:'blue',signature_id:'2900417',cases:1}],
+        [bulkURL + '/preview',{site:'red',signature_id:'1',cases:1}]]) {
+        wrongResult = wrong;
+        const r = await request(target,{state:alice});
+        assert.deepEqual([r.status,r.body],[503,{error:'Reviewer service unavailable'}],target);
+      }
+      const receipt = {site_id:'red',signature_id:'2900417',operation_id:decision.operationId.toLowerCase(),reviewed_by:'alice'};
+      for (const wrong of [{...receipt,site_id:'blue'},{...receipt,signature_id:'1'},{...receipt,operation_id:randomUUID()},{...receipt,reviewed_by:'bob'}]) {
+        wrongResult = wrong;
+        assert.equal((await request(bulkURL,{method:'POST',state:alice,data:decision})).status,503);
+      }
+    } finally { wrongResult = undefined; }
+
+    // A reviewer who loses the site while the read is in flight does not receive it.
+    pauseRead = {started:Promise.withResolvers(),resume:Promise.withResolvers()};
+    try {
+      const pending = request(queueURL,{state:alice});
+      await pauseRead.started.promise;
+      grants.set(aliceToken,{...user,sites:['blue']});
+      pauseRead.resume.resolve();
+      assert.equal((await pending).status,403);
+    } finally { pauseRead = undefined; grants.set(aliceToken,user); }
+    assert.equal((await signOut(alice)).status,204);
+    assert.equal((await request(queueURL,{state:alice})).status,401);
+    assert.equal((await request(bulkURL,{method:'POST',state:alice,data:decision})).status,401);
+    await signOut(bob);
   });
 
   await t.test('telemetry is finite, site scoped and rechecked after reads', async () => {

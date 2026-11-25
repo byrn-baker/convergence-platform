@@ -149,6 +149,44 @@ test('two mTLS reviewer services authorize and audit one durable case dispositio
   const url = '/v1/sites/red/cases/' + event.id;
   assert.equal((await request(portB, url, {token, headers: {origin: 'https://foreign.invalid'}})).status, 403);
   assert.equal((await request(portB, url, {token: bob.body.token})).status, 403);
+  // The signature queue is scoped by the grant like a case read, and its query is a closed set.
+  const queue = await request(portB, '/v1/sites/red/signatures?window=7d&state=all', {token});
+  assert.equal(queue.status, 200);
+  assert.ok(Array.isArray(queue.body.signatures));
+  assert.equal((await request(portB, '/v1/sites/red/signatures', {token: bob.body.token})).status, 403);
+  assert.equal((await request(portB, '/v1/sites/red/signatures?window=1y', {token})).status, 400);
+  assert.equal((await request(portB, '/v1/sites/red/signatures?site=blue', {token})).status, 400);
+  assert.equal((await request(portB, '/v1/sites/red/signatures', {token, method: 'POST', body: {}})).status, 404);
+  assert.equal((await request(portB, '/v1/sites/red/signatures')).status, 401);
+  // The case list is scoped the same way; its cursor and limit are validated before the database is read.
+  const list = await request(portB, '/v1/sites/red/cases?window=7d&state=all&limit=1', {token});
+  assert.equal(list.status, 200);
+  assert.ok(Array.isArray(list.body.cases) && list.body.cases.length <= 1);
+  assert.equal((await request(portB, '/v1/sites/red/cases', {token: bob.body.token})).status, 403);
+  assert.equal((await request(portB, '/v1/sites/red/cases?limit=101', {token})).status, 400);
+  assert.equal((await request(portB, '/v1/sites/red/cases?before=forged', {token})).status, 400);
+  assert.equal((await request(portB, '/v1/sites/red/cases?site=blue', {token})).status, 400);
+  assert.equal((await request(portB, '/v1/sites/red/cases', {token, method: 'POST', body: {}})).status, 404);
+  assert.equal((await request(portB, '/v1/sites/red/cases')).status, 401);
+  // Bulk review: an operator of the site can preview; a viewer or another site cannot; the write validates its body.
+  const bulkUrl = '/v1/sites/red/signatures/2900417/dispositions';
+  const bulkPreview = await request(portB, bulkUrl + '/preview?window=7d', {token});
+  assert.equal(bulkPreview.status, 200);
+  assert.equal(bulkPreview.body.cases, 0);
+  assert.equal((await request(portB, bulkUrl + '/preview', {token: bob.body.token})).status, 403);
+  assert.equal((await request(portB, '/v1/sites/blue/signatures/2900417/dispositions/preview', {token: bob.body.token})).status, 403);
+  assert.equal((await request(portB, bulkUrl + '/preview?source=10.0.0.0/8', {token})).status, 400);
+  assert.equal((await request(portB, bulkUrl + '/preview', {token, method: 'POST', body: {}})).status, 404);
+  assert.equal((await request(portB, bulkUrl, {token})).status, 404);
+  assert.equal((await request(portB, bulkUrl + '/preview')).status, 401);
+  const bulkBody = {operationId: randomUUID(), kind: 'false_positive', reason: 'Synthetic duplicate capture on the mirror port',
+    windowStart: bulkPreview.body.window_start, windowEnd: bulkPreview.body.window_end, source: null, confirmedCount: 1};
+  assert.equal((await request(portB, bulkUrl, {token, method: 'POST', body: {...bulkBody, actor: 'u2'}})).status, 400);
+  assert.equal((await request(portB, bulkUrl, {token, method: 'POST', body: {...bulkBody, kind: 'needs_review'}})).status, 400);
+  assert.equal((await request(portB, bulkUrl, {token: bob.body.token, method: 'POST', body: bulkBody})).status, 403);
+  assert.equal((await request(portB, bulkUrl, {method: 'POST', body: bulkBody})).status, 401);
+  // No case of that signature needs review, so there is nothing to decide.
+  assert.equal((await request(portB, bulkUrl, {token, method: 'POST', body: bulkBody})).status, 409);
   assert.equal((await request(portB, url, {token})).body.id, event.id);
   const write = {operationId: randomUUID(), kind: 'needs_review', reason: 'Synthetic observed traffic requires investigation'};
   const post = body => request(portB, url + '/disposition', {method: 'POST', token, body});
@@ -181,6 +219,8 @@ test('two mTLS reviewer services authorize and audit one durable case dispositio
   assert.equal((await request(portB,url+'/investigation',{method:'POST',token,body:{...investigate,operationId:randomUUID()}})).status,403);
   assert.equal((await request(portA, '/v1/grants/current', {token, method: 'DELETE'})).status, 204);
   assert.equal((await request(portB, url, {token})).status, 401);
+  assert.equal((await request(portB, '/v1/sites/red/signatures', {token})).status, 401);
+  assert.equal((await request(portB, '/v1/sites/red/cases', {token})).status, 401);
   assert.equal((await request(portB, '/v1/grants/current', {token: bob.body.token})).status, 200);
   await provision(second, ['password', 'bob'], Readable.from([Buffer.from('fixture-rotated')]));
   assert.equal((await request(portB, '/v1/grants/current', {token: bob.body.token})).status, 401);

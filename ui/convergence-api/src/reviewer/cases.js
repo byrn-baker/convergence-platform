@@ -1,6 +1,7 @@
 'use strict';
 
 const {securityAssessment, securityDisposition, validDisposition} = require('../lib/securityAssessment');
+const {trafficContext} = require('../lib/trafficContext');
 
 const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const HISTORY_LIMIT = 20;
@@ -31,6 +32,10 @@ function savedDisposition(value) {
   if (typeof value.reviewed_by_name === 'string') {
     disposition.reviewed_by_name = Array.from(value.reviewed_by_name).slice(0, 256).join('');
   }
+  // Set when the case was reviewed as part of a bulk decision.
+  if (typeof value.bulk_operation_id === 'string' && UUID.test(value.bulk_operation_id)) {
+    disposition.bulk_operation_id = value.bulk_operation_id.toLowerCase();
+  }
   return disposition;
 }
 
@@ -51,16 +56,26 @@ async function readCase(client, actor, site, caseId) {
   if (!result.rowCount) throw failure(404, 'Case not found');
 
   const {description, disposition, ...record} = result.rows[0];
+  // Single dispositions of this case, and the bulk decisions that covered it. A bulk
+  // entry says how many cases the decision covered; for a single one that is NULL.
   const history = await client.query(`
     SELECT operation_id, kind, left(reason, 256) AS reason_preview, length(reason) > 256 AS reason_truncated,
-           actor_id AS reviewed_by, actor_name AS reviewed_by_name, reviewed_at FROM reviewer_case_dispositions
-     WHERE case_id = $1 AND site_id = $2 ORDER BY reviewed_at DESC, operation_id DESC LIMIT $3`,
+           actor_id AS reviewed_by, actor_name AS reviewed_by_name, reviewed_at, bulk_case_count
+      FROM (SELECT operation_id, kind, reason, actor_id, actor_name, reviewed_at, NULL::int AS bulk_case_count
+              FROM reviewer_case_dispositions WHERE case_id = $1 AND site_id = $2
+            UNION ALL
+            SELECT b.operation_id, b.kind, b.reason, b.actor_id, b.actor_name, b.reviewed_at, b.case_count
+              FROM reviewer_bulk_disposition_cases c
+              JOIN reviewer_bulk_dispositions b USING (installation_id, actor_id, operation_id)
+             WHERE c.case_id = $1 AND c.site_id = $2 AND b.site_id = $2) h
+     ORDER BY reviewed_at DESC, operation_id DESC LIMIT $3`,
   [id, site, HISTORY_LIMIT + 1]);
 
   record.security_disposition = savedDisposition(disposition);
   const assessment = securityAssessment({...record, source_evidence: {annotations: {description}}});
   if (assessment?.signature) assessment.signature = assessment.signature.slice(0, 512);
-  return {...record, security_assessment: assessment, review_history: history.rows.slice(0, HISTORY_LIMIT),
+  // Hosts, ports and protocol from the sensor's event; null when it cannot be parsed.
+  return {...record, security_assessment: assessment, traffic_context: trafficContext({annotations: {description}}), review_history: history.rows.slice(0, HISTORY_LIMIT),
     review_history_truncated: history.rowCount > HISTORY_LIMIT};
 }
 

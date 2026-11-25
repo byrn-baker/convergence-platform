@@ -10,6 +10,13 @@ const attemptCookie = '__Host-convergence-oidc';
 const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const casePath = new RegExp('^/review/sites/([A-Za-z0-9_.-]{1,128})/cases/(' + uuid +
   ')(?:/(disposition|investigation|jev-review)(?:/(' + uuid + '))?)?$', 'i');
+// The case queue and bulk review. A query string is limited to plain name=value text;
+// the reviewer service validates the names and values themselves.
+const queuePath = /^\/review\/sites\/([A-Za-z0-9_.-]{1,128})\/(signatures|cases)(?:\?([A-Za-z0-9_=&.:-]{0,512}))?$/;
+const bulkPath = /^\/review\/sites\/([A-Za-z0-9_.-]{1,128})\/signatures\/([A-Za-z0-9_.:-]{1,64})\/dispositions(?:(\/preview)(?:\?([A-Za-z0-9_=&.:-]{0,128}))?)?$/;
+// The source host is optional and the confirmed count is a whole number; the rest are text.
+const bulkTypes = {source: value => value === null || typeof value === 'string', confirmedCount: Number.isSafeInteger};
+const bulkFields = ['operationId','kind','reason','windowStart','windowEnd','source','confirmedCount'];
 const errors = {
   400: 'Invalid request', 401: 'Sign-in required or credentials invalid', 403: 'Access denied',
   404: 'Not found', 409: 'Request conflicts with current state', 413: 'Request too large',
@@ -100,7 +107,8 @@ function json(res, status, value) {
   res.end(body);
 }
 
-async function readJSON(req, keys) {
+// Every field is a string unless `other` names a different check for it.
+async function readJSON(req, keys, other = {}) {
   const limit = 32 * 1024;
   if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(req.headers['content-type'] || '') ||
       req.headers['content-encoding'] !== undefined) throw failure(415);
@@ -116,7 +124,8 @@ async function readJSON(req, keys) {
   try { data = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(Buffer.concat(chunks))); }
   catch { throw failure(400); }
   if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).length !== keys.length ||
-      !keys.every(key => Object.hasOwn(data,key) && typeof data[key] === 'string')) throw failure(400);
+      !keys.every(key => Object.hasOwn(data,key) &&
+        (Object.hasOwn(other,key) ? other[key](data[key]) : typeof data[key] === 'string'))) throw failure(400);
   return data;
 }
 
@@ -330,6 +339,36 @@ export function createReviewerServer({tls, origin, client, assets, oidc,
             (telemetry.resource !== 'isp/providers' && result[singleEvent ? 'site_id' : 'site'] !== telemetry.site) ||
             (result.site !== undefined && result.site !== telemetry.site) ||
             (result.site_id !== undefined && result.site_id !== telemetry.site)) throw failure(503);
+        res.setHeader('X-Review-Expires-At',new Date(Math.min(entry.idleUntil,entry.expires)).toISOString());
+        return json(res,200,result);
+      }
+
+      const queue = queuePath.exec(target);
+      const bulk = queue ? null : bulkPath.exec(target);
+      if (queue || bulk) {
+        const site = (queue || bulk)[1];
+        const signature = bulk?.[2];
+        if (site === '.' || site === '..') throw failure(400);
+        const write = Boolean(bulk) && !bulk[3];
+        if (method !== (write ? 'POST' : 'GET')) throw failure(404);
+        sessions.requireCurrent(entry);
+        if (!entry.grant) throw failure(401);
+        if (write) sessions.checkCsrf(entry,req.headers['x-review-csrf']);
+        const data = write ? await readJSON(req,bulkFields,bulkTypes) : null;
+        sessions.requireCurrent(entry);
+        // The service authorizes the site and, for bulk review, the role. It owns the
+        // count check and idempotency of a bulk decision.
+        let result;
+        if (write) result = await client.recordBulk(entry.grant,site,signature,data);
+        else if (bulk) result = await client.previewBulk(entry.grant,site,signature,bulk[4]);
+        else result = await client[queue[2] === 'cases' ? 'listCases' : 'listSignatures'](entry.grant,site,queue[3]);
+        if (res.destroyed) return;
+        const user = await current(entry, write);
+        if (!user.sites.includes(site) || (bulk && user.role === 'viewer')) throw failure(403);
+        // Check the response's own scope before publishing it on this origin.
+        if (queue && (result?.site !== site || !Array.isArray(result[queue[2]]))) throw failure(503);
+        if (bulk && (result?.[write ? 'site_id' : 'site'] !== site || result.signature_id !== signature)) throw failure(503);
+        if (write && (result.operation_id !== data.operationId.toLowerCase() || result.reviewed_by !== user.id)) throw failure(503);
         res.setHeader('X-Review-Expires-At',new Date(Math.min(entry.idleUntil,entry.expires)).toISOString());
         return json(res,200,result);
       }
