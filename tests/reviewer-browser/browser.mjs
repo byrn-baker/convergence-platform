@@ -147,7 +147,7 @@ test(
     });
     t.after(() => browser.close());
     async function openCase(page) {
-      await page.getByLabel('Case ID').fill(caseId);
+      await page.getByLabel('Open case by ID').fill(caseId);
       await page.getByRole('button', { name: 'Open case' }).click();
       await page.getByText('Synthetic review case', { exact: true }).first().waitFor();
     }
